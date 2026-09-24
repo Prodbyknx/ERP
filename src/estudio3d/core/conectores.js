@@ -48,7 +48,9 @@ export function formaConector(cfg) {
   throw new Error('Tipo de conector desconhecido: ' + t);
 }
 
-// prisma da seção cs entre z0 e z1 (z0 < z1), com chanfro opcional na ponta de baixo
+// prisma da seção cs entre z0 e z1 (z0 < z1), com chanfro opcional na ponta
+// de baixo. Com chanfro vira UM casco convexo (corpo + ponta menor): nada de
+// união com face coplanar, que deixaria lasca na malha.
 function prisma(cs, z0, z1, chanfro, meia) {
   const { Manifold } = manifold();
   const h = z1 - z0;
@@ -57,8 +59,8 @@ function prisma(cs, z0, z1, chanfro, meia) {
   }
   const s = Math.max(0.3, (meia - chanfro) / meia);
   const corpo = Manifold.extrude(cs, h - chanfro).translate([0, 0, z0 + chanfro]);
-  const ponta = Manifold.extrude(cs, chanfro, 0, 0, s).rotate([180, 0, 0]).translate([0, 0, z0 + chanfro]);
-  const r = corpo.add(ponta);
+  const ponta = Manifold.extrude(cs.scale(s), 1e-3).translate([0, 0, z0]);
+  const r = Manifold.hull([corpo, ponta]);
   corpo.delete(); ponta.delete();
   return r;
 }

@@ -3,6 +3,7 @@
 // (faceID). Depois de qualquer booleana, cada triângulo de saída sabe de que
 // peça e de que triângulo veio -> a cor é recuperada sem aproximação.
 import { criar } from './malha.js';
+import { corrigirDegeneradas } from './limpeza.js';
 import { normalizarHex, COR_PADRAO } from './cores.js';
 
 let W = null;
@@ -121,8 +122,11 @@ export class Contexto {
       malha = criar(pos, idx, cor);
       paleta = locais.map(c => this.paleta[c]);
     } else malha = criar(pos, idx);
+    // limpeza final: triângulo de área ~0 (vértice colinear no float32) some
+    const lz = corrigirDegeneradas(malha, { origem });
+    if (lz.trocas || lz.fusoes) { malha = lz.malha; }
     const out = { nome: nome || 'peça', malha, cor: this.paleta[principal], paleta };
-    if (origem) out.origem = origem;
+    if (origem) out.origem = lz.trocas || lz.fusoes ? lz.origem : origem;
     return out;
   }
 }
