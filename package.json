@@ -1,0 +1,19 @@
+{
+  "name": "erp-144lab",
+  "private": true,
+  "description": "Ferramentas de build e testes do ERP 144 Laboratório 3D (não sobe pro Cloudflare)",
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "test": "node --test tests/",
+    "e2e": "node tests/e2e/run.mjs",
+    "pacotes": "node tools/pacotes.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "fflate": "^0.8.3",
+    "manifold-3d": "^3.5.3",
+    "three": "^0.186.1",
+    "three-mesh-bvh": "^0.9.15"
+  }
+}

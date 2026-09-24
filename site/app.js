@@ -4910,7 +4910,9 @@ $('btn_rm_generate').onclick = () => {
   };
 
   if(!pdfDisponivel()){
-    $('rm_preview_msg').textContent = 'Não foi possível gerar: o arquivo html2pdf.bundle.min.js não está na pasta do sistema.';
+    carregarPDF(() => $('btn_rm_generate').onclick(), () => {
+      $('rm_preview_msg').textContent = 'Não foi possível gerar: o arquivo html2pdf.bundle.min.js não está na pasta do sistema.';
+    });
     return;
   }
 
@@ -4950,9 +4952,27 @@ function cloudAfterLogin(){
 // A biblioteca que monta o PDF vem num arquivo separado (html2pdf.bundle.min.js).
 // Se ele não estiver na pasta, avisa em bom português em vez de falhar calado.
 function pdfDisponivel(){
-  if(typeof html2pdf === 'function') return true;
-  toast('O arquivo html2pdf.bundle.min.js não está nesta pasta — sem ele o PDF não é gerado','warn');
-  return false;
+  return typeof html2pdf === 'function';
+}
+// Se a tag do index.html faltar ou o arquivo demorar, busca a biblioteca na
+// hora, da mesma pasta, e só depois desiste.
+let _pdfCarregando = null;
+function carregarPDF(ok, falha){
+  if(pdfDisponivel()){ ok(); return; }
+  if(!_pdfCarregando){
+    _pdfCarregando = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'html2pdf.bundle.min.js';
+      s.onload = () => pdfDisponivel() ? resolve() : reject();
+      s.onerror = () => reject();
+      document.head.appendChild(s);
+    });
+    _pdfCarregando.catch(() => { _pdfCarregando = null; });
+  }
+  _pdfCarregando.then(ok, () => {
+    toast('O arquivo html2pdf.bundle.min.js não está nesta pasta — sem ele o PDF não é gerado','warn');
+    falha();
+  });
 }
 window.gerarPDFNativo = (tipo) => {
   toast('Gerando PDF, aguarde...', 'ok');
@@ -5114,7 +5134,9 @@ window.pdfViewer = (htmlContent, filename, titulo, subtitulo, optOverride) => {
   $('modal-pdf-view').classList.add('active');
 
   if(!pdfDisponivel()){
-    $('pv_msg').textContent = 'Não foi possível gerar: o arquivo html2pdf.bundle.min.js não está na pasta do sistema.';
+    carregarPDF(() => window.pdfViewer(htmlContent, filename, titulo, subtitulo, optOverride), () => {
+      $('pv_msg').textContent = 'Não foi possível gerar: o arquivo html2pdf.bundle.min.js não está na pasta do sistema.';
+    });
     return;
   }
 
