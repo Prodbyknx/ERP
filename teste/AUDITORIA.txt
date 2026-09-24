@@ -1,0 +1,89 @@
+AUDITORIA PRÉ-TESTE — ERP 144 Laboratório 3D
+=============================================
+Feita em 3 rodadas: dois revisores independentes atacaram o sistema
+(um focado em dinheiro e estoque, outro em segurança, sincronização e
+desempenho), eu corrigi, e eles re-atacaram o código corrigido.
+Cada achado abaixo foi REPRODUZIDO rodando o sistema, não só lido.
+
+
+VEREDITO
+--------
+Liberado para o seu teste na pasta de teste. Não achamos mais nada que
+corrompa dinheiro ou estoque. Continuam pendentes pontos que dependem do
+servidor (Supabase) — listados no fim — e que não impedem o uso.
+
+
+CRÍTICOS — CORRIGIDOS
+---------------------
+1. Editar um pedido em produção APAGAVA o pedido e o dinheiro recebido.
+   Agora a edição só muda os campos do formulário.
+2. Dava pra vender o mesmo orçamento DUAS VEZES (venda e estoque em dobro),
+   por dois caminhos diferentes. Fechados os dois.
+3. Excluir um pedido com dinheiro recebido fazia o valor SUMIR do caixa
+   e deixava a venda órfã, sem jeito de cancelar. Agora é recusado.
+4. Um vendedor conseguia gravar um código malicioso numa observação de
+   recebimento que rodava no navegador do ADMINISTRADOR.
+5. Ids adulterados podiam executar código pelos botões (37 botões protegidos).
+6. Se outro computador sincronizava enquanto uma confirmação estava aberta,
+   a ação era perdida em silêncio (estorno, cancelamento, envio...).
+7. [Criado por uma correção minha e pego na 2ª rodada] Alguns vendedores
+   não conseguiam nem entrar no sistema. Testado em 40 combinações de
+   permissão: todos entram.
+
+
+ALTOS — CORRIGIDOS
+------------------
+- Venda feita depois das 21h caía no dia seguinte (fuso de Londres);
+  no dia 30 ia pro mês seguinte. Agora usa o horário do Brasil.
+- Cancelar faturamento podia devolver MAIS peças do que tinham saído.
+- "Já produzi" somava peças sem descontar o filamento do rolo.
+- Ações de dinheiro disparáveis por quem não tinha permissão
+  (finalizar, receber, estornar, cancelar). Agora conferem por dentro.
+- Vendedor sem "Ver custos" ainda via custo em Produtos e no Dashboard.
+- Um único registro antigo incompleto apagava telas inteiras.
+- Cada ação de dinheiro travava a tela por ~1 segundo com catálogo grande.
+  Agora só a tela aberta é redesenhada (337 ms → 128 ms).
+- Editar pedido para um total MENOR que o já pago deixava dinheiro
+  sobrando sem aparecer. Agora é recusado.
+
+
+MÉDIOS/BAIXOS — CORRIGIDOS
+--------------------------
+- Relatório (DRE): "efeito no caixa" diferente do Dashboard.
+- Orçamentos antigos (itens sem código) não baixavam estoque ao finalizar.
+- Dava pra receber mais que o valor do pedido (um zero a mais).
+- Pedido de marketplace só cancelava linha por linha. Agora cancela inteiro.
+- "1.500" digitado no preço virava R$ 1,50 (venda direta, orçamento,
+  marketplace, gastos). Agora é R$ 1.500.
+- Editar orçamento apagava CPF, endereço e WhatsApp quando o cadastro do
+  cliente estava incompleto.
+- Contagem de "pedidos" e ticket médio contavam linhas, não pedidos.
+- Conta sem nenhuma tela liberada caía na Calculadora (com custos).
+- Mais 6 ajustes menores (filamento, CRM, consignado, busca, datas).
+
+
+PENDENTE — DEPENDE DO SERVIDOR (Supabase), não do app
+-----------------------------------------------------
+1. As caixinhas de permissão só valem no navegador. O servidor conhece só
+   ADMIN e VENDEDOR. Quem tiver login consegue, tecnicamente, LER todos os
+   dados (inclusive custos) e alterar vendas/orçamentos pela API.
+   → Resolver com regras (RLS) no Supabase. Posso escrever o SQL.
+2. Hoje o servidor só aceita exclusão, gastos e Configurações do ADMIN,
+   mesmo com a caixinha marcada pro vendedor. A tela de Usuários avisa.
+3. A trilha de Atividade fica só no navegador de cada computador.
+4. Dois computadores editando o MESMO formulário ao mesmo tempo: o último
+   a salvar vence.
+Nenhum desses corrompe dinheiro no uso normal com a sua equipe atual.
+
+
+AINDA SUA DECISÃO
+-----------------
+- Margem com taxa de plataforma: "60%" hoje é sobre o custo antes da taxa
+  (60% + taxa de 20% dá margem efetiva de 48% sobre o preço final).
+  Mudar a regra mexe no preço de todo o catálogo — por isso não mudei.
+
+
+NÚMEROS DOS TESTES
+------------------
+Mais de 460 verificações automáticas passando, zero erro de JavaScript,
+em todas as telas, no computador e no celular.

@@ -1,0 +1,267 @@
+TESTE LOCAL — ERP 144 Laboratório 3D
+====================================
+
+PRA QUE SERVE
+Testar o sistema no seu computador SEM tocar na produção.
+Esta pasta não fala com o Supabase. Os dados ficam só no seu navegador.
+Pode cadastrar, vender, apagar, bagunçar à vontade.
+
+NÃO TEM LOGIN
+Abre já logado como administrador. É de propósito — não existe senha aqui.
+
+
+COMO USAR
+1. Copie o arquivo  html2pdf.bundle.min.js  da sua pasta V2 pra dentro
+   desta pasta de teste. (É só pros PDFs funcionarem.)
+2. Dê dois cliques no  index.html
+3. Já vem com produtos, filamentos, vendas, clientes e duas contas
+   de exemplo: Gabriel (admin) e Ana (vendedora).
+
+
+O QUE MUDOU NESTA VERSÃO
+-------------------------
+
+MENU FIXO
+Todos os itens sempre visíveis na lateral, sem sanfona. Um clique
+chega em qualquer tela.
+
+TELA DE VENDA REFEITA
+Busca de peça com sugestão (digite e aperte Enter), a peça escolhida
+vira uma linha com quantidade e preço, e um painel à direita mostra
+subtotal, desconto, taxas, quanto você recebe e o lucro estimado.
+
+CADASTROS EM JANELA
+Novo cliente, filamento, serviço, impressora, gasto e usuário abrem
+numa janela em cima da tela. Enter salva, Esc fecha.
+
+PERMISSÕES POR CAIXINHA
+Ao criar ou editar um vendedor você marca exatamente o que ele acessa:
+Painel, Calculadora, Orçamentos, Vendas, Consignados, Produtos,
+Filamentos, Serviços, Clientes, Financeiro, Relatórios, Configurações.
+E o que ele pode fazer: excluir registros, mover estoque entre locais,
+ver custos e margens. Administrador tem tudo e as caixas somem.
+Teste: a conta Ana só enxerga 6 telas e não pode excluir nada.
+
+CRM DE VERDADE
+A tela de Clientes agora tem indicadores no topo (ativos, a recuperar,
+follow-ups vencidos, valor histórico), e cada cliente tem uma FICHA com
+valor acumulado, última compra, etapa, histórico de relacionamento e as
+últimas compras. Quem está com retorno atrasado aparece marcado na lista.
+
+ATIVIDADE — QUEM FEZ O QUÊ
+Aba nova em Gestão. Registra toda venda, cadastro, lançamento e exclusão
+com data, hora, nome de quem fez e valor. Dá pra filtrar por usuário e
+período, buscar e baixar em CSV. O nome de quem fez também aparece
+direto no histórico de vendas, nos lançamentos do financeiro, na lista
+de produtos e nos contatos do CRM.
+
+
+O 4 — SEU ASSISTENTE NO CANTO
+Novidade desta versão. Ele fica numa bolinha no canto de baixo à direita,
+em qualquer tela. Não entrou aba nova no menu.
+
+O que ele faz: cruza os seus próprios números e só fala quando acha
+alguma coisa. São sete contas:
+  1. Material acabando   — quanto de cada filamento sai por dia nos
+                           últimos 30 dias e em quantos dias acaba
+  2. Dinheiro parado     — peça com estoque e sem vender há 90 dias,
+                           e quanto de custo está parado nela
+  3. Margem furada       — recalcula a peça com o preço de filamento de
+                           HOJE e avisa se ela caiu de margem ou virou prejuízo
+  4. Margem por canal    — compara Presencial, ML e Shopee já com as taxas
+                           descontadas e mostra onde você ganha menos
+  5. Cliente sumido      — de quanto em quanto tempo ele costumava comprar
+                           e há quanto tempo parou
+  6. Orçamento esfriando — passou da validade e o cliente não comprou
+  7. Consignado vencido  — passou do prazo, quantas peças ainda estão no
+                           ponto e quanto tem a receber
+
+Cada aviso mostra a conta que gerou ele, e traz um botão que leva direto
+pra tela certa (ou abre o WhatsApp do cliente).
+O número vermelho na bolinha é quantos avisos tem. Quando aparece algo
+urgente, ele dá um toque sozinho num balãozinho — clique no × e ele
+não repete o mesmo aviso.
+Quando está tudo em ordem, ele diz isso e a bolinha fica limpa.
+
+PEDIDO: PRAZO DE ENTREGA E RECEBIMENTO PARCELADO
+Pra aquele trabalho em que você cobra 50% de sinal e combina um prazo.
+
+COMO FUNCIONA
+Na lista de Orçamentos salvos, cada linha agora tem UM botão do lado e um
+de três pontinhos com o resto das opções. O que aparece depende da
+situação do orçamento — ele não te oferece a mesma coisa duas vezes.
+
+  Orçamento aberto  → Produzir | (menu) Colocar em produção, Vender agora
+  Pedido em produção→ Receber  | (menu) Ver/ajustar, Registrar recebimento,
+                                 Finalizar e registrar a venda
+  Quitado           → Finalizar
+  Vendido/entregue  → Imprimir | (menu) ver as vendas, reabrir
+
+AO COLOCAR EM PRODUÇÃO
+Você põe a data de entrega, o valor do sinal (sugere metade) e como
+recebeu. Se ainda não recebeu, escolhe "Ainda não recebi".
+
+O DINHEIRO
+Cada valor que entra vira uma linha de recebimento com a data em que
+caiu na conta. O sinal entra no caixa no dia do sinal; o saldo entra no
+dia da entrega. No Dashboard:
+  Resultado (caixa) = o que DE FATO entrou no período
+  A receber         = saldo dos pedidos ainda em aberto
+  Receita líquida   = o que foi faturado (vendas registradas)
+O mesmo dinheiro nunca é contado duas vezes: a venda gerada pelo pedido
+não entra no caixa, porque o dinheiro dela já entrou pelos recebimentos.
+
+PRA DAR BAIXA NO RESTANTE
+Botão "Receber" na linha, ou o menu → Registrar recebimento. Ele já vem
+com o saldo preenchido. Dá pra registrar quantas parcelas quiser e
+estornar uma lançada errado.
+
+PRA FECHAR
+Menu → "Finalizar e registrar a venda". Isso marca entregue, baixa o
+estoque das peças e registra a venda no histórico, já recebendo o saldo.
+
+O QUE O 4 AVISA
+  7 dias antes → aviso comum      3, 2, 1 dia e no dia → urgente
+  passou do prazo → "atrasado há X dias", no topo de tudo
+  pedido entregue e ainda não pago → urgente
+  pedido que começou sem nenhum sinal → aviso
+
+UM ORÇAMENTO FECHA UMA VEZ SÓ
+Antes dava pra apertar "Vender" no mesmo orçamento várias vezes, gerando
+venda duplicada e baixando o estoque de novo. Isso foi corrigido: depois
+de vendido ou entregue, ele não pode mais ser vendido nem produzido.
+A lista mostra a etiqueta "Vendido" e os fechados descem pro fim.
+
+FINANCEIRO VIROU O LUGAR DO DINHEIRO
+Tudo que mexe em dinheiro agora se decide numa tela só.
+
+  EXTRATO — uma linha por movimento, em ordem de data:
+    VENDA      entrada, venda direta          → Excluir venda
+    PEDIDO     entrada, sinal ou saldo        → Estornar
+    GASTO      saída, lançamento              → Excluir lançamento
+    FATURADO   a venda gerada por um pedido. Não soma no caixa, porque
+               o dinheiro dela já entrou pelos recebimentos. Fica só
+               pra você ver o que foi faturado.
+  Tem busca, filtro por tipo (só entradas, só saídas, só pedidos...) e
+  botão de baixar CSV.
+
+  INDICADORES no topo: Entrou · Saiu · Sobrou · A receber.
+
+  A RECEBER — quadro com todo pedido que ainda tem saldo, quanto já foi
+  pago, quanto falta, e um botão pra registrar o recebimento na hora.
+  Quem está entregue e devendo aparece marcado.
+
+ESTORNAR x CANCELAR — são coisas diferentes
+  ESTORNAR um recebimento  → tira o DINHEIRO do caixa. A venda continua
+                             no histórico e o saldo volta pra "a receber".
+                             Use quando lançou um pagamento errado.
+  CANCELAR FATURAMENTO     → apaga a VENDA do histórico, devolve as peças
+                             ao estoque e o pedido volta pra produção.
+                             Use quando a entrega não aconteceu.
+  Os dois ficam no extrato do Financeiro, cada um na sua linha.
+
+MARKETPLACES (aba nova, em Operação)
+Mercado Livre e Shopee, sem integração — você lança, o sistema organiza.
+
+  LANÇAR PEDIDO
+  Canal, nº do pedido da plataforma, peças, tarifa cobrada e frete.
+  Diz de onde sai: do Full (a plataforma envia) ou da Oficina (você envia).
+  Mostra na hora quanto você recebe e o lucro. Não deixa lançar o mesmo
+  nº de pedido duas vezes, nem vender mais do que tem naquele local.
+  A tarifa em R$ vira a taxa real da venda: a margem por canal no
+  Dashboard e nos Relatórios passa a ser a de verdade.
+
+  PARA DESPACHAR
+  Só os pedidos que saem da Oficina, com o prazo de postagem.
+  Separar → Embalado → Enviado (pede o rastreio). Postar hoje e atrasado
+  ficam marcados, e o 4 avisa.
+
+  ESTOQUE NOS FULL
+  Quanto tem em cada Full e pra quantos dias dá, pelo ritmo dos últimos
+  30 dias. Botão "Enviar pro Full" em cada peça. O 4 avisa quando um Full
+  está pra acabar.
+
+  CANCELOU OU DEVOLVEU?
+  Financeiro → extrato → Excluir venda. O estoque volta pro Full de onde
+  saiu, não pra Oficina.
+
+  PERMISSÃO
+  Caixinha nova "Marketplaces" em Usuários.
+
+
+A FICHA DO CLIENTE SABE QUEM ESTÁ DEVENDO
+Antes a ficha só olhava vendas registradas, então um pedido entregue e
+não pago não aparecia em lugar nenhum do cadastro. Agora:
+
+  - Indicador "Está devendo" na ficha, em vermelho quando já foi entregue
+  - Quadro "Pedidos" com nº, situação, total, pago e o que falta
+  - Botão Receber direto da ficha, sem ir até Orçamentos
+  - Na lista de clientes, quem deve leva uma etiqueta "deve R$ ..."
+  - Indicador "Devendo" no topo da tela de Clientes, somando todos
+  - Valor histórico passou a contar sinais e recebimentos, não só vendas
+  - Quem tem pedido em andamento deixa de ser "Lead"
+
+
+TUDO CONVERSA ENTRE SI
+Qualquer ação de dinheiro repinta todas as telas na hora: Vendas,
+Produtos, Orçamentos, Financeiro, Dashboard, Consignados, Clientes e o 4.
+Cancelou no Financeiro? A venda some do histórico da aba Vendas, o estoque
+volta em Produtos, o pedido volta pra produção em Orçamentos e o Dashboard
+recalcula. Não existe mais tela contando história diferente da outra.
+
+PERÍODO ÚNICO
+Dashboard e Financeiro usam o MESMO recorte de tempo. Trocar num lado
+troca no outro. Antes um abria em "Tudo" e o outro em "Mês atual", e os
+números pareciam não bater.
+
+
+O QUE SAIU DE ONDE
+  Aba Vendas   → não cancela mais venda (o botão × saiu). Vender continua
+                 lá, prático como era; cancelar é no Financeiro.
+  Janela do pedido → mostra os recebimentos, mas não estorna. Estornar
+                 é no Financeiro.
+  Registrar recebimento continua nos Orçamentos, no botão "Receber" —
+  e também no Financeiro, no quadro A receber. Os dois levam à mesma janela.
+
+  Vendedor sem permissão de excluir não vê nenhum desses botões.
+
+
+FILTRO POR SITUAÇÃO
+Só orçamentos abertos · Em produção · Atrasados · Entrega em 7 dias ·
+Com saldo a receber · Fechados.
+
+
+QUEM VÊ O 4
+Administrador vê sempre. Pro vendedor tem uma caixinha nova em
+Usuários → permissões: "Assistente do canto". E quem não tem permissão
+de ver custos não recebe os avisos que mostram custo ou margem —
+ele continua avisando do material e das cobranças, sem abrir seus números.
+
+
+O QUE CONFERIR
+- Vendas: buscar peça, mudar quantidade, ver o painel de recebimento
+- Clientes: botão Ficha, registrar um contato, marcar follow-up
+- Usuários: Novo usuário → mexer nas caixas de permissão
+- Atividade: filtrar por usuário e baixar o CSV
+- Orçamentos: montar e gerar o PDF
+- Estreitar a janela do navegador até virar coluna única (celular)
+- O 4 no canto: abrir, clicar num botão de aviso, usar o Recalcular
+- Orçamentos: botão Produzir, os três pontinhos, Receber e Finalizar
+  (já vem um pedido de exemplo com entrega daqui a 2 dias e metade paga)
+- Dashboard: confira se o caixa bate com o que você registrou de entrada
+- Financeiro: o extrato, os filtros, o CSV e o quadro A receber
+- Clientes: a ficha de quem está devendo e o botão Receber de lá
+- Marketplaces: lançar um pedido do Full e um da Oficina, despachar o da Oficina
+
+
+PRA RECOMEÇAR DO ZERO
+Clique em "Sair da conta" e confirme. Apaga os dados de teste e recarrega.
+
+
+DEPOIS DO TESTE
+Se estiver tudo certo, use a outra pasta (144lab-visual): substitua
+index.html e app.js na sua pasta V2 e suba os 7 arquivos pro Cloudflare.
+
+ATENÇÃO: NÃO suba os arquivos desta pasta de teste pro Cloudflare.
+O index.html daqui tem o teste.js no lugar do cloud.js e não conecta
+no Supabase.

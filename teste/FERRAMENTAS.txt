@@ -1,0 +1,155 @@
+ABA FERRAMENTAS — imagem vira peça 3D
+=====================================
+
+O QUE FAZ
+Pega uma imagem, um texto ou uma forma pronta e devolve o arquivo
+pronto pra imprimir: chaveiro, medalha, placa ou só o contorno.
+Baixa em SVG (pra abrir no Fusion, Inkscape, Illustrator) e em STL
+(pra jogar direto no Bambu Studio / Orca e fatiar).
+
+Roda tudo dentro do navegador. A imagem NÃO sobe pra lugar nenhum,
+não passa pelo Supabase e não ocupa espaço. Você gera, baixa e acabou
+— não fica nada salvo pra limpar depois.
+
+
+A TELA EM 2 PASSOS
+------------------
+1. O DESENHO   de onde vem e como ele lê
+2. A PEÇA      o que fazer com ele
+
+O que aparece de cara é só o que você mexe toda hora. O resto está em
+AJUSTES FINOS, no rodapé de cada quadro. Clica e abre.
+
+
+1. O DESENHO
+------------
+IMAGEM  arrasta o arquivo, clica pra escolher, ou cola com Ctrl+V.
+TEXTO   escreve o nome e escolhe a fonte. Vira chaveiro de nome.
+FORMA   círculo, quadrado, coração, estrela, escudo, hexágono, flor
+        e gota — pra quando você não tem imagem nenhuma.
+
+RECORTE (a barra)
+Ele descobre sozinho como separar o desenho do fundo e escreve na
+própria barra o que está fazendo:
+  "usando a transparência do PNG"     → PNG já recortado
+  "tirando o fundo de uma cor só"     → logo em fundo branco ou liso
+  "separando por claro e escuro"      → foto e imagem sem fundo liso
+A barra ajusta o quanto ele tira. Se comeu demais, diminui; se sobrou
+fundo, aumenta. Em Ajustes finos dá pra forçar o método na mão.
+
+O fundo de uma cor é tirado igual varinha mágica: só o fundo LIGADO na
+borda sai. Branco de dentro do desenho (letra, brilho) fica.
+
+DETALHE DO DESENHO — é o que muda tudo
+  CHAPADO    uma altura só. Bom pra logo e desenho de traço.
+  POR COR    separa nas cores da própria imagem, até 4, todas na mesma
+             altura. Cada cor vira um arquivo pra você imprimir com
+             troca de filamento ou AMS.
+  EM RELEVO  lê os TONS da imagem e vira degraus de altura, até 6.
+             O tom mais claro fica no nível mais alto. É assim que sai
+             medalha, brasão e troféu com o desenho em relevo. Dá pra
+             inverter (escuro mais alto) nos ajustes.
+
+
+2. A PEÇA
+---------
+CHAVEIRO      a base acompanha o contorno do desenho.
+MEDALHA       base redonda com o desenho no meio.
+PLACA         base retangular de canto arredondado.
+SÓ O CONTORNO sem base: recorta a silhueta e extruda. Serve pra
+              letreiro e pra peça vazada de uma cor só.
+
+TAMANHO é o maior lado em mm. ALTURA DA BASE é a espessura do fundo.
+ALTURA DO RELEVO é o quanto o desenho sobe. BORDA é a moldura em volta.
+
+FURO PRA ARGOLA já sai com parede em volta e nunca fica solto da peça,
+mesmo em formato torto. Escolhe o lado: em cima, esquerda, direita ou
+canto.
+
+ESPAÇO PRA TAG NFC abre um bolso redondo dentro da peça:
+  ABERTO POR BAIXO    imprime normal e cola a tag no final.
+  FECHADO POR DENTRO  a tag fica lacrada dentro. O sistema calcula e
+                      mostra em que altura Z pausar a impressão pra
+                      encaixar a tag antes de fechar.
+Ele põe o bolso no ponto mais "fundo" da peça, longe da borda e do
+furo da argola. Se a tag não couber, ele avisa e diz que tamanho de
+tag caberia ali.
+
+
+AS CORES
+--------
+Embaixo da prévia tem uma bolinha por peça. Clica e escolhe a cor.
+Serve pra ver como vai ficar antes de imprimir e pra mostrar pro
+cliente. Quando você separa por cor, elas já vêm com a cor real que
+ele achou na imagem.
+
+
+OS ARQUIVOS
+-----------
+3MF   é o botão principal, e é o que você quer na maioria das vezes.
+      Um arquivo só, com TODAS as partes já montadas no lugar, cada uma
+      já apontada pro seu filamento (1, 2, 3...). No Bambu Studio e no
+      Orca a cor entra sozinha — não precisa escolher parte por parte.
+      Acabou de importar 5 STL e alinhar na mão.
+SVG   sai com a medida REAL em mm — importa já no tamanho certo, sem
+      precisar escalar no olho. É pra editar em CAD, não pra fatiar.
+STL   continua disponível no link embaixo dos botões. Em várias partes
+      vem num zip, um arquivo por cor; desmarcando "um arquivo por cor"
+      sai um STL único, tudo grudado.
+
+MIOLO DA COR DO FUNDO
+Logo em fundo branco costuma ter branco DENTRO do desenho — o miolo do
+"o", o vão do "a". Isso é fundo aparecendo, não peça, então ele tira.
+Mas tem arte em que o branco é parte do desenho (letra branca dentro de
+um selo escuro). Quando ele tira algo grande, avisa embaixo da prévia
+com um "traga de volta": um clique e o branco volta a ser peça.
+
+SOBRE A MALHA
+O contorno é calculado com precisão de sub-pixel (campo de distância
+com sinal), não pixel a pixel. Por isso curva sai lisa de verdade e não
+facetada. Cada parte sai fechada, com volume positivo e sem aresta
+solta — o fatiador não pede reparo.
+
+
+O QUE FUNCIONA BEM E O QUE NÃO FUNCIONA
+---------------------------------------
+SAI ÓTIMO   logo, desenho de traço, símbolo, texto, PNG recortado e
+            arte de cor chapada (tipo a medalha 144LAB RUN).
+CUIDADO     foto de pessoa e paisagem. Em CHAPADO vira mancha preta —
+            não é defeito, é o que silhueta é. Use EM RELEVO, ou tire
+            o fundo antes.
+
+
+DETALHES QUE EVITAM DOR DE CABEÇA
+---------------------------------
+- A base sai sempre SÓLIDA. Buraquinho de letra ("o", "a", "e") não
+  vira furo na base — só buraco grande de propósito, tipo miolo de
+  anel, continua vazado.
+- O desenho nunca invade a argola.
+- DESENHO VAZADO transforma o desenho em furo passante, tipo estêncil.
+- O campo BICO (ajustes finos) não muda a peça: serve só pra avisar
+  quando o traço ficou fino demais pra sua impressora.
+- Trocar de Imagem / Texto / Forma não perde o que você já tinha em
+  cada um. Volta e está lá.
+
+AVISOS AMARELOS
+Quando aparece um aviso, ele é literal: relevo raso demais, base fina
+demais, parede da argola fraca, traço fino demais pro bico, peça que
+saiu em pedaços soltos, tag que não cabe. Todos são coisas que dão
+problema na hora de imprimir, não frescura.
+
+
+O VISOR
+Uma tela só, grande, com dois botões em cima: EM 3D e VISTA DE CIMA.
+No 3D a peça aparece em cima da mesa da impressora, com sombra — dá
+pra ver peça de cor clara sem ela sumir no fundo. Arraste pra girar,
+rodinha pra aproximar, e os botões De lado / De cima voltam pro
+ângulo padrão.
+
+
+TESTES
+Essa aba entrou com 305 verificações automáticas próprias — geometria,
+malha vedada, medidas em mm, argola, bolso da tag, cores, relevo,
+texto, formas, a sua medalha 144LAB RUN de verdade, e celular. As 360
+verificações que já existiam no sistema continuam passando. Nenhuma
+tela antiga foi tocada.
