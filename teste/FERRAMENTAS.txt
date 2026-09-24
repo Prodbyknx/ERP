@@ -88,9 +88,12 @@ OS ARQUIVOS
 -----------
 3MF   é o botão principal, e é o que você quer na maioria das vezes.
       Um arquivo só, com TODAS as partes já montadas no lugar, cada uma
-      já apontada pro seu filamento (1, 2, 3...). No Bambu Studio e no
-      Orca a cor entra sozinha — não precisa escolher parte por parte.
-      Acabou de importar 5 STL e alinhar na mão.
+      com a cor EXATA que aparece na tela (o mesmo código, ex. #E54C00).
+      No Bambu Studio aparece a janela de cores do arquivo: dê OK e ele
+      já cria os filamentos com essas cores, um por parte. Acabou de
+      importar 5 STL e alinhar na mão.
+      (Antes a cor não chegava no Bambu: o arquivo guardava a cor num
+      formato que o Bambu não lê. Explicação completa no fim deste texto.)
 SVG   sai com a medida REAL em mm — importa já no tamanho certo, sem
       precisar escalar no olho. É pra editar em CAD, não pra fatiar.
 STL   continua disponível no link embaixo dos botões. Em várias partes
@@ -146,6 +149,130 @@ pra ver peça de cor clara sem ela sumir no fundo. Arraste pra girar,
 rodinha pra aproximar, e os botões De lado / De cima voltam pro
 ângulo padrão.
 
+ABRIR NO ESTÚDIO 3D
+Botão embaixo dos downloads. Leva a peça gerada, com as cores, pro
+Estúdio 3D (abaixo) pra cortar, separar, pôr texto no verso etc.
+
+
+=====================================================================
+ESTÚDIO 3D — preparar qualquer STL / OBJ / 3MF pra imprimir
+=====================================================================
+No topo da aba Ferramentas tem dois botões: GERADOR (o de sempre) e
+ESTÚDIO 3D. O Estúdio abre qualquer arquivo 3D — inclusive modelo
+feito por IA — e faz o que antes precisava de Blender, Meshmixer ou
+Fusion: conferir, consertar, cortar com encaixe, separar detalhe, pôr
+texto/logo em relevo na frente e no verso e exportar pro Bambu.
+
+Nada sai do computador: roda tudo no navegador, igual ao Gerador.
+Tudo tem DESFAZER (Ctrl+Z) e REFAZER (Ctrl+Y). O arquivo original
+nunca é alterado.
+
+O VISOR DO ESTÚDIO
+  Girar     arrastar com o botão esquerdo
+  Mover     arrastar com o botão direito
+  Zoom      rodinha
+  F         enquadra a peça (botão Enquadrar)
+  G R S     mover, girar e escalar com as setas coloridas na peça
+  Ver:      cores/materiais · normais (avesso fica vermelho) · cascas
+            soltas · problemas da malha · espessura · partes detectadas
+  Vistas prontas: 3D, Frente, Topo e Lado.
+  Grade de 10 mm, eixos X (vermelho) Y (verde) Z (azul) e a mesa.
+
+OS 7 QUADROS (na ordem em que você costuma usar)
+
+1. ABRIR E CONFERIR
+   Abre STL, OBJ ou 3MF (arrastar o arquivo pra tela também funciona).
+   "Analisar malha" mostra o laudo:
+     Malha fechada: OK · Arestas abertas: 0 · Non-manifold: 0 ·
+     Faces invertidas: 0 · Degeneradas: 0 · Duplicadas: 0 ·
+     Auto-interseção: 0 · Cascas soltas · Espessura mínima ·
+     Volume · Dimensão total 63 × 41 × 4 mm
+   "Analisar e reparar" conserta sozinho: fecha buraco acompanhando a
+   curvatura, desvira face, separa vértice non-manifold, tira face
+   degenerada e duplicada, remove lixo solto minúsculo. Não suaviza
+   nem simplifica — o detalhe do modelo fica.
+
+2. POSIÇÃO, TAMANHO E COR
+   Medidas em mm digitadas (posição, rotação em graus, tamanho ou %),
+   com "Manter proporção". Colocar na mesa, Centralizar, Girar 90°,
+   Espelhar e Redefinir.
+   DEITAR NA MAIOR FACE PLANA: acha a maior face lisa e deita a peça
+   nela (bom pra imprimir sem suporte). Ou "Deitar na face que eu
+   clicar". A cor de cada peça é escolhida aqui e é a que vai pro 3MF.
+
+3. SELECIONAR REGIÃO (sem mexer em triângulo)
+   Região inteligente  clique: cresce até a dobra onde uma parte
+                       encontra a outra (ex.: clique na orelha).
+   Pincel              pinta arrastando; Adicionar/Apagar, tamanho em
+                       mm, "só faces viradas pra mim" não pinta o outro
+                       lado da peça.
+   Casca inteira       tudo que está ligado.
+   Mesma cor           a região da mesma cor/material.
+   Parte detectada     a parte sugerida pela detecção.
+   Botões: Expandir, Reduzir, Suavizar borda, Similar, Conectado,
+   Inverter, Limpar.
+   DETECTAR PARTES divide o modelo em Parte 01, 02… (cabeça, orelha,
+   olho…). Renomeie no ✎ da lista.
+   Na tela: VERDE = vai ser separado · CINZA = fica · AZUL = encaixe.
+
+4. SEPARAR PARA IMPRESSÃO
+   Selecione o detalhe (quadro 3) e clique em Pré-visualizar. As DUAS
+   peças saem fechadas, na mesma posição e escala, prontas pro fatiador.
+   Como fechar: Automático · Corte plano · Seguir a superfície.
+   Encaixe: pino no detalhe e furo na peça (cilíndrico, quadrado,
+   hexagonal), com folga. Nunca sai pino dos dois lados.
+   SEPARAR POR COR: corpo preto, olhos brancos, detalhe vermelho… cada
+   cor vira uma peça física pra imprimir SEM AMS e montar depois.
+   Região que era só pintada ganha a espessura que você escolher, e a
+   peça principal ganha o bolso onde ela encaixa.
+   SEPARAR CASCAS SOLTAS: cada ilha vira uma peça.
+
+5. CORTAR A PEÇA
+   Plano X, Y, Z ou livre, posição em mm ou arrastando. As duas metades
+   saem fechadas (manifold). Conector automático:
+     Pino cilíndrico · quadrado · retangular · hexagonal ·
+     Lingueta e ranhura · Rabo de andorinha (desliza) ·
+     Pino solto (furo nos dois lados, pino impresso à parte)
+   Diâmetro, profundidade, quantidade e FOLGA configuráveis. O resultado
+   diz as medidas finais, ex.: "Pino Ø 5,00 mm · Furo Ø 5,50 mm".
+
+6. TEXTO, LOGO E RELEVO — FRENTE E VERSO
+   Escolha a peça e o lado (FRENTE ou VERSO), escreva o texto ou abra um
+   PNG/JPG/SVG. Como:
+     Alto-relevo (mesma cor)
+     Alto-relevo colorido (peça separada, pra trocar filamento)
+     Baixo-relevo / gravação
+     Embutido colorido (rente, peça de outra cor encaixada)
+     Recorte vazado
+   Altura/profundidade, largura, mover X/Y, girar, cor e folga.
+   Aplique a frente, confirme, depois faça o verso.
+   Exemplo de chaveiro: frente = logo em alto-relevo; verso = telefone
+   gravado.
+
+7. EXPORTAR
+   3MF (Bambu Studio / Orca): todas as peças, no lugar, cada uma com a
+   sua cor exata. A tela mostra as cores que vão no arquivo.
+   STL: um arquivo por peça (zip) ou tudo junto.
+   Triângulo degenerado é limpo na gravação. Pra ter certeza de que
+   está tudo fechado, rode o "Analisar malha" (quadro 1) antes.
+
+"ORGANIZAR" (botão no topo do visor) põe as peças lado a lado na mesa.
+
+
+POR QUE A COR NÃO BATIA NO BAMBU (E COMO FICOU)
+-----------------------------------------------
+Conferido direto no código-fonte do Bambu Studio (versões 1.10 a 2.08):
+  - o Bambu só lê as configurações de filamento do 3MF quando o arquivo
+    foi salvo pelo PRÓPRIO Bambu. Arquivo de outro programa tem essas
+    configurações ignoradas;
+  - a cor no formato "basematerials" (o que o sistema usava) o Bambu
+    simplesmente não lê.
+Resultado: a peça chegava sem cor nenhuma, ou na cor do filamento 1.
+Agora o 3MF usa o formato de cor padrão do 3MF ("colorgroup"), que o
+Bambu lê. Ele mostra a janela de cores, você dá OK, e cada peça fica
+no filamento com a MESMA cor, código por código (#E54C00 = #E54C00).
+Não é aproximação: é o mesmo valor que está na tela.
+
 
 TESTES
 Essa aba entrou com 305 verificações automáticas próprias — geometria,
@@ -153,3 +280,28 @@ malha vedada, medidas em mm, argola, bolso da tag, cores, relevo,
 texto, formas, a sua medalha 144LAB RUN de verdade, e celular. As 360
 verificações que já existiam no sistema continuam passando. Nenhuma
 tela antiga foi tocada.
+
+O Estúdio 3D tem mais 42 testes automáticos e um roteiro de navegador
+de ponta a ponta. Os que você pediu, com o resultado:
+  Dimensão 60 × 40 × 4 mm      → sai 60 × 40 × 4 mm no 3MF e no STL  OK
+  Cor #E54C00                  → volta #E54C00, sem aproximação       OK
+  Corte                        → Parte A e B fechadas, volume igual  OK
+  Pino 5,00 mm folga 0,25      → furo 5,50 mm, peças imprimíveis     OK
+  Separar detalhe              → 2 peças fechadas, 0 buraco, 0 face
+                                 degenerada, escala/posição iguais   OK
+  Separar por cor              → preto/branco/vermelho = 3 grupos     OK
+  Exportar/reimportar/exportar → mesmo resultado                    OK
+  Relevo (5 modos, frente e verso) e os 7 conectores                OK
+Todo 3MF exportado passa no validador oficial do consórcio 3MF
+(lib3mf, modo rígido) e num simulador do importador do Bambu feito a
+partir do código-fonte dele: cada peça recebe a cor certa.
+As 16 telas do sistema foram abertas de novo depois da mudança, sem
+erro, e o PDF gera normalmente.
+
+O QUE AINDA NÃO FAZ
+  - Não abre STEP (não existe biblioteca confiável que rode no
+    navegador). Exporte STL ou 3MF do CAD.
+  - Relevo em superfície muito curva fica com o topo reto (plano).
+  - O teste com o Bambu foi feito pelo código-fonte dele e pelo
+    validador oficial do 3MF, não com o programa aberto. Confira na
+    primeira peça.

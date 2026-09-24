@@ -11,15 +11,47 @@ Abre já logado como administrador. É de propósito — não existe senha aqui.
 
 
 COMO USAR
-1. Copie o arquivo  html2pdf.bundle.min.js  da sua pasta V2 pra dentro
-   desta pasta de teste. (É só pros PDFs funcionarem.)
-2. Dê dois cliques no  index.html
-3. Já vem com produtos, filamentos, vendas, clientes e duas contas
+1. Dê dois cliques no  index.html
+   (o html2pdf.bundle.min.js já vem nesta pasta — não precisa copiar.)
+2. Já vem com produtos, filamentos, vendas, clientes e duas contas
    de exemplo: Gabriel (admin) e Ana (vendedora).
 
 
-O QUE MUDOU NESTA VERSÃO
--------------------------
+NOVIDADES DESTA VERSÃO
+-----------------------
+
+PDF VOLTOU A FUNCIONAR
+O aviso "o arquivo html2pdf.bundle.min.js não está na pasta do sistema"
+aparecia mesmo com o arquivo lá. Causa: o index.html do pacote de
+teste tinha perdido a linha que chama esse arquivo — então ele estava
+na pasta, mas a página nunca abria. Agora o index de teste é gerado a
+partir do de produção (não tem como ficar diferente) e, se mesmo assim
+a biblioteca não estiver carregada na hora de gerar, o sistema busca o
+arquivo sozinho e só avisa se ele realmente não existir.
+
+ESTÚDIO 3D (aba Ferramentas)
+Botão novo no topo da aba: GERADOR | ESTÚDIO 3D. Abre STL, OBJ e 3MF
+(inclusive modelo feito por IA) pra conferir, consertar, cortar com
+encaixe, separar detalhe (orelha, olho…), separar por cor pra imprimir
+sem AMS, pôr texto/logo na FRENTE e no VERSO e exportar pro Bambu.
+Manual completo no FERRAMENTAS.txt.
+
+COR NO BAMBU STUDIO
+O 3MF agora sai num formato de cor que o Bambu lê. Ao abrir, ele mostra
+a janela de cores: dê OK e cada peça fica com a MESMA cor da tela
+(#E54C00 continua #E54C00). Vale pro Gerador e pro Estúdio.
+
+O QUE TESTAR NESTA VERSÃO
+- Orçamentos: gerar o PDF
+- Ferramentas → Gerador: baixar o 3MF e abrir no Bambu (confira as cores)
+- Ferramentas → Gerador: "Abrir no Estúdio 3D"
+- Ferramentas → Estúdio 3D: abrir um STL seu, "Analisar e reparar",
+  cortar com pino, separar um detalhe, texto no verso, exportar 3MF
+- Desfazer / refazer (Ctrl+Z / Ctrl+Y) no Estúdio
+
+
+VERSÕES ANTERIORES
+-------------------
 
 MENU FIXO
 Todos os itens sempre visíveis na lateral, sem sanfona. Um clique
@@ -259,8 +291,11 @@ Clique em "Sair da conta" e confirme. Apaga os dados de teste e recarrega.
 
 
 DEPOIS DO TESTE
-Se estiver tudo certo, use a outra pasta (144lab-visual): substitua
-index.html e app.js na sua pasta V2 e suba os 7 arquivos pro Cloudflare.
+Se estiver tudo certo, use a outra pasta (SUBIR-NO-CLOUDFLARE) e suba
+os 8 arquivos dela pro Cloudflare. O arquivo NOVO é o estudio3d.js —
+sem ele o Estúdio 3D não abre (o resto do sistema funciona normal).
+Os arquivos config.js, cloud.js e supabase.min.js de lá são os seus,
+sem mudança.
 
 ATENÇÃO: NÃO suba os arquivos desta pasta de teste pro Cloudflare.
 O index.html daqui tem o teste.js no lugar do cloud.js e não conecta

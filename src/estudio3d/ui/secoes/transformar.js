@@ -22,6 +22,10 @@ export function montarTransformar(est) {
       <button class="btn" data-a="esp">Espelhar</button>
       <button class="btn" data-a="zerar" title="Volta rotação e escala pro original">Redefinir</button>
     </div>
+    <div class="e3d-botoes">
+      <button class="btn" data-a="deitar" title="Gira a peça pra maior face plana ficar na mesa (ex.: a face do corte)">Deitar na maior face plana</button>
+      <button class="btn" data-a="deitarClique" title="Clique numa face da peça: ela vai pra mesa">Deitar na face que eu clicar</button>
+    </div>
     <div style="margin-top:14px;border-top:1px solid var(--line-soft);padding-top:10px">
       <div class="e3d-titulo">Cor da peça</div>
       <p class="u" data-a="corAlvo">Escolha uma peça (clique nela).</p>
@@ -119,6 +123,71 @@ export function montarTransformar(est) {
     const dc = estado(o);
     est.cena.aplicar('Redefinir rotação e escala', () => { o.transform = M4.translacao(dc.pos[0], dc.pos[1], dc.pos[2]); est.cena.colocarNaMesa(o); });
   };
+
+  /* ---------------- deitar na face (melhor orientação pra imprimir) ---------------- */
+  // gira em volta do centro pra normal 'nMundo' apontar pra baixo (-Z) e encosta na mesa
+  function deitar(o, nMundo) {
+    const L = Math.hypot(nMundo[0], nMundo[1], nMundo[2]) || 1;
+    const n = [nMundo[0] / L, nMundo[1] / L, nMundo[2] / L];
+    const alvo = [0, 0, -1];
+    let eixo = [n[1] * alvo[2] - n[2] * alvo[1], n[2] * alvo[0] - n[0] * alvo[2], n[0] * alvo[1] - n[1] * alvo[0]];
+    const s = Math.hypot(eixo[0], eixo[1], eixo[2]), c = n[0] * alvo[0] + n[1] * alvo[1] + n[2] * alvo[2];
+    let R;
+    if (s < 1e-9) R = c > 0 ? M4.identidade() : M4.rotacaoEuler(180, 0, 0);
+    else {
+      eixo = eixo.map(v => v / s);
+      const [x, y, z] = eixo, t = 1 - c;
+      R = M4.identidade();
+      R[0] = t * x * x + c; R[4] = t * x * y - s * z; R[8] = t * x * z + s * y;
+      R[1] = t * x * y + s * z; R[5] = t * y * y + c; R[9] = t * y * z - s * x;
+      R[2] = t * x * z - s * y; R[6] = t * y * z + s * x; R[10] = t * z * z + c;
+    }
+    const cx = est.cena.caixaExata(o);
+    const ce = [(cx.min[0] + cx.max[0]) / 2, (cx.min[1] + cx.max[1]) / 2, (cx.min[2] + cx.max[2]) / 2];
+    const G = M4.multiplicar(M4.translacao(ce[0], ce[1], ce[2]), M4.multiplicar(R, M4.translacao(-ce[0], -ce[1], -ce[2])));
+    est.cena.aplicar('Deitar na face', () => { o.transform = M4.multiplicar(G, o.transform); est.cena.colocarNaMesa(o); });
+  }
+  // normal (no mundo) da maior região plana do objeto
+  function maiorFacePlana(o) {
+    const grupos = new Map();
+    const inv = M4.inverter(o.transform);
+    for (const p of o.partes) {
+      const m = p.malha, pos = m.pos, idx = m.idx;
+      for (let t = 0; t < idx.length / 3; t++) {
+        const a = idx[t * 3] * 3, b = idx[t * 3 + 1] * 3, c = idx[t * 3 + 2] * 3;
+        const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2];
+        const vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2];
+        let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        const L = Math.hypot(nx, ny, nz);
+        if (!L) continue;
+        nx /= L; ny /= L; nz /= L;
+        const d = nx * pos[a] + ny * pos[a + 1] + nz * pos[a + 2];
+        const ch = Math.round(nx * 200) + ',' + Math.round(ny * 200) + ',' + Math.round(nz * 200) + ',' + Math.round(d * 20);
+        const g = grupos.get(ch);
+        if (g) { g.area += L / 2; } else grupos.set(ch, { area: L / 2, n: [nx, ny, nz] });
+      }
+    }
+    let melhor = null;
+    for (const g of grupos.values()) if (!melhor || g.area > melhor.area) melhor = g;
+    if (!melhor) return null;
+    // normal do referencial da peça pro mundo: inversa transposta
+    const n = melhor.n;
+    return { n: [inv[0] * n[0] + inv[1] * n[1] + inv[2] * n[2], inv[4] * n[0] + inv[5] * n[1] + inv[6] * n[2], inv[8] * n[0] + inv[9] * n[1] + inv[10] * n[2]], area: melhor.area };
+  }
+  q('[data-a=deitar]').onclick = () => {
+    const o = est.objetoAtual(); if (!o) { avisar('Escolha um objeto.', 'warn'); return; }
+    const f = maiorFacePlana(o);
+    if (!f || f.area < 1) { avisar('Não achei face plana nessa peça.', 'warn'); return; }
+    deitar(o, f.n);
+    avisar('Deitado na face plana de ' + fmt(f.area, 0) + ' mm²');
+  };
+  q('[data-a=deitarClique]').onclick = () => { est.definirFerramenta('deitar'); avisar('Clique na face que deve ficar na mesa.'); };
+  est.on('clique', ({ hit }) => {
+    if (est.ferramenta !== 'deitar') return;
+    const o = est.cena.objeto(hit.objeto); if (!o) return;
+    deitar(o, [hit.normal.x, hit.normal.y, hit.normal.z]);
+    est.definirFerramenta('navegar');
+  });
 
   /* ---------------- cor ---------------- */
   function renderCor() {
