@@ -12489,6 +12489,15 @@ function ferNomePeca(nome, i) {
 
 function ferBaixarSTL() {
   if (!FER.peca || !FER.malhas) return;
+  var nomeE = ferNomeBase();
+  var separarE = ferLigado('fer_separar');
+  var pecasE = ferPecasParaEstudio();
+  // pelo motor novo: cada peça sai como sólido único (sem faces internas)
+  carregarEstudio().then(function (E) { return E.exportarSTLGerador(pecasE, nomeE, separarE && pecasE.length > 1); })
+    .catch(function (e) { console.warn('STL pelo caminho antigo:', e); ferBaixarSTLAntigo(); });
+}
+function ferBaixarSTLAntigo() {
+  if (!FER.peca || !FER.malhas) return;
   var nome = ferNomeBase();
   var idx = ferMalhasIndexadas();
   var pecas = idx.map(function (p) {
@@ -12541,17 +12550,78 @@ function ferRotuloPeca(p) {
   return (FER.detalhe === 'relevo' ? 'Nivel ' : 'Cor ') + p.nome.replace('cor', '');
 }
 
+/* ---------- Estúdio 3D (estudio3d.js, carregado só quando precisa) ---------- */
+var _estudioCarregando = null;
+function carregarEstudio() {
+  if (window.Estudio3D) return Promise.resolve(window.Estudio3D);
+  if (!_estudioCarregando) {
+    _estudioCarregando = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = 'estudio3d.js';
+      s.onload = function () { window.Estudio3D ? resolve(window.Estudio3D) : reject(new Error('estudio3d.js não iniciou')); };
+      s.onerror = function () { reject(new Error('O arquivo estudio3d.js não está na pasta do sistema.')); };
+      document.head.appendChild(s);
+    });
+    _estudioCarregando.catch(function () { _estudioCarregando = null; });
+  }
+  return _estudioCarregando;
+}
+
+// peças do gerador no formato do Estúdio: {nome, cor '#hex', malha {pos, idx}}
+function ferPecasParaEstudio() {
+  return ferMalhasIndexadas().map(function (p) {
+    var m = (FER.reparadas && FER.reparadas[p.nome]) ? FER.reparadas[p.nome] : p.malha;
+    return { nome: p.rotulo, cor: ferRGBParaHex(p.cor).toUpperCase(), malha: { pos: m.pos, idx: m.idx } };
+  });
+}
+
+// 3MF pelo motor novo: cor no formato que o Bambu Studio lê (m:colorgroup)
+// e cada peça como sólido único (o bolso da tag não deixa mais faces internas)
 function ferBaixar3MF() {
   if (!FER.peca || !FER.malhas) return;
-  var pecas = ferMalhasIndexadas();
+  var pecas = ferPecasParaEstudio();
   if (!pecas.length) return;
   var nome = ferNomeBase();
-  var arquivos = TREIMF.exportar(pecas.map(function (p) {
-    return { nome: p.rotulo, cor: p.cor, malha: FER.reparadas && FER.reparadas[p.nome] ? FER.reparadas[p.nome] : p.malha };
-  }), { nome: nome });
-  ferZipAsync(arquivos).then(function (zip) {
-    ferBaixar(zip.buffer.slice(zip.byteOffset, zip.byteOffset + zip.byteLength),
-              nome + '.3mf', 'model/3mf');
+  var bt = document.getElementById('fer_3mf');
+  if (bt) bt.disabled = true;
+  carregarEstudio()
+    .then(function (E) { return E.exportar3MFGerador(pecas, nome); })
+    .then(function () { toast('3MF gerado — no Bambu Studio confirme as cores e dê OK', 'ok'); })
+    .catch(function (e) { console.error(e); toast('Não consegui gerar o 3MF: ' + (e.message || e), 'warn'); })
+    .then(function () { if (bt) bt.disabled = false; });
+}
+
+function ferAbrirNoEstudio() {
+  if (!FER.peca || !FER.malhas) return;
+  var pecas = ferPecasParaEstudio();
+  var nome = FER.nomeArquivo || 'Chaveiro';
+  ferModoFerramentas('estudio').then(function (E) {
+    return E.abrirDoGerador(pecas, nome);
+  }).catch(function (e) { console.error(e); toast('Não consegui abrir no Estúdio: ' + (e.message || e), 'warn'); });
+}
+
+function ferModoFerramentas(modo) {
+  var ger = document.getElementById('ferr_gerador');
+  var est = document.getElementById('ferr_estudio');
+  var txt = document.getElementById('ferr_modo_texto');
+  ferMarcarSeg('ferr_modo_seg', modo);
+  if (modo !== 'estudio') {
+    if (ger) ger.style.display = '';
+    if (est) est.style.display = 'none';
+    if (txt) txt.textContent = 'Transforma imagem, texto ou forma em peça pronta pra imprimir: chaveiro, medalha, placa ou só o contorno. Baixa em 3MF (com as cores), SVG e STL. Nada fica salvo — é só gerar e baixar.';
+    return Promise.resolve(null);
+  }
+  if (ger) ger.style.display = 'none';
+  if (est) est.style.display = '';
+  if (txt) txt.textContent = 'Abra modelos STL, OBJ ou 3MF (inclusive gerados por IA), confira e repare a malha, separe detalhes em peças independentes, corte com encaixe, ponha texto na frente e no verso e exporte pro Bambu Studio com as cores certas. Nada fica salvo no sistema.';
+  if (est && !est.childNodes.length) est.innerHTML = '<div class="card"><p class="u">Carregando o Estúdio 3D…</p></div>';
+  return carregarEstudio().then(function (E) {
+    if (est && est.querySelector('.card') && !est.querySelector('.e3d')) est.innerHTML = '';
+    E.montar(est);
+    return E;
+  }).catch(function (e) {
+    if (est) est.innerHTML = '<div class="card"><div class="fer-erro" style="display:block">' + esc(e.message || String(e)) + ' Coloque o estudio3d.js junto com o app.js.</div></div>';
+    throw e;
   });
 }
 
@@ -12653,7 +12723,11 @@ function ferAtualizarCamposModelo() {
 }
 
 function renderFerramentas() {
-  if (FER.montado) { ferAtualizarCamposModelo(); ferPintarTudo(); return; }
+  if (FER.montado) {
+    ferAtualizarCamposModelo(); ferPintarTudo();
+    if (window.Estudio3D && window.Estudio3D.estudio) window.Estudio3D.estudio.visor.redimensionar();
+    return;
+  }
   FER.montado = true;
 
   // fontes disponíveis
@@ -12759,6 +12833,8 @@ function renderFerramentas() {
   if (fnt) fnt.onchange = ferDesenharTexto;
 
   var bs = document.getElementById('fer_svg'); if (bs) bs.onclick = ferBaixarSVG;
+  var bEst = document.getElementById('fer_estudio'); if (bEst) bEst.onclick = ferAbrirNoEstudio;
+  ferBindSeg('ferr_modo_seg', function (v) { ferModoFerramentas(v).catch(function () {}); });
   var bt = document.getElementById('fer_stl'); if (bt) bt.onclick = ferBaixarSTL;
   var b3 = document.getElementById('fer_3mf'); if (b3) b3.onclick = ferBaixar3MF;
 

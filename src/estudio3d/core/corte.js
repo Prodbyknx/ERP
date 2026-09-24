@@ -96,7 +96,7 @@ export function cortarPorPlano(partes, plano0, opc = {}) {
         extras.push({ nome: 'Pino solto ' + (k + 1), ...ctx.parte(s.man, 'Pino solto ' + (k + 1), corPino), soltoComprimento: s.comprimento });
       });
     }
-    const saida = lado => lado.filter(x => !x.man.isEmpty()).map(x => ctx.parte(x.man, partes[x.i].nome, partes[x.i].cor));
+    const saida = lado => lado.filter(x => !x.man.isEmpty()).map(x => ctx.parte(x.man, partes[x.i].nome, partes[x.i].cor, true));
     const pa = saida(A), pb = saida(B);
     const volA = A.reduce((s, x) => s + (x.man.isEmpty() ? 0 : x.man.volume()), 0);
     const volB = B.reduce((s, x) => s + (x.man.isEmpty() ? 0 : x.man.volume()), 0);

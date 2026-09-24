@@ -398,16 +398,30 @@ export function separarDetalhe(parte, mascara, opc = {}) {
       atual.man = ctx.solido(atual, parte.nome);
     }
     if (!detalhes.length) throw new Error('Nada foi separado.');
+    // o que o corte plano levou de fora da seleção (faixa perto da borda)
+    // assume a cor do detalhe: a peça separada é impressa num filamento só
+    const raizSel = new Set();
+    for (let f = 0; f < nt0; f++) if (sel[f]) raizSel.add(f);
+    for (const dt of detalhes) {
+      if (!dt.paleta || !dt.malha.cor || !dt.origem) continue;
+      const k = dt.paleta.indexOf(corDetalhe);
+      if (k < 0) continue;
+      const cor = Uint16Array.from(dt.malha.cor);
+      for (let t = 0; t < cor.length; t++) { const o = dt.origem[t]; if (o >= 0 && !raizSel.has(o)) cor[t] = k; }
+      let uma = true; for (let t = 1; t < cor.length && uma; t++) if (cor[t] !== cor[0]) uma = false;
+      if (uma) { dt.malha = { pos: dt.malha.pos, idx: dt.malha.idx }; dt.cor = dt.paleta[cor[0]]; dt.paleta = null; }
+      else dt.malha = { pos: dt.malha.pos, idx: dt.malha.idx, cor };
+    }
     // várias regiões viram UM detalhe (ex.: os dois olhos juntos)
     let detalhe = detalhes[0];
     if (detalhes.length > 1) {
       const u = ctx.guardar(Manifold.union(detalhes.map(d => ctx.solido(d, 'detalhe'))));
       detalhe = ctx.parte(u, opc.nomeDetalhe || 'Detalhe', corDetalhe);
     }
-    const principal = { nome: parte.nome, malha: atual.malha, cor: atual.cor, paleta: atual.paleta };
-    delete detalhe.origem;
+    // origem < 0 = face nova (corte, tampa, encaixe) -> a prévia pinta de azul
+    const principal = { nome: parte.nome, malha: atual.malha, cor: atual.cor, paleta: atual.paleta, origem: atual.origem };
     return {
-      principal, detalhe: { nome: opc.nomeDetalhe || 'Detalhe', malha: detalhe.malha, cor: detalhe.cor, paleta: detalhe.paleta },
+      principal, detalhe: { nome: opc.nomeDetalhe || 'Detalhe', malha: detalhe.malha, cor: detalhe.cor, paleta: detalhe.paleta, origem: detalhe.origem || null },
       metodos, plano, relatorio, avisos,
       volumes: { principal: volume(principal.malha), detalhe: volume(detalhe.malha) },
       regioes: reg.n
@@ -440,7 +454,8 @@ export function separarPorCor(parte, opc = {}) {
     // região que é uma casca inteira sai sem espessura extra
     const r = separarDetalhe(atual, mask, { modo: 'auto', profundidade: esp, folga: opc.folga || 0, nomeDetalhe: opc.nomes && opc.nomes[hex] || hex, limparSelecao: false });
     avisos.push(...r.avisos.map(a => hex + ': ' + a));
-    pecas.push(Object.assign(r.detalhe, { cor: hex }));
+    // peça de cor = um filamento só
+    pecas.push({ nome: r.detalhe.nome, malha: { pos: r.detalhe.malha.pos, idx: r.detalhe.malha.idx }, cor: hex, paleta: null });
     atual = r.principal;
   }
   pecas.unshift(Object.assign(atual, { cor: parte.paleta[base] }));

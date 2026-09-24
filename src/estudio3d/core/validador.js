@@ -285,3 +285,38 @@ function pontoDentroOutros(m, bvh, rotulo, c, x, y, z) {
   }
   return votos >= 2;
 }
+
+// Faces dos componentes que estão inteiros dentro de outro (sobra de modelo de IA)
+export function facesInternas(m) {
+  const top = arestas(m);
+  const comp = componentes(m, top);
+  const mask = new Uint8Array(m.idx.length / 3);
+  if (comp.n < 2) return { mask, removidos: 0 };
+  const listas = listasPorRotulo(comp.rotulo, comp.n);
+  const bvh = construirBVH(m);
+  let removidos = 0;
+  for (let c = 0; c < comp.n; c++) {
+    const t = listas.lista[listas.inicio[c]];
+    const a = m.idx[t * 3] * 3, b = m.idx[t * 3 + 1] * 3, cc = m.idx[t * 3 + 2] * 3;
+    const x = (m.pos[a] + m.pos[b] + m.pos[cc]) / 3, y = (m.pos[a + 1] + m.pos[b + 1] + m.pos[cc + 1]) / 3, z = (m.pos[a + 2] + m.pos[b + 2] + m.pos[cc + 2]) / 3;
+    if (pontoDentroOutros(m, bvh, comp.rotulo, c, x, y, z)) {
+      for (let i = listas.inicio[c]; i < listas.inicio[c + 1]; i++) mask[listas.lista[i]] = 1;
+      removidos++;
+    }
+  }
+  return { mask, removidos };
+}
+
+// Faces que tocam aresta aberta ou non-manifold (pro modo "problemas")
+export function facesProblematicas(m) {
+  const top = arestas(m);
+  const mask = new Uint8Array(m.idx.length / 3);
+  for (let e = 0; e < top.nE; e++) {
+    const n = top.inicio[e + 1] - top.inicio[e];
+    let ruim = n !== 2;
+    if (!ruim) { const h0 = top.ordem[top.inicio[e]], h1 = top.ordem[top.inicio[e] + 1]; ruim = m.idx[h0] === m.idx[h1]; }
+    if (ruim) for (let i = top.inicio[e]; i < top.inicio[e + 1]; i++) mask[(top.ordem[i] / 3) | 0] = n === 1 ? 1 : n > 2 ? 2 : 3;
+  }
+  return mask;
+}
+

@@ -2078,11 +2078,17 @@
     <div class="pagehead">
       <div>
         <h2>Ferramentas</h2>
-        <p>Transforma imagem, texto ou forma em peça pronta pra imprimir: chaveiro, medalha, placa ou só o contorno. Baixa em SVG (pra editar) e em STL (pra fatiar). Nada fica salvo — é só gerar e baixar.</p>
+        <p id="ferr_modo_texto">Transforma imagem, texto ou forma em peça pronta pra imprimir: chaveiro, medalha, placa ou só o contorno. Baixa em 3MF (com as cores), SVG e STL. Nada fica salvo — é só gerar e baixar.</p>
       </div>
     </div>
 
-    <div class="grid2 fer-grid">
+    <div class="seg ferr-modos" id="ferr_modo_seg" style="margin-bottom:14px">
+      <button type="button" data-v="gerador" class="active">Gerar chaveiro / medalha / placa</button>
+      <button type="button" data-v="estudio">Estúdio 3D — abrir, reparar, separar, cortar, exportar</button>
+    </div>
+    <div id="ferr_estudio" style="display:none"></div>
+
+    <div class="grid2 fer-grid" id="ferr_gerador">
 
       <!-- ESQUERDA: o que entra e como sai -->
       <div>
@@ -2296,6 +2302,9 @@
             <div class="fer-botoes">
               <button type="button" id="fer_svg" class="btn ghost">Baixar SVG</button>
               <button type="button" id="fer_3mf" class="btn primary">Baixar 3MF <span>com as cores</span></button>
+            </div>
+            <div class="fer-botoes" style="margin-top:8px">
+              <button type="button" id="fer_estudio" class="btn">Abrir no Estúdio 3D <span class="u">texto no verso, cortar, separar…</span></button>
             </div>
             <p class="u fer-outro">O 3MF abre no Bambu Studio e no Orca já montado, cada parte com a sua cor.
               Precisa de STL? <button type="button" id="fer_stl" class="fer-link">baixar em STL</button>
