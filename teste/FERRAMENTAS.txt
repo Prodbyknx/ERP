@@ -167,96 +167,88 @@ Nada sai do computador: roda tudo no navegador, igual ao Gerador.
 Tudo tem DESFAZER (Ctrl+Z) e REFAZER (Ctrl+Y). O arquivo original
 nunca é alterado.
 
-O VISOR DO ESTÚDIO
-  Girar     arrastar com o botão esquerdo
-  Mover     arrastar com o botão direito
-  Zoom      rodinha
-  F         enquadra a peça (botão Enquadrar)
-  G R S     mover, girar e escalar com as setas coloridas na peça
-  Ver:      cores/materiais · normais (avesso fica vermelho) · cascas
-            soltas · problemas da malha · espessura · partes detectadas
-  Vistas prontas: 3D, Frente, Topo e Lado.
-  Grade de 10 mm, eixos X (vermelho) Y (verde) Z (azul) e a mesa.
+COMO A TELA É ORGANIZADA
+  Em cima    Abrir, Desfazer, Refazer · Escolher / Mover / Girar /
+             Escalar · Organizar mesa · Tela cheia · estado do motor
+  Esquerda   o trilho de tarefas (abaixo)
+  Meio       o 3D. No canto: lista de Objetos, bolinha "Pronto pra
+             imprimir", vistas (3D, Frente, Topo, Lado), o que mostrar
+             na peça (cores, avesso, defeitos, espessura, partes),
+             Arame e Facetado
+  Direita    o painel da tarefa escolhida
 
-OS 7 QUADROS (na ordem em que você costuma usar)
+  Girar: arrastar · Mover a vista: botão direito · Zoom: rodinha
+  F enquadra · G R S mover/girar/escalar · Ctrl+Z / Ctrl+Y · Esc volta
 
-1. ABRIR E CONFERIR
-   Abre STL, OBJ ou 3MF (arrastar o arquivo pra tela também funciona).
-   "Analisar malha" mostra o laudo:
-     Malha fechada: OK · Arestas abertas: 0 · Non-manifold: 0 ·
-     Faces invertidas: 0 · Degeneradas: 0 · Duplicadas: 0 ·
-     Auto-interseção: 0 · Cascas soltas · Espessura mínima ·
-     Volume · Dimensão total 63 × 41 × 4 mm
-   "Analisar e reparar" conserta sozinho: fecha buraco acompanhando a
-   curvatura, desvira face, separa vértice non-manifold, tira face
-   degenerada e duplicada, remove lixo solto minúsculo. Não suaviza
-   nem simplifica — o detalhe do modelo fica.
+AS TAREFAS (trilho da esquerda)
 
-2. POSIÇÃO, TAMANHO E COR
-   Medidas em mm digitadas (posição, rotação em graus, tamanho ou %),
-   com "Manter proporção". Colocar na mesa, Centralizar, Girar 90°,
-   Espelhar e Redefinir.
-   DEITAR NA MAIOR FACE PLANA: acha a maior face lisa e deita a peça
-   nela (bom pra imprimir sem suporte). Ou "Deitar na face que eu
-   clicar". A cor de cada peça é escolhida aqui e é a que vai pro 3MF.
+INÍCIO — "O que você quer fazer?"
+   Sugestões pro modelo aberto, na ordem do que é mais urgente, cada uma
+   com o botão que resolve: defeito na malha → Consertar; maior que a
+   mesa → Cortar; flutuando → Pôr na mesa; pintado com várias cores →
+   Separar por cor; partes finas → Ver onde. Tudo certo → Exportar 3MF.
+   Embaixo, atalhos: Consertar o arquivo, Cortar em duas partes, Separar
+   um detalhe, Separar por cor, Nome ou logo, Deitar pra imprimir, Mudar
+   o tamanho, Mandar pro Bambu.
 
-3. SELECIONAR REGIÃO (sem mexer em triângulo)
-   Região inteligente  clique: cresce até a dobra onde uma parte
-                       encontra a outra (ex.: clique na orelha).
-   Pincel              pinta arrastando; Adicionar/Apagar, tamanho em
-                       mm, "só faces viradas pra mim" não pinta o outro
-                       lado da peça.
-   Casca inteira       tudo que está ligado.
-   Mesma cor           a região da mesma cor/material.
-   Parte detectada     a parte sugerida pela detecção.
-   Botões: Expandir, Reduzir, Suavizar borda, Similar, Conectado,
-   Inverter, Limpar.
-   DETECTAR PARTES divide o modelo em Parte 01, 02… (cabeça, orelha,
-   olho…). Renomeie no ✎ da lista.
-   Na tela: VERDE = vai ser separado · CINZA = fica · AZUL = encaixe.
+CONSERTAR — conferir e consertar
+   Laudo: Malha fechada · Arestas abertas · Non-manifold · Faces
+   invertidas · Degeneradas · Repetidas · Auto-interseção · Cascas soltas
+   · Espessura mínima · Volume · Peso · Dimensão total.
+   "Consertar automaticamente" fecha buraco acompanhando a curva, desvira
+   face, separa vértice non-manifold, tira face degenerada e repetida e
+   lixo solto. Não suaviza nem simplifica — o detalhe fica.
+   Ao abrir um arquivo ele já confere sozinho, em segundo plano.
 
-4. SEPARAR PARA IMPRESSÃO
-   Selecione o detalhe (quadro 3) e clique em Pré-visualizar. As DUAS
-   peças saem fechadas, na mesma posição e escala, prontas pro fatiador.
-   Como fechar: Automático · Corte plano · Seguir a superfície.
-   Encaixe: pino no detalhe e furo na peça (cilíndrico, quadrado,
-   hexagonal), com folga. Nunca sai pino dos dois lados.
-   SEPARAR POR COR: corpo preto, olhos brancos, detalhe vermelho… cada
-   cor vira uma peça física pra imprimir SEM AMS e montar depois.
-   Região que era só pintada ganha a espessura que você escolher, e a
-   peça principal ganha o bolso onde ela encaixa.
+AJUSTAR — posição, tamanho e cor
+   Medidas em mm (posição, rotação, tamanho ou %), Manter proporção,
+   Colocar na mesa, Centralizar, Girar 90°, Espelhar, Redefinir.
+   DEITAR NA MAIOR FACE PLANA (ou "na face que eu clicar"). A cor de cada
+   peça é escolhida aqui e é a que vai pro 3MF.
+
+SELECIONAR — uma parte do modelo
+   Região inteligente (clique: para na dobra), Pincel (tamanho em mm,
+   "só faces viradas pra mim"), Casca inteira, Mesma cor, Parte
+   detectada. Expandir, Reduzir, Suavizar borda, Similar, Conectado,
+   Inverter, Limpar. DETECTAR PARTES divide em Parte 01, 02… (renomeie).
+   Na tela: VERDE = vai sair · CINZA = fica · AZUL = encaixe.
+
+SEPARAR — para imprimir
+   Clique no detalhe no 3D e veja a prévia: as DUAS peças saem fechadas,
+   na mesma posição e escala. Encaixe com pino no detalhe e furo na peça
+   (cilíndrico, quadrado, hexagonal), com folga.
+   SEPARAR POR COR: cada cor vira peça física (imprimir sem AMS). Região
+   só pintada ganha a espessura escolhida e a peça ganha o bolso.
    SEPARAR CASCAS SOLTAS: cada ilha vira uma peça.
 
-5. CORTAR A PEÇA
-   Plano X, Y, Z ou livre, posição em mm ou arrastando. As duas metades
-   saem fechadas (manifold). Conector automático:
-     Pino cilíndrico · quadrado · retangular · hexagonal ·
-     Lingueta e ranhura · Rabo de andorinha (desliza) ·
-     Pino solto (furo nos dois lados, pino impresso à parte)
-   Diâmetro, profundidade, quantidade e FOLGA configuráveis. O resultado
-   diz as medidas finais, ex.: "Pino Ø 5,00 mm · Furo Ø 5,50 mm".
+CORTAR — em partes
+   Horizontal, Vertical X, Vertical Y ou Inclinado. Pra posicionar:
+     - clique na peça (o corte vai até o ponto)
+     - arraste a seta azul no 3D
+     - setas ↑ ↓ do teclado (1 mm; com Shift 0,1 mm), −1 / No meio / +1
+     - ou digite a posição em mm
+   A linha laranja mostra por onde a faca passa e a medida da seção.
+   Conectores: Pino cilíndrico · quadrado · retangular · hexagonal ·
+   Lingueta e ranhura · Rabo de andorinha · Pino solto. Diâmetro,
+   profundidade, quantidade e FOLGA configuráveis; o resultado diz as
+   medidas finais, ex.: "Pino Ø 5,00 mm · Furo Ø 5,50 mm".
 
-6. TEXTO, LOGO E RELEVO — FRENTE E VERSO
-   Escolha a peça e o lado (FRENTE ou VERSO), escreva o texto ou abra um
-   PNG/JPG/SVG. Como:
-     Alto-relevo (mesma cor)
-     Alto-relevo colorido (peça separada, pra trocar filamento)
-     Baixo-relevo / gravação
-     Embutido colorido (rente, peça de outra cor encaixada)
-     Recorte vazado
-   Altura/profundidade, largura, mover X/Y, girar, cor e folga.
-   Aplique a frente, confirme, depois faça o verso.
-   Exemplo de chaveiro: frente = logo em alto-relevo; verso = telefone
-   gravado.
+TEXTO — nome, logo e relevo, FRENTE E VERSO
+   Alto-relevo, alto-relevo colorido (peça separada), baixo-relevo /
+   gravação, embutido colorido (rente), recorte vazado. Altura,
+   profundidade, largura, mover, girar, cor e folga. Faça a frente,
+   confirme, depois o verso (ex.: logo na frente, telefone atrás).
 
-7. EXPORTAR
-   3MF (Bambu Studio / Orca): todas as peças, no lugar, cada uma com a
-   sua cor exata. A tela mostra as cores que vão no arquivo.
-   STL: um arquivo por peça (zip) ou tudo junto.
-   Triângulo degenerado é limpo na gravação. Pra ter certeza de que
-   está tudo fechado, rode o "Analisar malha" (quadro 1) antes.
+EXPORTAR — mandar pro fatiador
+   3MF (Bambu Studio / Orca): todas as peças no lugar, cada uma com a
+   sua cor exata (a tela mostra quais cores vão). STL: um por peça (zip)
+   ou tudo junto. Triângulo degenerado é limpo na gravação.
 
-"ORGANIZAR" (botão no topo do visor) põe as peças lado a lado na mesa.
+VELOCIDADE
+   Os cálculos rodam em dois motores em segundo plano (um pro que você
+   pede, outro pra conferência e pra pontaria do clique): a tela não
+   trava. Cálculo demorado mostra o tempo e tem botão Cancelar. Prévia,
+   confirmar, desfazer e refazer reaproveitam o que já foi calculado.
 
 
 POR QUE A COR NÃO BATIA NO BAMBU (E COMO FICOU)
@@ -281,7 +273,7 @@ texto, formas, a sua medalha 144LAB RUN de verdade, e celular. As 360
 verificações que já existiam no sistema continuam passando. Nenhuma
 tela antiga foi tocada.
 
-O Estúdio 3D tem mais 42 testes automáticos e um roteiro de navegador
+O Estúdio 3D tem mais 46 testes automáticos e um roteiro de navegador
 de ponta a ponta. Os que você pediu, com o resultado:
   Dimensão 60 × 40 × 4 mm      → sai 60 × 40 × 4 mm no 3MF e no STL  OK
   Cor #E54C00                  → volta #E54C00, sem aproximação       OK
@@ -296,7 +288,9 @@ Todo 3MF exportado passa no validador oficial do consórcio 3MF
 (lib3mf, modo rígido) e num simulador do importador do Bambu feito a
 partir do código-fonte dele: cada peça recebe a cor certa.
 As 16 telas do sistema foram abertas de novo depois da mudança, sem
-erro, e o PDF gera normalmente.
+erro, e o PDF gera normalmente. No modo escuro, uma varredura automática
+confere que nenhum texto das 16 telas fica ilegível, e que o PDF sai
+branco com texto escuro.
 
 O QUE AINDA NÃO FAZ
   - Não abre STEP (não existe biblioteca confiável que rode no

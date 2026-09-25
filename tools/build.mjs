@@ -16,7 +16,9 @@ const comum = {
 };
 
 export async function construir({ minificar = true, entrada = 'src/estudio3d/ui/entrada.js', saida = 'site/estudio3d.js' } = {}) {
-  const w = await esbuild.build({ ...comum, entryPoints: [r('src/estudio3d/motor/worker.js')], minify: minificar });
+  // no worker só entra o núcleo do three (a BVH de pontaria usa Box3/Vector3...),
+  // sem o renderizador
+  const w = await esbuild.build({ ...comum, entryPoints: [r('src/estudio3d/motor/worker.js')], minify: minificar, alias: { three: r('node_modules/three/build/three.core.js') } });
   const codigoWorker = w.outputFiles[0].text;
   const wasm = fs.readFileSync(r('node_modules/manifold-3d/manifold.wasm')).toString('base64');
   const versao = JSON.parse(fs.readFileSync(r('node_modules/manifold-3d/package.json'), 'utf8')).version;

@@ -6,6 +6,42 @@ import { caixa, juntarCaixas } from '../core/malha.js';
 import { normalizarHex, COR_PADRAO, PALETA_PECAS } from '../core/cores.js';
 
 let seq = 1;
+
+// A malha é imutável: o que se calcula dela uma vez vale pra sempre.
+const cacheUsados = new WeakMap();     // malha -> Float64Array só com os vértices usados
+const cacheCaixa = new WeakMap();      // malha -> caixa local
+const cacheExata = new WeakMap();      // malha -> Map(transform -> caixa no mundo)
+function verticesUsados(m) {
+  let u = cacheUsados.get(m);
+  if (u) return u;
+  const pos = m.pos, idx = m.idx, nv = pos.length / 3;
+  const marca = new Uint8Array(nv);
+  let n = 0;
+  for (let i = 0; i < idx.length; i++) if (!marca[idx[i]]) { marca[idx[i]] = 1; n++; }
+  u = new Float64Array(n * 3);
+  for (let v = 0, k = 0; v < nv; v++) if (marca[v]) { u[k++] = pos[v * 3]; u[k++] = pos[v * 3 + 1]; u[k++] = pos[v * 3 + 2]; }
+  cacheUsados.set(m, u);
+  return u;
+}
+function caixaLocal(m) { let c = cacheCaixa.get(m); if (!c) { c = caixa(m); cacheCaixa.set(m, c); } return c; }
+function caixaExataParte(m, t) {
+  let mapa = cacheExata.get(m);
+  if (!mapa) { mapa = new Map(); cacheExata.set(m, mapa); }
+  const chave = Array.prototype.join.call(t, ',');
+  let c = mapa.get(chave);
+  if (c !== undefined) return c;
+  const u = verticesUsados(m);
+  let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+  for (let i = 0; i < u.length; i += 3) {
+    const x = u[i], y = u[i + 1], z = u[i + 2];
+    const X = t[0] * x + t[4] * y + t[8] * z + t[12], Y = t[1] * x + t[5] * y + t[9] * z + t[13], Z = t[2] * x + t[6] * y + t[10] * z + t[14];
+    if (X < x0) x0 = X; if (X > x1) x1 = X; if (Y < y0) y0 = Y; if (Y > y1) y1 = Y; if (Z < z0) z0 = Z; if (Z > z1) z1 = Z;
+  }
+  c = isFinite(x0) ? [x0, y0, z0, x1, y1, z1] : null;
+  if (mapa.size > 6) mapa.delete(mapa.keys().next().value);
+  mapa.set(chave, c);
+  return c;
+}
 export const novoId = p => (p || 'x') + (seq++) + '_' + Math.random().toString(36).slice(2, 6);
 
 export function novaParte(p) {
@@ -100,7 +136,7 @@ export class Cena {
     let cx = null;
     for (const p of o.partes) {
       if (!p.malha || !p.malha.idx.length) continue;
-      const c = caixa(p.malha);
+      const c = caixaLocal(p.malha);
       for (let i = 0; i < 8; i++) {
         const q = M4.aplicarPonto(o.transform, i & 1 ? c.max[0] : c.min[0], i & 2 ? c.max[1] : c.min[1], i & 4 ? c.max[2] : c.min[2]);
         cx = juntarCaixas(cx, { min: q, max: q, tam: [0, 0, 0] });
@@ -108,20 +144,16 @@ export class Cena {
     }
     return cx;
   }
-  // caixa exata (vértices transformados) — pra "colocar na mesa" sem erro de rotação
+  // caixa exata (vértices transformados) — pra "colocar na mesa" sem erro de
+  // rotação. Guardada por malha + posição: clicar/selecionar não recalcula.
   caixaExata(o) {
     let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
-    const t = o.transform;
     for (const p of o.partes) {
-      const pos = p.malha.pos, idx = p.malha.idx;
-      const usado = new Uint8Array(pos.length / 3);
-      for (let i = 0; i < idx.length; i++) usado[idx[i]] = 1;
-      for (let v = 0; v < usado.length; v++) {
-        if (!usado[v]) continue;
-        const x = pos[v * 3], y = pos[v * 3 + 1], z = pos[v * 3 + 2];
-        const X = t[0] * x + t[4] * y + t[8] * z + t[12], Y = t[1] * x + t[5] * y + t[9] * z + t[13], Z = t[2] * x + t[6] * y + t[10] * z + t[14];
-        if (X < x0) x0 = X; if (X > x1) x1 = X; if (Y < y0) y0 = Y; if (Y > y1) y1 = Y; if (Z < z0) z0 = Z; if (Z > z1) z1 = Z;
-      }
+      if (!p.malha || !p.malha.idx.length) continue;
+      const c = caixaExataParte(p.malha, o.transform);
+      if (!c) continue;
+      if (c[0] < x0) x0 = c[0]; if (c[1] < y0) y0 = c[1]; if (c[2] < z0) z0 = c[2];
+      if (c[3] > x1) x1 = c[3]; if (c[4] > y1) y1 = c[4]; if (c[5] > z1) z1 = c[5];
     }
     if (!isFinite(x0)) return null;
     return { min: [x0, y0, z0], max: [x1, y1, z1], tam: [x1 - x0, y1 - y0, z1 - z0] };

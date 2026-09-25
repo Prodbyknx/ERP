@@ -11,8 +11,9 @@ const LEGENDA = [['#0e9f2e', 'peça que sai'], ['#6b7075', 'o que fica'], ['#065
 export function montarSeparar(est) {
   const d = el('details', { 'data-sec': 'sep' });
   d.innerHTML = `<summary><span class="n">4</span>Separar para impressão</summary><div class="e3d-sec">
-    <p class="u">1) Selecione o detalhe (quadro 3). 2) Ajuste abaixo. 3) Pré-visualize e confirme. As duas peças saem fechadas, prontas pro fatiador. O original volta com Desfazer.</p>
-    <div class="field"><label>Nome da peça separada</label><input type="text" data-a="nome" placeholder="Ex.: Orelha esquerda"></div>
+    <p class="u"><b>1.</b> Clique no detalhe no 3D (a seleção para na dobra). <b>2.</b> Ajuste abaixo. <b>3.</b> Veja a prévia e confirme. As duas peças saem fechadas, prontas pro fatiador. O original volta com Desfazer.</p>
+    <div class="e3d-nota" data-a="status">Nenhum detalhe selecionado — clique nele no 3D.</div>
+    <div class="field" style="margin-top:12px"><label>Nome da peça separada</label><input type="text" data-a="nome" placeholder="Ex.: Orelha esquerda"></div>
     <div class="field"><label>Como fechar</label>
       <div class="seg" data-a="modo"><button type="button" data-v="auto" class="active">Automático</button><button type="button" data-v="plano">Corte plano</button><button type="button" data-v="superficie">Seguir a superfície</button></div>
       <p class="u" style="margin:0">Automático: corte plano na base do detalhe (face lisa pra colar e imprimir); se o plano pegaria outra parte, segue a superfície.</p></div>
@@ -53,6 +54,10 @@ export function montarSeparar(est) {
   };
   ['con', 'cd', 'cf'].forEach(k => q(k).addEventListener('input', atualizarCon));
   atualizarCon();
+  est.on('faces', ({ parte, n }) => {
+    q('status').className = 'e3d-nota' + (n ? ' ok' : '');
+    q('status').innerHTML = n ? '<b>' + n.toLocaleString('pt-BR') + ' faces</b> selecionadas em ' + parte.nome + '. Ajuste abaixo e veja a prévia.' : 'Nenhum detalhe selecionado — clique nele no 3D.';
+  });
   est.on('nome-sugerido', n => { if (!q('nome').value || q('nome').dataset.auto) { q('nome').value = n; q('nome').dataset.auto = '1'; } });
   q('nome').addEventListener('input', () => { delete q('nome').dataset.auto; });
 
@@ -61,9 +66,9 @@ export function montarSeparar(est) {
 
   async function separar() {
     const o = est.objetoAtual(), p = est.parteAtual();
-    if (!o || !p) { avisar('Clique na peça e selecione o detalhe (quadro 3).', 'warn'); return; }
+    if (!o || !p) { avisar('Clique no detalhe da peça no 3D pra selecionar.', 'warn'); return; }
     const mask = est.visor.selecao(p.id);
-    if (!mask) { avisar('Selecione a região do detalhe primeiro (quadro 3).', 'warn'); return; }
+    if (!mask) { avisar('Clique no detalhe no 3D primeiro (ou use Selecionar pra pincel).', 'warn'); return; }
     const nome = q('nome').value.trim() || 'Detalhe';
     const con = q('con').value;
     const opc = {
@@ -85,7 +90,7 @@ export function montarSeparar(est) {
     if (r.metodos.includes('casca')) notas.push('A seleção já era uma peça solta');
     notas.push(...r.avisos);
     if (r.relatorio.length) notas.push('Encaixe: pino ' + r.relatorio[0].pino + ', furo ' + r.relatorio[0].furo + ', ' + fmt(r.relatorio[0].profundidade, 1) + ' mm');
-    q('res').innerHTML = '<div class="e3d-nota ok">Prévia pronta: confira e confirme no alto da área 3D.<br>Peça separada: ' + fmt(r.volumes.detalhe / 1000, 2) + ' cm³ · fica: ' + fmt(r.volumes.principal / 1000, 2) + ' cm³</div>';
+    q('res').innerHTML = '<div class="e3d-nota ok">Prévia pronta: confira e confirme em cima do 3D.<br>Peça separada: ' + fmt(r.volumes.detalhe / 1000, 2) + ' cm³ · fica: ' + fmt(r.volumes.principal / 1000, 2) + ' cm³</div>';
     est.mostrarPrevia({
       titulo: 'Separar "' + nome + '"',
       legenda: LEGENDA,

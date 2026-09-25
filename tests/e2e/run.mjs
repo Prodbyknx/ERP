@@ -102,6 +102,50 @@ async function main() {
     if (!src.startsWith('blob:')) throw new Error('PDF não gerou');
     await pg.evaluate(() => document.getElementById('modal-pdf-view').classList.remove('active'));
   });
+  await passo(pg, 'modo escuro: liga, lembra ao recarregar e o PDF continua branco', async () => {
+    await pg.evaluate(() => window.alternarTema());
+    await pg.reload(); await pg.waitForTimeout(1200);
+    if (await pg.evaluate(() => document.documentElement.dataset.tema) !== 'escuro') throw new Error('tema não foi lembrado');
+    const fundo = await pg.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    if (fundo !== 'rgb(14, 16, 19)') throw new Error('fundo não escureceu: ' + fundo);
+    const lum = await pg.evaluate(async () => {
+      await new Promise((ok, falha) => carregarPDF(ok, falha));
+      const el = document.createElement('div');
+      el.innerHTML = '<div style="padding:30px;width:600px;font-size:22px"><b>Orçamento</b><p>texto sem cor definida</p><table><tr><th>Peça</th><td>R$ 10,00</td></tr></table></div>';
+      const cv = await html2pdf().set({ html2canvas: { scale: 1 } }).from(el).toCanvas().get('canvas');
+      const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+      let soma = 0, min = 255;
+      for (let i = 0; i < d.length; i += 4) { const l = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]; soma += l; if (l < min) min = l; }
+      return { media: soma / (d.length / 4), min };
+    });
+    if (lum.media < 235 || lum.min > 90) throw new Error('PDF no modo escuro não está branco com texto escuro: ' + JSON.stringify(lum));
+  });
+  await passo(pg, 'modo escuro: nenhum texto ilegível nas ' + abas.length + ' telas', async () => {
+    const ruins = [];
+    for (const t of abas) {
+      await pg.evaluate(id => showTab(id), t); await pg.waitForTimeout(150);
+      const r = await pg.evaluate(() => {
+        const rgb = c => { const m = c.match(/[\d.]+/g); return m ? m.map(Number) : [0, 0, 0, 0]; };
+        const L = ([r, g, b]) => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+        const fundoDe = el => { for (let e = el; e; e = e.parentElement) { const c = rgb(getComputedStyle(e).backgroundColor); if (c.length < 4 || c[3] > 0.5) return c; } return [14, 16, 19]; };
+        const out = [];
+        for (const el of document.querySelectorAll('.view.active *')) {
+          if (!el.offsetParent || !el.childNodes.length) continue;
+          const txt = [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent.trim()).join('');
+          if (!txt) continue;
+          const cs = getComputedStyle(el);
+          if (cs.visibility === 'hidden' || +cs.opacity < 0.5) continue;
+          const a = L(rgb(cs.color)), b = L(fundoDe(el));
+          const razao = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+          if (razao < 2.2) out.push(txt.slice(0, 30) + ' (' + razao.toFixed(1) + ')');
+        }
+        return out;
+      });
+      if (r.length) ruins.push(t + ': ' + r.slice(0, 4).join(' | '));
+    }
+    await pg.evaluate(() => window.alternarTema());
+    if (ruins.length) throw new Error(ruins.join(' ;; '));
+  });
   await pg.context().close();
 
   console.log('2) Estúdio por http:// (Web Worker)');
@@ -120,6 +164,20 @@ async function main() {
   await passo(pg, 'abrir STL e analisar', async () => {
     await pg.setInputFiles('.e3d input[type=file][multiple]', modelos + '/personagem.stl');
     await pg.waitForFunction(() => /Malha fechada\s*OK/.test(document.querySelector('[data-sec=diag] .e3d-diag')?.textContent || ''), null, { timeout: 60000 });
+  });
+  await passo(pg, 'Início: sugestões e tarefa "Cortar" + corte pelo teclado', async () => {
+    await pg.click('.e3d-rail [data-ferr=inicio]');
+    await pg.waitForSelector('.e3d-sug', { timeout: 20000 });
+    await pg.click('.e3d-tarefa[data-tarefa=corte]');
+    if (!(await pg.evaluate(() => document.querySelector('[data-sec=corte]').open))) throw new Error('tarefa não abriu o corte');
+    const antes = await pg.evaluate(() => document.querySelector('[data-sec=corte] [data-a="posmm"]').value);
+    await pg.evaluate(() => document.activeElement && document.activeElement.blur());
+    await pg.keyboard.press('ArrowUp');
+    const depois = await pg.evaluate(() => document.querySelector('[data-sec=corte] [data-a="posmm"]').value);
+    const n = v => parseFloat(v.replace(/\./g, '').replace(',', '.'));
+    if (Math.abs(n(depois) - n(antes) - 1) > 0.01) throw new Error('seta ↑ não subiu 1 mm: ' + antes + ' -> ' + depois);
+    await pg.waitForFunction(() => /Seção do corte/.test(document.querySelector('[data-sec=corte] [data-a="secao"]').textContent), null, { timeout: 5000 });
+    await pg.click('.e3d-rail [data-ferr=inicio]');
   });
   await passo(pg, 'clique inteligente seleciona a orelha', async () => {
     await abrirSecao(pg, 'sel');

@@ -6,7 +6,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast, INTERSECTED, NOT_INTERSECTED } from 'three-mesh-bvh';
+import { MeshBVH } from 'three-mesh-bvh';
 import { hexParaLinear, srgbParaLinear } from '../core/cores.js';
+import { prepararRender, segmentosDaSecao } from '../core/render.js';
+import { cacheRender } from './cacheRender.js';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -30,7 +33,7 @@ export class Visor {
     this.previa = null;
     this.eventos = new Map();
 
-    const r = this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: false });
+    const r = this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: false, alpha: true, powerPreference: 'high-performance' });
     r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.NoToneMapping;
@@ -40,7 +43,9 @@ export class Visor {
     container.appendChild(r.domElement);
 
     const s = this.scene = new THREE.Scene();
-    s.background = new THREE.Color('#eceef1');
+    s.background = null;           // fundo em gradiente vem do CSS (segue o tema)
+    r.setClearColor(0x000000, 0);
+    this.escuro = document.documentElement.dataset.tema === 'escuro';
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.1, 20000);
     this.camera.up.set(0, 0, 1);
     this.camera.position.set(128 + 180, 128 - 260, 220);
@@ -75,7 +80,7 @@ export class Visor {
       if (e.value) this.emitir('gizmo-inicio');
       else this.emitir('gizmo-fim', this.gizmo.object);
     });
-    g.addEventListener('objectChange', () => { this.atualizarCaixaSel(); this.emitir('gizmo-mudou', this.gizmo.object); this.pedirRender(); });
+    g.addEventListener('objectChange', () => { this.caixaAoArrastar(); this.emitir('gizmo-mudou', this.gizmo.object); this.pedirRender(); });
     g.addEventListener('change', () => this.pedirRender());
     this.gizmoHelper = g.getHelper();
     s.add(this.gizmoHelper);
@@ -126,7 +131,8 @@ export class Visor {
     if (this.mesa) { this.scene.remove(this.mesa); this.mesa.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
     const { x: W, y: H } = this.cena.mesa;
     const m = this.mesa = new THREE.Group();
-    const placa = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ color: '#dcd9d4', side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+    const T = this.escuro ? { placa: '#2a2e35', grade: '#3b414b', borda: '#5d6571' } : { placa: '#dedbd6', grade: '#c6c1ba', borda: '#8b857d' };
+    const placa = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ color: T.placa, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
     placa.position.set(W / 2, H / 2, -0.02);
     placa.userData.mesa = true;
     this.placa = placa;
@@ -135,10 +141,10 @@ export class Visor {
     for (let x = 0; x <= W + 1e-6; x += 10) pts.push(x, 0, 0, x, H, 0);
     for (let y = 0; y <= H + 1e-6; y += 10) pts.push(0, y, 0, W, y, 0);
     const gg = new THREE.BufferGeometry(); gg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-    const grade = new THREE.LineSegments(gg, new THREE.LineBasicMaterial({ color: '#c3beb7' }));
+    const grade = new THREE.LineSegments(gg, new THREE.LineBasicMaterial({ color: T.grade }));
     grade.position.z = 0.01;
     m.add(grade);
-    const borda = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(W, H)), new THREE.LineBasicMaterial({ color: '#8b857d' }));
+    const borda = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(W, H)), new THREE.LineBasicMaterial({ color: T.borda }));
     borda.position.set(W / 2, H / 2, 0.02);
     m.add(borda);
     // eixos XYZ no canto da mesa
@@ -148,60 +154,60 @@ export class Visor {
     this.pedirRender();
   }
 
+  definirTema(escuro) {
+    if (!!escuro === !!this.escuro) return;
+    this.escuro = !!escuro;
+    this.montarMesa();
+  }
+
   /* ------------------------------------------------ geometria das peças */
 
-  construirGeometria(malha) {
-    const p = malha.pos, idx = malha.idx, nt = idx.length / 3, nv = p.length / 3;
-    const pos = new Float32Array(nt * 9), nor = new Float32Array(nt * 9);
-    // normal da face (com área) e faces de cada vértice
-    const fa = new Float32Array(nt * 3), fn = new Float32Array(nt * 3);
-    const cont = new Uint32Array(nv + 1);
-    for (let t = 0; t < nt; t++) {
-      const a = idx[t * 3] * 3, b = idx[t * 3 + 1] * 3, c = idx[t * 3 + 2] * 3;
-      const ux = p[b] - p[a], uy = p[b + 1] - p[a + 1], uz = p[b + 2] - p[a + 2];
-      const vx = p[c] - p[a], vy = p[c + 1] - p[a + 1], vz = p[c + 2] - p[a + 2];
-      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-      fa[t * 3] = nx; fa[t * 3 + 1] = ny; fa[t * 3 + 2] = nz;
-      const L = Math.hypot(nx, ny, nz) || 1;
-      fn[t * 3] = nx / L; fn[t * 3 + 1] = ny / L; fn[t * 3 + 2] = nz / L;
-      cont[idx[t * 3] + 1]++; cont[idx[t * 3 + 1] + 1]++; cont[idx[t * 3 + 2] + 1]++;
-    }
-    for (let v = 0; v < nv; v++) cont[v + 1] += cont[v];
-    const cur = cont.slice(0, nv), lista = new Uint32Array(nt * 3);
-    for (let t = 0; t < nt; t++) for (let k = 0; k < 3; k++) lista[cur[idx[t * 3 + k]]++] = t;
-    // suave com ângulo de quebra: cada canto mistura só as faces vizinhas
-    // parecidas com ELA (face plana fica plana, dobra de 40°+ fica marcada)
-    const suave = this.sombreado === 'suave', lim = Math.cos(40 * Math.PI / 180);
-    for (let t = 0; t < nt; t++) {
-      const fx = fn[t * 3], fy = fn[t * 3 + 1], fz = fn[t * 3 + 2];
-      for (let k = 0; k < 3; k++) {
-        const v = idx[t * 3 + k], o = t * 9 + k * 3;
-        pos[o] = p[v * 3]; pos[o + 1] = p[v * 3 + 1]; pos[o + 2] = p[v * 3 + 2];
-        let nx = fx, ny = fy, nz = fz;
-        if (suave) {
-          let sx = 0, sy = 0, sz = 0;
-          for (let q = cont[v]; q < cont[v + 1]; q++) {
-            const f = lista[q];
-            if (fn[f * 3] * fx + fn[f * 3 + 1] * fy + fn[f * 3 + 2] * fz >= lim) { sx += fa[f * 3]; sy += fa[f * 3 + 1]; sz += fa[f * 3 + 2]; }
-          }
-          const L = Math.hypot(sx, sy, sz);
-          if (L > 0) { nx = sx / L; ny = sy / L; nz = sz / L; }
-        }
-        nor[o] = nx; nor[o + 1] = ny; nor[o + 2] = nz;
-      }
-    }
+  // dados de exibição: do cache (vieram prontos do worker) ou calculados aqui
+  dadosRender(malha) {
+    if (this.sombreado !== 'suave') return prepararRender(malha, { suave: false });
+    let e = cacheRender.obter(malha);
+    if (!e) e = cacheRender.guardar(malha, prepararRender(malha));
+    return e.prep;
+  }
+
+  // opc.pontaria: a peça vai receber clique/pincel -> encaixa (ou pede) a BVH
+  construirGeometria(malha, opc = {}) {
+    const prep = this.dadosRender(malha);
+    const nt = malha.idx.length / 3;
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    g.setAttribute('position', new THREE.BufferAttribute(prep.pos, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(prep.nor, 3));
     g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(nt * 9), 3));
     const ind = nt * 3 > 65535 ? new Uint32Array(nt * 3) : new Uint16Array(nt * 3);
-    for (let i = 0; i < nt * 3; i++) ind[i] = i;
+    for (let i = 0; i < ind.length; i++) ind[i] = i;
     g.setIndex(new THREE.BufferAttribute(ind, 1));
     g.computeBoundingBox(); g.computeBoundingSphere();
-    g.computeBoundsTree();
-    g.userData.normaisFace = fn;
+    g.userData.normaisFace = prep.fn;
+    g.userData.malha = malha;
+    if (opc.pontaria !== false) this.encaixarBVH(g, malha);
     return g;
   }
+
+  // BVH pronta no cache -> encaixa na hora; senão pede pro worker auxiliar.
+  // Enquanto não chega, o clique funciona sem ela (um pouco mais lento) e o
+  // pincel monta uma na hora se precisar.
+  encaixarBVH(g, malha) {
+    if (g.boundsTree) return;
+    const e = cacheRender.obter(malha);
+    if (e && e.bvh) { g.boundsTree = MeshBVH.deserialize(e.bvh, g, { setIndex: true }); return; }
+    this.encomendarBVH(malha);
+  }
+  encomendarBVH(malha) {
+    const e = cacheRender.obter(malha);
+    if (!e || e.bvh || e.pedidoBVH || !this.pedirBVH) return;
+    e.pedidoBVH = true;
+    this.pedirBVH(malha).then(d => {
+      if (!d) { e.pedidoBVH = false; return; }
+      e.bvh = d;
+      for (const it of this.itens.values()) if (it.malha === malha && !it.geom.boundsTree) it.geom.boundsTree = MeshBVH.deserialize(d, it.geom, { setIndex: true });
+    }, () => { e.pedidoBVH = false; });
+  }
+  garantirBVH(g) { if (!g.boundsTree) g.computeBoundsTree(); return g.boundsTree; }
 
   coresBase(parte) {
     const m = parte.malha, nt = m.idx.length / 3;
@@ -229,13 +235,21 @@ export class Visor {
     grupo.add(arame);
     const item = { mesh, costas, arame, geom, malha: parte.malha, chaveCor: '', base: null, parte };
     this.itens.set(parte.id, item);
+    // peça nova de um objeto que está sendo cortado entra já recortada
+    if (this.corte && this.corte.objId === obj.id) {
+      mat.clippingPlanes = [this.clipA];
+      const b = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ color: '#7fa6ff', roughness: 0.8, clippingPlanes: [this.clipB] }));
+      b.raycast = () => {};
+      grupo.add(b);
+      item.metadeB = b;
+    }
     return item;
   }
 
   descartarItem(id) {
     const it = this.itens.get(id);
     if (!it) return;
-    for (const m of [it.mesh, it.costas, it.arame]) { if (m.parent) m.parent.remove(m); m.material.dispose(); }
+    for (const m of [it.mesh, it.costas, it.arame, it.metadeB]) { if (!m) continue; if (m.parent) m.parent.remove(m); m.material.dispose(); }
     if (it.geom.disposeBoundsTree) it.geom.disposeBoundsTree();
     it.geom.dispose();
     this.itens.delete(id);
@@ -368,8 +382,20 @@ export class Visor {
     const o = this.cena.objetoSel();
     const g = o ? this.grupos.get(o.id) : null;
     if (!g || this.previa) { this.caixaSel.visible = false; return; }
-    this.caixaSel.box.setFromObject(g, true);
+    const c = this.cena.caixaExata(o);
+    if (!c) { this.caixaSel.visible = false; return; }
+    this.caixaSel.box.min.set(c.min[0], c.min[1], c.min[2]);
+    this.caixaSel.box.max.set(c.max[0], c.max[1], c.max[2]);
     this.caixaSel.visible = true;
+  }
+  caixaAoArrastar() {
+    const g = this.gizmo.object;
+    const o = g && this.cena.objeto(g.userData.objeto);
+    if (!o) return;
+    const c = this.cena.caixaExata({ ...o, transform: this.matrizDoGrupo(g) });
+    if (!c) return;
+    this.caixaSel.box.min.set(c.min[0], c.min[1], c.min[2]);
+    this.caixaSel.box.max.set(c.max[0], c.max[1], c.max[2]);
   }
   matrizDoGrupo(g) { g.updateMatrix(); return Float64Array.from(g.matrix.elements); }
 
@@ -415,7 +441,7 @@ export class Visor {
     const fn = it.geom.userData.normaisFace;
     const olho = this.camera.position.clone().applyMatrix4(inv);
     const out = [];
-    it.geom.boundsTree.shapecast({
+    this.garantirBVH(it.geom).shapecast({
       intersectsBounds: box => box.intersectsSphere(esfera) ? INTERSECTED : NOT_INTERSECTED,
       intersectsTriangle: (tri, i) => {
         if (!tri.intersectsSphere(esfera)) return false;
@@ -436,10 +462,11 @@ export class Visor {
   limparAjudas(tipo) {
     for (const o of [...this.raizAjuda.children]) {
       if (tipo && o.userData.tipo !== tipo) continue;
+      if (o === this.corte?.raiz) continue;
       this.raizAjuda.remove(o);
       o.traverse(x => { if (x.geometry) x.geometry.dispose(); if (x.material) x.material.dispose(); });
     }
-    if (!tipo || tipo === 'corte') this.definirRecorte(null);
+    if (!tipo || tipo === 'corte') this.esconderCorte();
     this.pedirRender();
   }
 
@@ -458,52 +485,178 @@ export class Visor {
     this.pedirRender();
   }
 
-  // plano de corte + as duas metades pintadas (sem calcular nada)
-  mostrarPlanoCorte(objId, plano, tamanho) {
-    this.limparAjudas('corte');
-    const n = new THREE.Vector3(...plano.n).normalize();
-    const centro = n.clone().multiplyScalar(plano.d);
-    const g = this.grupos.get(objId);
-    if (g) {
-      const bb = new THREE.Box3().setFromObject(g, true);
-      const c = bb.getCenter(new THREE.Vector3());
-      // projeta o centro da peça no plano
-      centro.copy(c).addScaledVector(n, plano.d - n.dot(c));
-    }
-    const q = new THREE.Mesh(new THREE.PlaneGeometry(tamanho, tamanho), new THREE.MeshBasicMaterial({ color: '#1f6feb', transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }));
-    q.position.copy(centro);
-    q.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
-    q.userData.tipo = 'corte';
-    const borda = new THREE.LineSegments(new THREE.EdgesGeometry(q.geometry), new THREE.LineBasicMaterial({ color: '#1f6feb' }));
-    q.add(borda);
-    q.raycast = () => {};
-    this.raizAjuda.add(q);
-    this.definirRecorte({ objId, plano });
+  /* ------------------------------------------------ plano de corte
+     Montado uma vez; mover o corte só muda números (posição do plano e do
+     recorte) — nada é recriado, nada é recompilado. Arrastar fica liso. */
+
+  montarCorte() {
+    if (this.corte) return this.corte;
+    const raiz = new THREE.Group(); raiz.userData.tipo = 'corte-fixo';
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: '#1f6feb', transparent: true, opacity: 0.14, side: THREE.DoubleSide, depthWrite: false }));
+    const borda = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1)), new THREE.LineBasicMaterial({ color: '#1f6feb', transparent: true, opacity: 0.8 }));
+    quad.add(borda);
+    quad.raycast = () => {};
+    // seta pra arrastar (sempre visível, por cima da peça)
+    const alca = new THREE.Group();
+    const matAlca = new THREE.MeshBasicMaterial({ color: '#1f6feb', depthTest: false, transparent: true });
+    const haste = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.7, 12), matAlca);
+    haste.rotation.x = Math.PI / 2; haste.position.z = 0;
+    const ponta1 = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.24, 20), matAlca);
+    ponta1.rotation.x = Math.PI / 2; ponta1.position.z = 0.42;
+    const ponta2 = ponta1.clone(); ponta2.rotation.x = -Math.PI / 2; ponta2.position.z = -0.42;
+    const bolinha = new THREE.Mesh(new THREE.SphereGeometry(0.11, 20, 12), new THREE.MeshBasicMaterial({ color: '#ffffff', depthTest: false }));
+    // área de pegar maior que o desenho (fácil de acertar)
+    const pega = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1.3, 8), new THREE.MeshBasicMaterial({ visible: false }));
+    pega.rotation.x = Math.PI / 2;
+    alca.add(haste, ponta1, ponta2, bolinha, pega);
+    alca.traverse(x => { x.renderOrder = 20; });
+    const secao = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: '#ffb000', depthTest: false, transparent: true }));
+    secao.renderOrder = 19; secao.frustumCulled = false; secao.raycast = () => {};
+    raiz.add(quad, alca, secao);
+    raiz.visible = false;
+    this.raizAjuda.add(raiz);
+    this.clipA = new THREE.Plane(); this.clipB = new THREE.Plane();
+    this.corte = { raiz, quad, alca, pega, secao, matAlca, objId: null, plano: null, buf: null };
+    return this.corte;
   }
 
-  // recorte visual: parte de cima normal, parte de baixo azulada
-  definirRecorte(cfg) {
-    for (const [id, it] of this.itens) {
-      it.mesh.material.clippingPlanes = null;
-      it.mesh.material.needsUpdate = true;
+  // mostra/atualiza o plano (mundo: n·x = d) no objeto
+  mostrarPlanoCorte(objId, plano, tamanho) {
+    const c = this.montarCorte();
+    const n = new THREE.Vector3(...plano.n).normalize();
+    const o = this.cena.objeto(objId);
+    const cx = o && this.cena.caixaExata(o);
+    const centroObj = cx ? new THREE.Vector3((cx.min[0] + cx.max[0]) / 2, (cx.min[1] + cx.max[1]) / 2, (cx.min[2] + cx.max[2]) / 2) : new THREE.Vector3();
+    const centro = centroObj.clone().addScaledVector(n, plano.d - n.dot(centroObj));
+    c.quad.position.copy(centro);
+    c.quad.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+    c.quad.scale.set(tamanho, tamanho, 1);
+    c.alca.position.copy(centro);
+    c.alca.quaternion.copy(c.quad.quaternion);
+    c.alca.scale.setScalar(Math.max(4, tamanho * 0.22));
+    c.centro = centro; c.n = n;
+    this.clipA.set(n, -plano.d);                       // mostra o lado +n
+    this.clipB.set(n.clone().negate(), plano.d);       // mostra o lado -n
+    if (c.objId !== objId) { c.objId = objId; this.aplicarRecorte(objId); }
+    c.plano = { n: plano.n, d: plano.d };
+    c.raiz.visible = true;
+    this.agendarSecao();
+    this.pedirRender();
+  }
+
+  esconderCorte() {
+    if (!this.corte) return;
+    this.corte.raiz.visible = false;
+    if (this.corte.objId) this.aplicarRecorte(null);
+    this.corte.objId = null;
+    this.pedirRender();
+  }
+
+  // metade de cima com a cor da peça, de baixo azulada (só muda material ao
+  // trocar de objeto; mover o plano mexe só em clipA/clipB)
+  aplicarRecorte(objId) {
+    for (const it of this.itens.values()) {
+      if (it.mesh.material.clippingPlanes) { it.mesh.material.clippingPlanes = null; it.mesh.material.needsUpdate = true; }
       if (it.metadeB) { it.metadeB.parent && it.metadeB.parent.remove(it.metadeB); it.metadeB.material.dispose(); it.metadeB = null; }
-      void id;
     }
-    if (cfg) {
-      const o = this.cena.objeto(cfg.objId);
-      const P = new THREE.Plane(new THREE.Vector3(...cfg.plano.n).normalize(), -cfg.plano.d);
-      const Pb = P.clone().negate();
-      if (o) for (const p of o.partes) {
-        const it = this.itens.get(p.id);
-        if (!it) continue;
-        it.mesh.material.clippingPlanes = [P];
-        it.mesh.material.needsUpdate = true;
-        const b = new THREE.Mesh(it.geom, new THREE.MeshStandardMaterial({ color: '#7fa6ff', roughness: 0.8, clippingPlanes: [Pb] }));
-        b.raycast = () => {};
-        it.mesh.parent.add(b);
-        it.metadeB = b;
-      }
+    const o = objId && this.cena.objeto(objId);
+    if (o) for (const p of o.partes) {
+      const it = this.itens.get(p.id);
+      if (!it) continue;
+      it.mesh.material.clippingPlanes = [this.clipA];
+      it.mesh.material.needsUpdate = true;
+      const b = new THREE.Mesh(it.geom, new THREE.MeshStandardMaterial({ color: '#7fa6ff', roughness: 0.8, clippingPlanes: [this.clipB] }));
+      b.raycast = () => {};
+      it.mesh.parent.add(b);
+      it.metadeB = b;
     }
+    this.pedirRender();
+  }
+  // compatibilidade: definirRecorte(null) esconde
+  definirRecorte(cfg) { if (!cfg) this.esconderCorte(); else this.mostrarPlanoCorte(cfg.objId, cfg.plano, 100); }
+
+  // contorno da seção (onde a faca passa) + medida, no próximo quadro
+  agendarSecao() {
+    if (this._secaoAgendada) return;
+    this._secaoAgendada = true;
+    requestAnimationFrame(() => { this._secaoAgendada = false; this.atualizarSecao(); });
+  }
+  atualizarSecao() {
+    const c = this.corte;
+    if (!c || !c.raiz.visible || !c.plano) return;
+    const o = this.cena.objeto(c.objId);
+    const g = o && this.grupos.get(o.id);
+    if (!g) return;
+    g.updateMatrixWorld(true);
+    const M = g.matrixWorld, t = M.elements;
+    // plano no referencial da peça
+    const n = c.plano.n, nl = [t[0] * n[0] + t[1] * n[1] + t[2] * n[2], t[4] * n[0] + t[5] * n[1] + t[6] * n[2], t[8] * n[0] + t[9] * n[1] + t[10] * n[2]];
+    const L = Math.hypot(nl[0], nl[1], nl[2]) || 1;
+    const dl = (c.plano.d - (n[0] * t[12] + n[1] * t[13] + n[2] * t[14])) / L;
+    const pl = { n: [nl[0] / L, nl[1] / L, nl[2] / L], d: dl };
+    let total = 0, buf = c.buf;
+    const partes = [];
+    if (!this._bufSecao) this._bufSecao = new WeakMap();
+    for (const p of o.partes) {
+      if (p.visivel === false) continue;
+      const r = segmentosDaSecao(p.malha, pl, this._bufSecao.get(p.malha));
+      this._bufSecao.set(p.malha, r.saida);
+      partes.push(r);
+      total += r.n;
+    }
+    if (!buf || buf.length < total) buf = c.buf = new Float32Array(Math.max(6 * 1024, total * 2));
+    let k = 0;
+    for (const r of partes) { buf.set(r.saida.subarray(0, r.n), k); k += r.n; }
+    const geo = c.secao.geometry;
+    let attr = geo.getAttribute('position');
+    if (!attr || attr.array !== buf) { attr = new THREE.BufferAttribute(buf, 3); attr.setUsage(THREE.DynamicDrawUsage); geo.setAttribute('position', attr); }
+    attr.needsUpdate = true;
+    geo.setDrawRange(0, k / 3);
+    geo.computeBoundingSphere();
+    c.secao.matrixAutoUpdate = false;
+    c.secao.matrix.copy(M);
+    c.secao.matrixWorldNeedsUpdate = true;
+    // medida da seção no plano (largura × altura)
+    const u = new THREE.Vector3(), v = new THREE.Vector3(), N = c.n.clone();
+    u.set(Math.abs(N.z) > 0.9 ? 1 : 0, 0, Math.abs(N.z) > 0.9 ? 0 : 1).cross(N).normalize(); v.crossVectors(N, u).normalize();
+    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    const q = new THREE.Vector3();
+    for (let i = 0; i < k; i += 3) {
+      q.set(buf[i], buf[i + 1], buf[i + 2]).applyMatrix4(M);
+      const a = q.dot(u), b = q.dot(v);
+      if (a < u0) u0 = a; if (a > u1) u1 = a; if (b < v0) v0 = b; if (b > v1) v1 = b;
+    }
+    this.medidaSecao = k ? { largura: u1 - u0, altura: v1 - v0, segmentos: k / 6 } : null;
+    this.emitir('secao', this.medidaSecao);
+    this.pedirRender();
+  }
+
+  // pontaria na seta do corte (pra arrastar)
+  acertouAlcaCorte(ev) {
+    const c = this.corte;
+    if (!c || !c.raiz.visible) return false;
+    this.raycaster.setFromCamera(this.pontoTela(ev), this.camera);
+    const fh = this.raycaster.firstHitOnly; this.raycaster.firstHitOnly = false;
+    const h = this.raycaster.intersectObject(c.alca, true);
+    this.raycaster.firstHitOnly = fh;
+    return h.length > 0;
+  }
+  // posição d (n·x = d) sob o mouse ao arrastar a seta ao longo da normal
+  dDoArrasto(ev) {
+    const c = this.corte;
+    this.raycaster.setFromCamera(this.pontoTela(ev), this.camera);
+    const r = this.raycaster.ray;
+    // ponto da reta (centro + s·n) mais perto do raio do mouse
+    const w0 = c.centro.clone().sub(r.origin);
+    const a = c.n.dot(c.n), b = c.n.dot(r.direction), cc = r.direction.dot(r.direction), dd = c.n.dot(w0), e = r.direction.dot(w0);
+    const den = a * cc - b * b;
+    if (Math.abs(den) < 1e-9) return null;
+    const s = (b * e - cc * dd) / den;
+    return c.n.dot(c.centro) + s;
+  }
+  realcarAlcaCorte(on) {
+    if (!this.corte) return;
+    this.corte.matAlca.color.set(on ? '#e54c00' : '#1f6feb');
     this.pedirRender();
   }
 
@@ -534,7 +687,9 @@ export class Visor {
       this.aplicarMatriz(g, o.transform);
       if (o.deslocar) g.position.add(new THREE.Vector3(...o.deslocar).multiplyScalar(explodir));
       for (const p of o.partes) {
-        const geom = this.construirGeometria(p.malha);
+        const geom = this.construirGeometria(p.malha, { pontaria: false });
+        // a peça provavelmente vai ficar: já pede a estrutura de pontaria
+        if (p.papel !== 'resto') this.encomendarBVH(p.malha);
         const cor = geom.getAttribute('color').array;
         const nt = p.malha.idx.length / 3;
         const base = p.papel === 'novo' ? VERDE : p.papel === 'resto' ? CINZA : null;
@@ -569,7 +724,10 @@ export class Visor {
     this.raizAjuda.visible = false; this.gizmoHelper.visible = false; this.caixaSel.visible = false;
     this.renderer.setSize(tam, tam, false);
     this.camera.aspect = 1; this.camera.updateProjectionMatrix();
+    const fundo = this.scene.background;
+    this.scene.background = new THREE.Color(this.escuro ? '#1b1e24' : '#eef0f3');
     this.renderer.render(this.scene, this.camera);
+    this.scene.background = fundo;
     const blob = await new Promise(r => this.renderer.domElement.toBlob(r, 'image/png'));
     this.raizAjuda.visible = ajudaVis; this.gizmoHelper.visible = gizVis; this.caixaSel.visible = cxVis;
     this.renderer.setSize(velho.w / this.renderer.getPixelRatio(), velho.h / this.renderer.getPixelRatio(), false);

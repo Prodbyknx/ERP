@@ -12,6 +12,11 @@ import { escrever3MF } from '../core/formatos/tmf.js';
 import { escreverSTL } from '../core/formatos/stl.js';
 import { escreverZip } from '../core/formatos/zip.js';
 import { transformar, juntar, volume, caixa, semFaces, compactar } from '../core/malha.js';
+import { BufferGeometry, BufferAttribute } from 'three';
+import { MeshBVH } from 'three-mesh-bvh';
+
+// operações cujo resultado não vai pra tela como peça
+export const SEM_RENDER = new Set(['analisar', 'bvh', 'exportar3MF', 'exportarSTL', 'medidas']);
 
 function resumoValidacao(v) {
   const r = Object.assign({}, v);
@@ -112,6 +117,21 @@ export const OPERACOES = {
     }
     if (arquivos.length === 1) return { bytes: arquivos[0].dados, nome: arquivos[0].nome, zip: false };
     return { bytes: escreverZip(arquivos.map(a => ({ nome: a.nome, dados: a.dados, nivel: 6 }))), zip: true, arquivos: arquivos.map(a => a.nome) };
+  },
+
+  // estrutura de pontaria (clique/pincel) no mesmo formato da tela: triângulo
+  // t = vértices 3t..3t+2. Volta serializada; a tela só encaixa.
+  bvh({ malha }) {
+    const p = malha.pos, idx = malha.idx, nt = idx.length / 3;
+    const pos = new Float32Array(nt * 9);
+    for (let i = 0; i < nt * 3; i++) { const v = idx[i] * 3; pos[i * 3] = p[v]; pos[i * 3 + 1] = p[v + 1]; pos[i * 3 + 2] = p[v + 2]; }
+    const g = new BufferGeometry();
+    g.setAttribute('position', new BufferAttribute(pos, 3));
+    const ind = nt * 3 > 65535 ? new Uint32Array(nt * 3) : new Uint16Array(nt * 3);
+    for (let i = 0; i < nt * 3; i++) ind[i] = i;
+    g.setIndex(new BufferAttribute(ind, 1));
+    const s = MeshBVH.serialize(new MeshBVH(g), { cloneBuffers: false });
+    return { version: s.version, roots: s.roots, index: s.index };
   },
 
   medidas({ parte }) { return { volume: volume(parte.malha), caixa: caixa(parte.malha) }; }

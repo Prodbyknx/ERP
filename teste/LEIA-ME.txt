@@ -17,8 +17,54 @@ COMO USAR
    de exemplo: Gabriel (admin) e Ana (vendedora).
 
 
-NOVIDADES DESTA VERSÃO
------------------------
+NOVIDADES DESTA VERSÃO (2)
+---------------------------
+
+ESTÚDIO 3D MAIS RÁPIDO
+A tela não trava mais enquanto ele calcula. Medido num modelo de IA com
+265 mil triângulos:
+  - travadinha da tela ao abrir/confirmar/desfazer: de 0,35–0,65 s
+    pra 0,1 s
+  - desfazer / refazer: ~2× mais rápido
+  - arrastar o plano de corte: de ~70 ms pra ~6 ms por movimento (liso)
+  - a conferência automática do arquivo roda num motor separado: você
+    pode cortar logo depois de abrir, sem esperar ela terminar
+  - cálculo demorado mostra o tempo e tem botão CANCELAR
+
+POSICIONAR O CORTE FICOU FÁCIL
+  - clique na peça: o corte vai até o ponto clicado
+  - arraste a seta azul direto no 3D
+  - setas ↑ ↓ do teclado: 1 mm (com Shift: 0,1 mm), botão "No meio"
+  - a linha laranja mostra onde a faca passa e a medida da seção
+    (ex.: "Seção do corte: 38,4 × 37,5 mm") — ajuda a escolher o pino
+
+ESTÚDIO COM VISUAL NOVO, ORGANIZADO POR TAREFA
+Trilho à esquerda com o que você quer fazer: Início, Consertar, Ajustar,
+Selecionar, Separar, Cortar, Texto, Exportar. A tela Início mostra
+SUGESTÕES pro modelo aberto ("3 defeitos na malha → Consertar",
+"Maior que a mesa → Cortar", "Pintado com 3 cores → Separar por cor") e
+atalhos de tarefas. Bolinha de "Pronto pra imprimir" no canto do 3D.
+Botão de tela cheia.
+
+MODO ESCURO NO SISTEMA TODO
+Botão "Modo escuro" no rodapé do menu (no celular, o ícone da lua no
+topo). Fica lembrado neste navegador. PDFs continuam saindo brancos.
+
+GERADOR DE CHAVEIROS MAIS RÁPIDO
+Mexer só em medida (altura, borda, argola, tamanho) ficou ~3× mais
+rápido com imagem: ele não refaz o recorte da imagem à toa. A peça
+gerada é idêntica à de antes (conferido byte a byte).
+
+O QUE TESTAR NESTA VERSÃO
+- Ferramentas → Estúdio 3D: abra um STL seu e veja as sugestões
+- Cortar: clique na peça, arraste a seta azul, use ↑ ↓
+- Desfazer / refazer depois de um corte
+- Botão Modo escuro no menu; gere um PDF de orçamento no modo escuro
+- Gerador: mude altura/borda com uma imagem aberta
+
+
+VERSÃO ANTERIOR (1)
+-------------------
 
 PDF VOLTOU A FUNCIONAR
 O aviso "o arquivo html2pdf.bundle.min.js não está na pasta do sistema"

@@ -11788,6 +11788,16 @@ function ferCorDe(nome, padrao) {
 }
 
 /* ---------- o cálculo ---------- */
+/* cópia funda (máscaras são Uint8Array): o reaproveitado nunca é alterado */
+function ferClonar(x) {
+  if (x == null || typeof x !== 'object') return x;
+  if (ArrayBuffer.isView(x)) return x.slice();
+  if (Array.isArray(x)) return x.map(ferClonar);
+  var o = {};
+  for (var k in x) if (Object.prototype.hasOwnProperty.call(x, k)) o[k] = ferClonar(x[k]);
+  return o;
+}
+
 function ferRecalcular(atraso) {
   clearTimeout(FER.timer);
   FER.timer = setTimeout(ferProcessar, atraso == null ? 90 : atraso);
@@ -11809,54 +11819,67 @@ function ferProcessar() {
     if (modoRec === 'auto') modoRec = FER.recorteAuto || 'tom';
     var lim = ferNum('fer_limiar', 128);
     var inverter = ferLigado('fer_inverter');
-    var m;
-    if (modoRec === 'fundo' && FER.analise && FER.analise.corFundo) {
-      var dentroLigado = ferLigado('fer_fundo_dentro');
-      m = GEO.mascaraPorFundo(o.px, o.w, o.h, FER.analise.corFundo, lim, !dentroLigado);
-      FER.mioloTirado = 0;
-      if (!dentroLigado) {
-        // quanto ficou de fora por ser da cor do fundo mas estar DENTRO do
-        // desenho: se for bastante, pode ser arte (letra branca) e o usuario
-        // precisa saber que da pra trazer de volta num clique
-        var comMiolo = GEO.mascaraPorFundo(o.px, o.w, o.h, FER.analise.corFundo, lim, false);
-        var dif = GEO.mascaraConta(comMiolo) - GEO.mascaraConta(m);
-        if (dif > GEO.mascaraConta(comMiolo) * 0.02) FER.mioloTirado = dif;
-      }
-      if (inverter) { for (var iq = 0; iq < m.d.length; iq++) m.d[iq] = m.d[iq] ? 0 : 1; }
-    } else {
-      m = GEO.mascaraDePixels(o.px, o.w, o.h, {
-        usarAlfa: modoRec === 'alfa',
-        limiar: lim,
-        inverter: inverter
-      });
-    }
-    ferAtualizarRotuloRecorte(modoRec);
     var suave = Math.round(ferNum('fer_suavizar', 1));
-    if (suave > 0) m = GEO.suavizar(m, suave);
     var sujeira = ferNum('fer_sujeira', 1) / 100;
-    if (sujeira > 0) m = GEO.limparSujeira(m, sujeira);
-
     var modelo = ferSeg('fer_modelo_seg') || 'chaveiro';
     var cfgTam = Math.min(300, Math.max(5, ferNum('fer_tamanho', 50)));
     var cfgBico = Math.max(0.1, ferNum('fer_bico', 0.4));
     var detalhe = ferSeg('fer_detalhe_seg') || 'chapado';
     if (FER.modo !== 'imagem') detalhe = 'chapado';   // texto e forma nao tem tom nem cor
     var nNiveis = parseInt(ferSeg('fer_niveis_seg') || '3', 10) || 3;
-    var coresArte = null;
-    if (detalhe === 'cor') {
-      coresArte = ferQuantizar(o.px, o.w, o.h, m, Math.min(4, nNiveis),
-                               ferMinPx(m, cfgTam, cfgBico));
-      if (!coresArte) ferAvisoLeve('A imagem tem uma cor só — não deu pra separar.');
-    } else if (detalhe === 'relevo') {
-      coresArte = ferNiveisDeTom(o.px, o.w, o.h, m, nNiveis,
-                                 ferLigado('fer_relevo_inv'), ferMinPx(m, cfgTam, cfgBico));
-      if (!coresArte) {
-        ferAvisoLeve('A imagem tem uma cor só — não tem tom pra virar relevo. '
-          + 'Use "Chapado" ou uma imagem com sombreado.');
-      } else if (coresArte.length < nNiveis) {
-        ferAvisoLeve('A imagem tem ' + coresArte.length + ' tons de verdade, então usei '
-          + coresArte.length + ' níveis. Pedir mais que isso só picotaria o desenho.');
+    // O tratamento da imagem (recorte, limpeza, cores) só depende destes
+    // campos. Mexeu só em medida (altura, borda, argola)? Reaproveita.
+    var chaveImg = [modoRec, lim, inverter, ferLigado('fer_fundo_dentro'), suave, sujeira, detalhe, nNiveis,
+      ferLigado('fer_relevo_inv'), cfgTam, cfgBico, (FER.analise && FER.analise.corFundo) ? String(FER.analise.corFundo) : ''].join('|');
+    var memo = FER.memoImagem;
+    var m, coresArte = null;
+    if (memo && memo.origem === o && memo.chave === chaveImg) {
+      m = ferClonar(memo.m);
+      coresArte = ferClonar(memo.cores);
+      FER.mioloTirado = memo.miolo;
+      if (memo.aviso) ferAvisoLeve(memo.aviso);
+      ferAtualizarRotuloRecorte(modoRec);
+    } else {
+      if (modoRec === 'fundo' && FER.analise && FER.analise.corFundo) {
+        var dentroLigado = ferLigado('fer_fundo_dentro');
+        m = GEO.mascaraPorFundo(o.px, o.w, o.h, FER.analise.corFundo, lim, !dentroLigado);
+        FER.mioloTirado = 0;
+        if (!dentroLigado) {
+          // quanto ficou de fora por ser da cor do fundo mas estar DENTRO do
+          // desenho: se for bastante, pode ser arte (letra branca) e o usuario
+          // precisa saber que da pra trazer de volta num clique
+          var comMiolo = GEO.mascaraPorFundo(o.px, o.w, o.h, FER.analise.corFundo, lim, false);
+          var dif = GEO.mascaraConta(comMiolo) - GEO.mascaraConta(m);
+          if (dif > GEO.mascaraConta(comMiolo) * 0.02) FER.mioloTirado = dif;
+        }
+        if (inverter) { for (var iq = 0; iq < m.d.length; iq++) m.d[iq] = m.d[iq] ? 0 : 1; }
+      } else {
+        m = GEO.mascaraDePixels(o.px, o.w, o.h, {
+          usarAlfa: modoRec === 'alfa',
+          limiar: lim,
+          inverter: inverter
+        });
       }
+      ferAtualizarRotuloRecorte(modoRec);
+      if (suave > 0) m = GEO.suavizar(m, suave);
+      if (sujeira > 0) m = GEO.limparSujeira(m, sujeira);
+
+      if (detalhe === 'cor') {
+        coresArte = ferQuantizar(o.px, o.w, o.h, m, Math.min(4, nNiveis),
+                                 ferMinPx(m, cfgTam, cfgBico));
+        if (!coresArte) ferAvisoLeve('A imagem tem uma cor só — não deu pra separar.');
+      } else if (detalhe === 'relevo') {
+        coresArte = ferNiveisDeTom(o.px, o.w, o.h, m, nNiveis,
+                                   ferLigado('fer_relevo_inv'), ferMinPx(m, cfgTam, cfgBico));
+        if (!coresArte) {
+          ferAvisoLeve('A imagem tem uma cor só — não tem tom pra virar relevo. '
+            + 'Use "Chapado" ou uma imagem com sombreado.');
+        } else if (coresArte.length < nNiveis) {
+          ferAvisoLeve('A imagem tem ' + coresArte.length + ' tons de verdade, então usei '
+            + coresArte.length + ' níveis. Pedir mais que isso só picotaria o desenho.');
+        }
+      }
+      FER.memoImagem = { origem: o, chave: chaveImg, m: ferClonar(m), cores: ferClonar(coresArte), miolo: FER.mioloTirado, aviso: FER.avisoLeve };
     }
     FER.detalhe = detalhe;
 
@@ -12613,7 +12636,7 @@ function ferModoFerramentas(modo) {
   }
   if (ger) ger.style.display = 'none';
   if (est) est.style.display = '';
-  if (txt) txt.textContent = 'Abra modelos STL, OBJ ou 3MF (inclusive gerados por IA), confira e repare a malha, separe detalhes em peças independentes, corte com encaixe, ponha texto na frente e no verso e exporte pro Bambu Studio com as cores certas. Nada fica salvo no sistema.';
+  if (txt) txt.textContent = 'Abra um STL, OBJ ou 3MF (inclusive modelo feito por IA) e escolha o que quer fazer: consertar, cortar com encaixe, separar detalhe ou cor, pôr nome na frente e no verso e mandar pro Bambu com as cores certas. Nada fica salvo no sistema.';
   if (est && !est.childNodes.length) est.innerHTML = '<div class="card"><p class="u">Carregando o Estúdio 3D…</p></div>';
   return carregarEstudio().then(function (E) {
     if (est && est.querySelector('.card') && !est.querySelector('.e3d')) est.innerHTML = '';

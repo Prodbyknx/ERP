@@ -7,7 +7,6 @@ import { planoParaLocal } from '../../core/corte.js';
 export function montarCortar(est) {
   const d = el('details', { 'data-sec': 'corte' });
   d.innerHTML = `<summary><span class="n">5</span>Cortar a peça</summary><div class="e3d-sec">
-    <p class="u">Divide o objeto escolhido num plano. As duas partes saem fechadas (a face do corte é tampada) e na mesma posição.</p>
     <div class="field"><label>Direção do corte</label>
       <div class="seg" data-a="eixo"><button type="button" data-v="z" class="active">Horizontal (Z)</button><button type="button" data-v="x">Vertical X</button><button type="button" data-v="y">Vertical Y</button><button type="button" data-v="livre">Inclinado</button></div></div>
     <div data-a="livre" style="display:none" class="e3d-l2">
@@ -15,7 +14,18 @@ export function montarCortar(est) {
       <div class="field"><label>Inclinação B (graus)</label><input type="text" data-a="ib" value="0"></div>
     </div>
     <div class="field"><label>Posição do corte <span class="u" data-a="faixa"></span></label>
-      <div class="e3d-slider"><input type="range" min="0" max="100" step="0.1" value="50" data-a="pos"><input type="text" data-a="posmm"></div></div>
+      <div class="e3d-slider"><input type="range" min="0" max="100" step="0.1" value="50" data-a="pos"><input type="text" data-a="posmm"></div>
+      <div class="e3d-posbotoes">
+        <button type="button" class="btn mini" data-a="menos" title="Desce 1 mm (Shift: 0,1 mm) — seta ↓ do teclado">−1</button>
+        <button type="button" class="btn mini" data-a="meio" title="Corte bem no meio da peça">No meio</button>
+        <button type="button" class="btn mini" data-a="mais" title="Sobe 1 mm (Shift: 0,1 mm) — seta ↑ do teclado">+1</button>
+      </div>
+      <div class="e3d-dicacorte">
+        <span><b>Clique na peça</b> pra levar o corte até o ponto</span>
+        <span><b>Arraste a seta azul</b> no 3D</span>
+        <span><b>↑ ↓</b> no teclado: 1 mm (com Shift: 0,1 mm)</span>
+      </div>
+      <div class="e3d-secao" data-a="secao"></div></div>
     <div class="field"><label>Conector</label><select data-a="tipo"><option value="nenhum">Sem conector</option>${TIPOS_CONECTOR.map(t => '<option value="' + t.id + '">' + t.nome + '</option>').join('')}</select></div>
     <div data-a="conOpc" style="display:none">
       <div class="e3d-l3">
@@ -76,6 +86,38 @@ export function montarCortar(est) {
     if (document.activeElement !== q('posmm')) q('posmm').value = fmt(posicaoMM(), 2).replace(/\./g, '');
   }
   function refazerTudo() { calcularFaixa(); mostrarPlano(); }
+  // leva o corte pra uma posição em mm (limita à peça)
+  function irPara(mm) {
+    if (!faixa) calcularFaixa();
+    if (!faixa) return;
+    const v = Math.max(faixa.min, Math.min(faixa.max, mm));
+    q('pos').value = 100 * (v - faixa.min) / Math.max(1e-9, faixa.max - faixa.min);
+    mostrarPlano();
+    if (document.activeElement !== q('posmm')) q('posmm').value = fmt(v, 2).replace(/\./g, '');
+  }
+  q('menos').onclick = ev => irPara(posicaoMM() - (ev.shiftKey ? 0.1 : 1));
+  q('mais').onclick = ev => irPara(posicaoMM() + (ev.shiftKey ? 0.1 : 1));
+  q('meio').onclick = () => { if (!faixa) calcularFaixa(); if (faixa) irPara((faixa.min + faixa.max) / 2); };
+  est.visor.on('secao', m => {
+    q('secao').innerHTML = m ? 'Seção do corte: <b>' + fmt(m.largura, 1) + ' × ' + fmt(m.altura, 1) + ' mm</b>' : (d.open && faixa ? '<span class="aviso">O plano não passa pela peça.</span>' : '');
+  });
+  // clique na peça: o corte vai até o ponto clicado
+  est.on('clique', ({ hit }) => {
+    if (!d.open || est.ferramenta !== 'corte' || !hit) return;
+    const n = normal();
+    irPara(hit.ponto.x * n[0] + hit.ponto.y * n[1] + hit.ponto.z * n[2]);
+  });
+  // seta do 3D arrastada
+  est.on('corte-arrasto', mm => { if (d.open && mm != null && isFinite(mm)) irPara(mm); });
+  // teclado
+  document.addEventListener('keydown', ev => {
+    if (!d.open || est.ferramenta !== 'corte' || !est.visivel() || est.previaAtiva) return;
+    const alvo = ev.target;
+    if (alvo && (alvo.tagName === 'INPUT' || alvo.tagName === 'TEXTAREA' || alvo.tagName === 'SELECT')) return;
+    const passo = ev.shiftKey ? 0.1 : 1;
+    if (ev.key === 'ArrowUp' || ev.key === 'PageUp') { ev.preventDefault(); irPara(posicaoMM() + passo); }
+    else if (ev.key === 'ArrowDown' || ev.key === 'PageDown') { ev.preventDefault(); irPara(posicaoMM() - passo); }
+  });
 
   q('eixo').addEventListener('click', ev => {
     const b = ev.target.closest('button'); if (!b) return;
@@ -136,7 +178,7 @@ export function montarCortar(est) {
     ];
     const notas = r.avisos.slice();
     if (r.relatorio.length) notas.push(r.relatorio.length + ' conector(es): ' + (r.relatorio[0].pino ? 'pino ' + r.relatorio[0].pino + ' / furo ' + r.relatorio[0].furo : r.relatorio[0].tipo));
-    q('res').innerHTML = '<div class="e3d-nota ok">Prévia: confirme no alto da área 3D. Área do corte: ' + fmt(r.areaSecao, 1) + ' mm².</div>';
+    q('res').innerHTML = '<div class="e3d-nota ok">Prévia: confirme em cima do 3D. Área do corte: ' + fmt(r.areaSecao, 1) + ' mm².</div>';
     est.mostrarPrevia({
       titulo: 'Corte em 2 partes', legenda: [['#0659f2', 'face do corte / conector']], objetos, explodir: 1, notas, textoConfirmar: 'Confirmar corte',
       confirmar: () => {
@@ -158,7 +200,10 @@ export function montarCortar(est) {
     void novaParte;
   }
   q('ir').onclick = cortar;
-  d.addEventListener('toggle', () => { if (d.open) refazerTudo(); else est.visor.limparAjudas('corte'); });
+  d.addEventListener('toggle', () => {
+    if (d.open) { est.definirFerramenta('corte'); refazerTudo(); }
+    else { est.visor.limparAjudas('corte'); if (est.ferramenta === 'corte') est.definirFerramenta('navegar'); }
+  });
   est.on('selecao', () => { if (d.open) refazerTudo(); });
   est.on('mudou', () => { if (d.open) refazerTudo(); });
   est.on('previa-fim', () => { if (d.open) refazerTudo(); });

@@ -3,7 +3,8 @@
 // mensagem, já em bytes — nada é baixado aqui dentro.
 import Module from 'manifold-3d';
 import { definirManifold } from '../core/solidos.js';
-import { executar, transferiveis } from './operacoes.js';
+import { executar, transferiveis, SEM_RENDER } from './operacoes.js';
+import { prepararRender, malhasDe } from '../core/render.js';
 
 let pronto = null;
 
@@ -25,6 +26,8 @@ self.onmessage = async ev => {
     if (pronto) await pronto;
     const t0 = Date.now();
     const resultado = executar(op, args);
+    // malhas novas já voltam prontas pra exibir: a tela só entrega pra placa de vídeo
+    if (!SEM_RENDER.has(op)) for (const m of malhasDe(resultado)) m._r = prepararRender(m);
     self.postMessage({ id, ok: true, resultado, ms: Date.now() - t0 }, transferiveis(resultado));
   } catch (e) {
     self.postMessage({ id, ok: false, erro: String(e && e.message || e), codigo: e && e.codigo });

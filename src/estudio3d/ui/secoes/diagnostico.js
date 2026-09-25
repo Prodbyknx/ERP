@@ -20,11 +20,11 @@ export function corDeRotulo(i) {
 export function montarDiagnostico(est) {
   const d = el('details', { open: true, 'data-sec': 'diag' });
   d.innerHTML = `<summary><span class="n">1</span>Abrir e conferir</summary><div class="e3d-sec">
-    <p class="u">Arraste STL, OBJ (+MTL) ou 3MF pra área 3D, ou use <b>Abrir modelo</b>. A conferência é geométrica: vale o que está no arquivo, não o que parece na tela.</p>
+    <p class="u">A conferência é geométrica: vale o que está no arquivo, não o que parece na tela. <b>Consertar</b> fecha buracos acompanhando a curva, desvira faces e tira sobras — o detalhe do modelo fica.</p>
     <div data-a="resultado"></div>
     <div class="e3d-botoes">
-      <button class="btn" data-a="analisar">Analisar malha</button>
-      <button class="btn primary" data-a="reparar">Analisar e reparar</button>
+      <button class="btn primary largo" data-a="reparar">Consertar automaticamente</button>
+      <button class="btn" data-a="analisar">Só conferir de novo</button>
     </div>
     <div data-a="extra"></div>
   </div>`;
@@ -36,11 +36,19 @@ export function montarDiagnostico(est) {
     o = o || est.objetoAtual();
     if (!o) { avisar('Escolha um objeto.', 'warn'); return; }
     $('resultado').innerHTML = '<div class="e3d-nota">Analisando ' + o.partes.length + ' peça(s)…</div>';
-    for (const p of o.partes) {
-      try {
-        const rel = await est.rodar('analisar', { parte: est.parteParaMotor(p), opc: { completo: true } }, 'Analisar');
-        est.diag.set(p.id, { rel, malha: p.malha });
-      } catch (e) { $('resultado').innerHTML = '<div class="e3d-nota erro">' + (e.message || e) + '</div>'; return; }
+    if (!est.analisando) est.analisando = new Set();
+    o.partes.forEach(p => est.analisando.add(p.malha));
+    est.renderSaude && est.renderSaude();
+    try {
+      for (const p of o.partes) {
+        try {
+          const rel = await est.rodar('analisar', { parte: est.parteParaMotor(p), opc: { completo: true } }, 'Analisar');
+          est.diag.set(p.id, { rel, malha: p.malha });
+        } catch (e) { $('resultado').innerHTML = '<div class="e3d-nota erro">' + (e.message || e) + '</div>'; return; }
+      }
+    } finally {
+      o.partes.forEach(p => est.analisando.delete(p.malha));
+      est.emitir('analisou', o);
     }
     render();
     if (est.visor.modo === 'espessura' || est.visor.modo === 'problemas') est.recalcularMapas();
@@ -64,6 +72,7 @@ export function montarDiagnostico(est) {
     }
     for (const { p, r } of resultados) { const q = o.partes.find(x => x.id === p.id); if (q) est.diag.set(q.id, { rel: r.depois, malha: q.malha }); }
     render();
+    est.emitir('analisou', o);
     avisar(mudou.length ? 'Malha reparada (dá pra desfazer)' : 'Nada pra consertar');
   }
 
@@ -140,7 +149,7 @@ export function montarDiagnostico(est) {
       h += '</div>';
       const tudoOk = rels.every(r => r.imprimivel) && !soma('componentesInternos');
       h += tudoOk ? '<div class="e3d-nota ok">Pronto pra fatiar: sólido fechado, sem defeito de malha.</div>'
-        : '<div class="e3d-nota aviso">' + (fechada ? 'A malha fecha, mas tem pontos de atenção acima.' : 'A malha tem defeitos que o fatiador pode interpretar errado. Use <b>Analisar e reparar</b>.') + '</div>';
+        : '<div class="e3d-nota aviso">' + (fechada ? 'A malha fecha, mas tem pontos de atenção acima.' : 'A malha tem defeitos que o fatiador pode interpretar errado. Use <b>Consertar automaticamente</b>.') + '</div>';
       if (ultimoReparo) {
         const ps = ultimoReparo.filter(x => x.passos.length);
         if (ps.length) h += '<div class="e3d-nota"><b>Reparo:</b> ' + ps.map(x => x.nome + ': ' + x.passos.join('; ')).join(' · ') + '</div>';
@@ -167,8 +176,8 @@ export function montarDiagnostico(est) {
     ultimoReparo = null;
     if (resultado.sugestaoUnidade && objetos[0]) sugestaoUnidade = { ...resultado.sugestaoUnidade, objeto: objetos[0].id };
     if (resultado.avisos && resultado.avisos.length) avisar(resultado.avisos[0], 'warn');
-    d.open = true;
-    analisar(objetos[objetos.length - 1], true);
+    // confere sozinho em segundo plano (motor auxiliar): dá pra ir usando
+    for (const o of objetos) analisar(o, true);
   });
 
   // mapas de cor dos modos de análise

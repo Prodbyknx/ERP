@@ -1,0 +1,41 @@
+// Ícones de traço (24×24, currentColor) desenhados pro Estúdio.
+const P = {
+  casa: '<path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v10h5v-6h3v6h5V10"/>',
+  escudo: '<path d="M12 3 20 6v6c0 4.8-3.4 8-8 9-4.6-1-8-4.2-8-9V6z"/><path d="m8.6 12.2 2.4 2.4 4.6-4.8"/>',
+  ajustar: '<path d="M12 2.5v19M2.5 12h19"/><path d="m9.5 5 2.5-2.5L14.5 5M9.5 19l2.5 2.5 2.5-2.5M5 9.5 2.5 12 5 14.5M19 9.5l2.5 2.5-2.5 2.5"/>',
+  selecionar: '<path d="M5 3.5 18.5 10l-5.8 1.9-2 5.9z"/><path d="M17 15.5v5M14.5 18h5"/>',
+  separar: '<circle cx="9.5" cy="14.5" r="6"/><circle cx="18.5" cy="5.5" r="3"/><path d="m14.3 9.7 1.6-1.6" stroke-dasharray="1.5 2"/>',
+  tesoura: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/>',
+  texto: '<path d="M4 7V4.5h16V7M9 20h6M12 4.5V20"/>',
+  baixar: '<path d="M12 3.5v11.5M7 10.5l5 5 5-5"/><path d="M4.5 20.5h15"/>',
+  abrir: '<path d="M3 7.5A2 2 0 0 1 5 5.5h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  desfazer: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+  refazer: '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>',
+  cursor: '<path d="m5 3.5 5.6 16 2.6-6.8 6.8-2.6z"/>',
+  mover: '<path d="M12 2.5v19M2.5 12h19"/><path d="m9.5 5 2.5-2.5L14.5 5M9.5 19l2.5 2.5 2.5-2.5M5 9.5 2.5 12 5 14.5M19 9.5l2.5 2.5-2.5 2.5"/>',
+  girar: '<path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1"/><path d="M20.5 3.5v5h-5"/>',
+  escalar: '<path d="M14.5 3.5h6v6M20.5 3.5l-7 7M9.5 20.5h-6v-6M3.5 20.5l7-7"/>',
+  enquadrar: '<path d="M3.5 8.5v-5h5M15.5 3.5h5v5M20.5 15.5v5h-5M8.5 20.5h-5v-5"/><circle cx="12" cy="12" r="2.5"/>',
+  telaCheia: '<path d="M9 3.5H3.5V9M15 3.5h5.5V9M20.5 15v5.5H15M9 20.5H3.5V15"/>',
+  sairTela: '<path d="M3.5 9H9V3.5M20.5 9H15V3.5M15 20.5V15h5.5M3.5 15H9v5.5"/>',
+  organizar: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>',
+  cubo: '<path d="M12 2.8 20.5 7.5v9L12 21.2l-8.5-4.7v-9z"/><path d="M12 21.2V12M20.5 7.5 12 12 3.5 7.5"/>',
+  paleta: '<path d="M12 3.5a8.5 8.5 0 0 0 0 17c1.2 0 1.8-.9 1.4-1.9-.5-1.2.3-2.6 1.6-2.6h2.2a3.3 3.3 0 0 0 3.3-3.3C20.5 7.6 16.7 3.5 12 3.5z"/><circle cx="7.8" cy="11" r="1.1"/><circle cx="10.5" cy="7.3" r="1.1"/><circle cx="15" cy="7.8" r="1.1"/>',
+  deitar: '<path d="M3 20.5h18"/><rect x="5.5" y="12" width="13" height="5.5" rx="1.2"/><path d="M12 3v5.5M9.5 6 12 8.5 14.5 6"/>',
+  regua: '<path d="M3.5 16.5 16.5 3.5l4 4-13 13z"/><path d="m7.5 12.5 2 2M10.5 9.5l2 2M13.5 6.5l2 2"/>',
+  olho: '<path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7-4 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  olhoFechado: '<path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A10 10 0 0 1 12 5c6.5 0 10.5 7 10.5 7a18 18 0 0 1-3.2 3.9M6.1 6.1C3.3 8 1.5 12 1.5 12s4 7 10.5 7c1.8 0 3.4-.5 4.8-1.2"/>',
+  seta: '<path d="m6 9 6 6 6-6"/>',
+  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  alerta: '<path d="M12 4 21.5 20h-19z"/><path d="M12 10v4.5M12 17.5v.5"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  duplicar: '<rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M15.5 8.5v-3a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/>',
+  lixo: '<path d="M4 6.5h16M9.5 6.5V4h5v2.5M6.5 6.5l1 13.5h9l1-13.5"/>',
+  camadas: '<path d="M12 3.5 21 8.5l-9 5-9-5z"/><path d="m3 12.5 9 5 9-5M3 16.5l9 5 9-5"/>',
+  lupa: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/>',
+  faisca: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/>'
+};
+
+export function icone(nome, tam = 18, extra = '') {
+  return '<svg viewBox="0 0 24 24" width="' + tam + '" height="' + tam + '" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"' + extra + '>' + (P[nome] || '') + '</svg>';
+}

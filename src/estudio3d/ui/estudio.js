@@ -15,10 +15,42 @@ import { montarSeparar } from './secoes/separar.js';
 import { montarCortar } from './secoes/cortar.js';
 import { montarRelevo } from './secoes/relevo.js';
 import { montarExportar } from './secoes/exportar.js';
+import { icone } from './icones.js';
+import { calcularSugestoes } from './sugestoes.js';
 
-const ICONES = {
-  olho: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>',
-  olhoFechado: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A10 10 0 0 1 12 5c7 0 11 7 11 7a18 18 0 0 1-3.2 3.9M6.1 6.1C3.3 8 1 12 1 12s4 7 11 7c1.8 0 3.4-.5 4.8-1.2"/></svg>'
+const ICONES = { olho: icone('olho', 15), olhoFechado: icone('olhoFechado', 15) };
+
+// As ferramentas, na ordem em que a gente costuma usar. O nome é o que você
+// quer FAZER, não o nome técnico.
+const FERRAMENTAS = [
+  { sec: 'inicio', ico: 'casa', rot: 'Início', titulo: 'O que você quer fazer?', desc: 'Escolha uma tarefa — o Estúdio guia o resto. As sugestões abaixo são do modelo aberto.' },
+  { sec: 'diag', ico: 'escudo', rot: 'Consertar', titulo: 'Conferir e consertar', desc: 'Vê se o arquivo imprime e conserta buracos, faces viradas e sobras, sem perder detalhe.' },
+  { sec: 'transf', ico: 'ajustar', rot: 'Ajustar', titulo: 'Posição, tamanho e cor', desc: 'Medidas em mm, girar, deitar pra imprimir sem suporte e a cor de cada peça.' },
+  { sec: 'sel', ico: 'selecionar', rot: 'Selecionar', titulo: 'Selecionar uma parte', desc: 'Clique numa orelha, olho ou detalhe: a seleção para sozinha na dobra.' },
+  { sec: 'sep', ico: 'separar', rot: 'Separar', titulo: 'Separar para imprimir', desc: 'O detalhe selecionado vira peça própria, com encaixe. Ou separe por cor, pra imprimir sem AMS.' },
+  { sec: 'corte', ico: 'tesoura', rot: 'Cortar', titulo: 'Cortar em partes', desc: 'Corte num plano: as duas partes saem fechadas e com pino de encaixe.' },
+  { sec: 'relevo', ico: 'texto', rot: 'Texto', titulo: 'Texto, logo e relevo', desc: 'Nome, telefone ou logo em relevo, gravado ou vazado — na frente e no verso.' },
+  { sec: 'exp', ico: 'baixar', rot: 'Exportar', titulo: 'Mandar pro fatiador', desc: '3MF com as cores certas pro Bambu Studio / Orca, ou STL.' }
+];
+
+// Atalhos da tela Início: tarefas do dia a dia de quem imprime
+const TAREFAS = [
+  { ico: 'escudo', t: 'Consertar o arquivo', d: 'Buracos, faces viradas e sobras', acao: 'consertar' },
+  { ico: 'tesoura', t: 'Cortar em duas partes', d: 'Com pino de encaixe', acao: 'corte' },
+  { ico: 'separar', t: 'Separar um detalhe', d: 'Orelha, olho, acessório', acao: 'sep' },
+  { ico: 'paleta', t: 'Separar por cor', d: 'Colorido sem AMS', acao: 'porCor' },
+  { ico: 'texto', t: 'Nome ou logo', d: 'Frente e verso do chaveiro', acao: 'relevo' },
+  { ico: 'deitar', t: 'Deitar pra imprimir', d: 'Maior face plana na mesa', acao: 'deitar' },
+  { ico: 'regua', t: 'Mudar o tamanho', d: 'Em mm ou em %', acao: 'transf' },
+  { ico: 'baixar', t: 'Mandar pro Bambu', d: '3MF com as cores certas', acao: 'exp' }
+];
+
+// nome amigável de cada cálculo (aparece no "calculando")
+const NOMES_OP = {
+  importar: 'Abrindo o arquivo', cortar: 'Cortando', separarDetalhe: 'Separando o detalhe', separarPorCor: 'Separando por cor',
+  separarCascas: 'Separando as cascas', reparar: 'Consertando a malha', relevo: 'Aplicando o relevo', exportar3MF: 'Gerando o 3MF',
+  exportarSTL: 'Gerando o STL', segmentar: 'Procurando as partes', unirSobrepostos: 'Unindo partes', removerInternos: 'Limpando sobras',
+  escalarGeometria: 'Convertendo a medida', analisar: 'Analisando'
 };
 
 export class Estudio {
@@ -36,7 +68,8 @@ export class Estudio {
     this.ouvintes = new Map();
     this.secoes = {};
     this.montar();
-    this.motor.aoMudar = n => this.atualizarMotor(n);
+    this.motor.aoMudar = (n, info) => this.atualizarMotor(n, info);
+    this.motor.aoMudarAux = () => this.atualizarMotor(this.motor.ocupado, this.motor.principal.atual);
     this.motor.iniciar().then(modo => { this.modoMotor = modo; this.atualizarMotor(0); });
   }
 
@@ -48,53 +81,78 @@ export class Estudio {
     const r = this.raiz;
     r.innerHTML = '';
     r.classList.add('e3d');
-    this.barra = el('div', { class: 'e3d-barra' });
-    this.barra.innerHTML = `
-      <button class="btn primary" data-b="abrir" title="Abrir STL, OBJ ou 3MF">Abrir modelo</button>
-      <button class="btn" data-b="desfazer" title="Desfazer (Ctrl+Z)">↶ Desfazer</button>
-      <button class="btn" data-b="refazer" title="Refazer (Ctrl+Y)">↷ Refazer</button>
-      <span class="sep"></span>
-      <button class="btn ativo" data-g="nenhum" title="Clique pra escolher peça">Escolher</button>
-      <button class="btn" data-g="mover" title="Mover (G)">Mover</button>
-      <button class="btn" data-g="girar" title="Girar (R)">Girar</button>
-      <button class="btn" data-g="escalar" title="Escalar (S)">Escalar</button>
-      <span class="sep"></span>
-      <button class="btn" data-b="enquadrar" title="Enquadrar (F)">Enquadrar</button>
-      <button class="btn" data-v="iso">3D</button>
-      <button class="btn" data-v="frente">Frente</button>
-      <button class="btn" data-v="topo">Topo</button>
-      <button class="btn" data-v="direita">Lado</button>
-      <span class="sep"></span>
-      <select data-b="modo" title="Modo de visualização">
-        <option value="cores">Ver: cores/materiais</option>
-        <option value="normais">Ver: normais (avesso em vermelho)</option>
-        <option value="cascas">Ver: cascas soltas</option>
-        <option value="problemas">Ver: problemas da malha</option>
-        <option value="espessura">Ver: espessura</option>
-        <option value="partes">Ver: partes detectadas</option>
-      </select>
-      <label class="fer-check" style="margin:0"><input type="checkbox" data-b="arame"> Arame</label>
-      <label class="fer-check" style="margin:0" title="Sombreado suave ou facetado"><input type="checkbox" data-b="facetado"> Facetado</label>
-      <span class="grow"></span>
-      <button class="btn" data-b="organizar" title="Põe todos os objetos lado a lado na mesa">Organizar mesa</button>
-      <span class="e3d-motor" data-b="motor"><i></i><span>carregando motor…</span></span>`;
-    this.corpo = el('div', { class: 'e3d-corpo' });
-    this.painelCena = el('aside', { class: 'e3d-cena' });
+    const bt = (attrs, ico, rot, cls) => '<button type="button" class="e3d-bt ' + (cls || '') + '" ' + attrs + '>' + icone(ico, 17) + (rot ? '<span class="rot">' + rot + '</span>' : '') + '</button>';
+    this.topo = el('div', { class: 'e3d-top', role: 'toolbar' });
+    this.topo.innerHTML =
+      '<div class="e3d-marca"><i>' + icone('cubo', 17) + '</i><span>Estúdio 3D</span></div>' +
+      bt('data-b="abrir" title="Abrir STL, OBJ ou 3MF (ou arraste o arquivo pra tela)"', 'abrir', 'Abrir', 'primario') +
+      bt('data-b="desfazer" title="Desfazer (Ctrl+Z)"', 'desfazer', '', 'so-ico') +
+      bt('data-b="refazer" title="Refazer (Ctrl+Y)"', 'refazer', '', 'so-ico') +
+      '<span class="grow"></span>' +
+      '<div class="e3d-grupo" data-b="gizmos">' +
+        bt('data-g="nenhum" title="Escolher peça (Esc)"', 'cursor', '<span class="rot-lg">Escolher</span>', 'ativo') +
+        bt('data-g="mover" title="Mover (G)"', 'mover', '<span class="rot-lg">Mover</span>') +
+        bt('data-g="girar" title="Girar (R)"', 'girar', '<span class="rot-lg">Girar</span>') +
+        bt('data-g="escalar" title="Escalar (S)"', 'escalar', '<span class="rot-lg">Escalar</span>') +
+      '</div>' +
+      '<span class="grow"></span>' +
+      bt('data-b="organizar" title="Põe todos os objetos lado a lado na mesa"', 'organizar', '<span class="rot-lg">Organizar mesa</span>') +
+      bt('data-b="tela" title="Tela cheia (mais espaço pro 3D)"', 'telaCheia', '', 'so-ico') +
+      '<span class="e3d-motor" data-b="motor"><i></i><span>carregando motor…</span></span>';
+    this.btDesfazer = this.topo.querySelector('[data-b=desfazer]');
+    this.btRefazer = this.topo.querySelector('[data-b=refazer]');
+
+    this.principalEl = el('div', { class: 'e3d-main' });
+    this.trilho = el('div', { class: 'e3d-rail', role: 'navigation', 'aria-label': 'Ferramentas' });
+    FERRAMENTAS.forEach((f, i) => {
+      if (i === 1) this.trilho.appendChild(el('hr'));
+      this.trilho.appendChild(el('button', { type: 'button', 'data-ferr': f.sec, title: f.titulo, html: icone(f.ico, 22) + '<span>' + f.rot + '</span>', onclick: () => this.abrirFerramenta(f.sec) }));
+    });
     this.palco = el('div', { class: 'e3d-palco' });
-    this.painel = el('aside', { class: 'e3d-painel' });
-    this.corpo.append(this.painelCena, this.palco, this.painel);
-    r.append(this.barra, this.corpo);
+    this.painel = el('div', { class: 'e3d-painel' });
+    this.painelCab = el('div', { class: 'e3d-painel-cab' });
+    this.painelCorpo = el('div', { class: 'e3d-painel-corpo' });
+    this.painel.append(this.painelCab, this.painelCorpo);
+    this.principalEl.append(this.trilho, this.palco, this.painel);
+    r.append(this.topo, this.principalEl);
     this.inputArquivo = el('input', { type: 'file', multiple: true, accept: '.stl,.obj,.mtl,.3mf', style: 'display:none' });
     r.appendChild(this.inputArquivo);
 
     this.visor = new Visor(this.palco, this.cena);
-    this.vazio = el('div', { class: 'e3d-vazio', html: '<b>Arraste um modelo aqui</b><span>STL, OBJ (+MTL) ou 3MF — ou use "Abrir modelo".<br>Do gerador de chaveiros, use "Abrir no Estúdio 3D".</span>' });
-    this.hud = el('div', { class: 'e3d-hud' });
-    this.dica = el('div', { class: 'e3d-dica', html: 'arrastar: girar · botão direito: mover a vista · rodinha: zoom' });
-    this.ocupadoEl = el('div', { class: 'e3d-ocupado', html: 'calculando…' });
-    this.previaEl = el('div', { class: 'e3d-previa', style: 'display:none' });
-    this.palco.append(this.vazio, this.hud, this.dica, this.ocupadoEl, this.previaEl);
+    this.vazio = el('div', { class: 'e3d-vazio' });
+    this.vazio.innerHTML = '<div class="caixa"><div class="ico">' + icone('abrir', 28) + '</div><h3>Arraste seu modelo aqui</h3>' +
+      '<p>Abra um arquivo e escolha o que quer fazer: consertar, cortar, separar, pôr texto e mandar pro Bambu com as cores certas.</p>' +
+      '<button type="button" class="btn primary" data-b="abrir2">Escolher arquivo</button>' +
+      '<div class="formatos"><span>STL</span><span>OBJ + MTL</span><span>3MF</span><span>modelos de IA</span></div></div>';
+    this.vazio.querySelector('[data-b=abrir2]').onclick = () => this.inputArquivo.click();
+    this.objetosEl = el('div', { class: 'e3d-objetos e3d-vidro', style: 'display:none' });
+    this.saudeEl = el('div', { class: 'e3d-saude e3d-vidro', title: 'Ver sugestões pra este modelo', onclick: () => this.abrirFerramenta('inicio') });
+    this.vistasEl = el('div', { class: 'e3d-vistas e3d-vidro' });
+    this.vistasEl.innerHTML =
+      bt('data-b="enquadrar" title="Enquadrar a peça (F)"', 'enquadrar', '', 'so-ico') +
+      '<span class="sep"></span>' +
+      bt('data-v="iso" title="Vista 3D"', 'cubo', '3D') +
+      '<button type="button" class="e3d-bt" data-v="frente" title="Vista de frente">Frente</button>' +
+      '<button type="button" class="e3d-bt" data-v="topo" title="Vista de cima">Topo</button>' +
+      '<button type="button" class="e3d-bt" data-v="direita" title="Vista de lado">Lado</button>' +
+      '<span class="sep"></span>' +
+      '<select data-b="modo" title="O que mostrar na peça">' +
+        '<option value="cores">Cores</option><option value="normais">Avesso (vermelho)</option><option value="cascas">Cascas soltas</option>' +
+        '<option value="problemas">Defeitos da malha</option><option value="espessura">Espessura</option><option value="partes">Partes detectadas</option></select>' +
+      '<label class="chip" title="Mostrar os triângulos (W)"><input type="checkbox" data-b="arame">Arame</label>' +
+      '<label class="chip" title="Sombreado facetado"><input type="checkbox" data-b="facetado">Facetado</label>';
+    this.chkArame = this.vistasEl.querySelector('[data-b=arame]');
+    this.hud = el('div', { class: 'e3d-hud e3d-vidro' });
+    this.dica = el('div', { class: 'e3d-dica e3d-vidro', html: 'arrastar: girar · botão direito: mover · rodinha: zoom' });
+    this.ocupadoEl = el('div', { class: 'e3d-ocupado e3d-vidro' });
+    this.ocupadoEl.innerHTML = '<span class="roda"></span><div><span data-o="rot">Calculando…</span><small data-o="tempo">0,0 s</small></div><button type="button" class="btn" data-o="cancelar" style="display:none">Cancelar</button>';
+    this.ocupadoEl.querySelector('[data-o=cancelar]').onclick = () => this.cancelarCalculo();
+    this.previaEl = el('div', { class: 'e3d-previa e3d-vidro', style: 'display:none' });
+    this.palco.append(this.vazio, this.objetosEl, this.saudeEl, this.vistasEl, this.hud, this.dica, this.ocupadoEl, this.previaEl);
 
+    // início (tarefas + sugestões) e os quadros das ferramentas
+    this.inicioEl = el('div', { class: 'e3d-inicio' });
+    this.painelCorpo.appendChild(this.inicioEl);
     this.secoes.diagnostico = montarDiagnostico(this);
     this.secoes.transformar = montarTransformar(this);
     this.secoes.selecionar = montarSelecionar(this);
@@ -102,16 +160,24 @@ export class Estudio {
     this.secoes.cortar = montarCortar(this);
     this.secoes.relevo = montarRelevo(this);
     this.secoes.exportar = montarExportar(this);
-    for (const k in this.secoes) this.painel.appendChild(this.secoes[k].el);
-    // um quadro aberto por vez (menos rolagem)
+    for (const k in this.secoes) this.painelCorpo.appendChild(this.secoes[k].el);
+    // um quadro aberto por vez; o trilho acompanha
     this.painel.addEventListener('toggle', ev => {
       const d = ev.target;
-      if (d.tagName === 'DETAILS' && d.open) {
+      if (d.tagName !== 'DETAILS') return;
+      if (d.open) {
         this.painel.querySelectorAll('details[open]').forEach(x => { if (x !== d) x.open = false; });
+        this.mostrarCabecalho(d.dataset.sec);
         this.emitir('secao', d.dataset.sec);
-      } else if (d.tagName === 'DETAILS' && !d.open) this.emitir('secao-fechou', d.dataset.sec);
+      } else {
+        this.emitir('secao-fechou', d.dataset.sec);
+        if (!this.painel.querySelector('details[open]')) this.mostrarCabecalho('inicio');
+      }
     }, true);
 
+    this.visor.pedirBVH = malha => this.motor.local ? Promise.resolve(null)
+      : this.motor.rodar('bvh', { malha: { pos: malha.pos, idx: malha.idx } }, { canal: 'aux' }).catch(() => null);
+    this.visor.on('secao', () => {});
     this.ligarBarra();
     this.ligarPalco();
     this.ligarAtalhos();
@@ -119,12 +185,117 @@ export class Estudio {
     this.cena.on('selecao', () => this.aoSelecionar());
     this.visor.on('gizmo-fim', g => this.fimGizmo(g));
     this.visor.on('gizmo-mudou', () => this.atualizarHud());
+    this.on('analisou', () => { this.renderSaude(); if (this.painel.classList.contains('inicio')) this.renderInicio(); });
+    // tema claro/escuro do sistema
+    new MutationObserver(() => this.visor.definirTema(document.documentElement.dataset.tema === 'escuro'))
+      .observe(document.documentElement, { attributes: true, attributeFilter: ['data-tema'] });
+    document.addEventListener('fullscreenchange', () => {
+      const b = this.topo.querySelector('[data-b=tela]');
+      const cheia = document.fullscreenElement === this.raiz;
+      b.innerHTML = icone(cheia ? 'sairTela' : 'telaCheia', 17);
+      b.title = cheia ? 'Sair da tela cheia (Esc)' : 'Tela cheia (mais espaço pro 3D)';
+      this.visor.redimensionar();
+    });
     this.aoMudar();
+    // abre no quadro 1 (conferir) — o mesmo de antes; sem modelo, mostra o Início
+    const d1 = this.secoes.diagnostico.el;
+    if (d1.open) this.mostrarCabecalho('diag');
+    this.abrirFerramenta(this.cena.objetos.length ? 'diag' : 'inicio');
+  }
+
+  /* ------------------------------------------------------------ trilho / painel */
+  abrirFerramenta(sec) {
+    if (sec === 'inicio') {
+      this.painel.querySelectorAll('details[open]').forEach(x => { x.open = false; });
+      this.mostrarCabecalho('inicio');
+      return;
+    }
+    const d = this.painel.querySelector('details[data-sec="' + sec + '"]');
+    if (!d) return;
+    if (!d.open) { d.open = true; d.dispatchEvent(new Event('toggle')); }
+    this.mostrarCabecalho(sec);
+  }
+  mostrarCabecalho(sec) {
+    const f = FERRAMENTAS.find(x => x.sec === sec) || FERRAMENTAS[0];
+    this.trilho.querySelectorAll('button[data-ferr]').forEach(b => b.classList.toggle('ativo', b.dataset.ferr === f.sec));
+    this.painelCab.innerHTML = '<div class="rot"><i>' + icone(f.ico, 19) + '</i><h3>' + f.titulo + '</h3></div><p>' + f.desc + '</p>';
+    this.painel.classList.toggle('inicio', f.sec === 'inicio');
+    if (f.sec === 'inicio') this.renderInicio();
+    this.painelCorpo.scrollTop = 0;
+  }
+
+  renderInicio() {
+    const h = this.inicioEl;
+    h.innerHTML = '';
+    const o = this.cena.objetoSel() || this.cena.objetos[0] || null;
+    if (!o) {
+      h.appendChild(el('div', { class: 'e3d-sugestoes' }, el('div', { class: 'e3d-sug dica' },
+        el('i', { html: icone('abrir', 16) }),
+        el('div', { class: 'txt' }, el('b', null, 'Comece abrindo um modelo'), 'Arraste o STL, OBJ ou 3MF pra área 3D.'),
+        el('button', { class: 'btn primary', onclick: () => this.inputArquivo.click() }, 'Abrir'))));
+    } else {
+      const sug = calcularSugestoes(this, o);
+      h.appendChild(el('div', { class: 'e3d-bloco-tit' }, 'Sugestões pra ' + o.nome));
+      const lista = el('div', { class: 'e3d-sugestoes' });
+      for (const s of sug) {
+        lista.appendChild(el('div', { class: 'e3d-sug ' + s.tipo },
+          el('i', { html: icone(s.ico, 16) }),
+          el('div', { class: 'txt' }, el('b', null, s.titulo), s.texto || ''),
+          s.botao ? el('button', { class: 'btn' + (s.tipo === 'ruim' || s.tipo === 'atencao' ? ' primary' : ''), onclick: () => this.executarTarefa(s.acao) }, s.botao) : null));
+      }
+      h.appendChild(lista);
+    }
+    h.appendChild(el('div', { class: 'e3d-bloco-tit' }, 'Tarefas'));
+    const g = el('div', { class: 'e3d-tarefas' });
+    for (const t of TAREFAS) {
+      g.appendChild(el('button', { type: 'button', class: 'e3d-tarefa', 'data-tarefa': t.acao, disabled: !o ? true : null, onclick: () => this.executarTarefa(t.acao), html: '<i>' + icone(t.ico, 18) + '</i><b>' + t.t + '</b><span>' + t.d + '</span>' }));
+    }
+    h.appendChild(g);
+  }
+
+  // o que cada atalho/sugestão faz
+  executarTarefa(acao) {
+    const o = this.cena.objetoSel() || this.cena.objetos[0];
+    if (o && !this.cena.objetoSel()) this.cena.selecionar(o.id, o.partes.length === 1 ? o.partes[0].id : null);
+    switch (acao) {
+      case 'consertar': this.abrirFerramenta('diag'); this.secoes.diagnostico.el.querySelector('[data-a=reparar]').click(); break;
+      case 'analisar': this.abrirFerramenta('diag'); this.secoes.diagnostico.el.querySelector('[data-a=analisar]').click(); break;
+      case 'deitar': this.abrirFerramenta('transf'); this.secoes.transformar.el.querySelector('[data-a=deitar]').click(); break;
+      case 'naMesa': if (o) { this.cena.aplicar('Colocar na mesa', () => this.cena.colocarNaMesa(o)); } break;
+      case 'porCor': {
+        this.abrirFerramenta('sep');
+        const b = this.secoes.separar.el.querySelector('[data-a="porCor"]');
+        if (b) setTimeout(() => b.scrollIntoView({ block: 'center' }), 60);
+        break;
+      }
+      case 'cascas': {
+        this.abrirFerramenta('sep');
+        const b = this.secoes.separar.el.querySelector('[data-a="cascas"]');
+        if (b) setTimeout(() => b.scrollIntoView({ block: 'center' }), 60);
+        break;
+      }
+      case 'espessura': this.definirModoVisual('espessura'); this.abrirFerramenta('diag'); break;
+      case 'unidade': this.abrirFerramenta('diag'); break;
+      default: this.abrirFerramenta(acao);
+    }
+  }
+
+  // bolinha de saúde no canto do 3D
+  renderSaude() {
+    const o = this.cena.objetoSel() || this.cena.objetos[0];
+    const s = this.saudeEl;
+    if (!o) { s.className = 'e3d-saude e3d-vidro'; return; }
+    const sug = calcularSugestoes(this, o);
+    const ruins = sug.filter(x => x.tipo === 'ruim').length, atencao = sug.filter(x => x.tipo === 'atencao').length;
+    const medindo = sug.some(x => x.medindo);
+    const tipo = medindo ? 'medindo' : ruins ? 'ruim' : atencao ? 'atencao' : 'bom';
+    s.className = 'e3d-saude e3d-vidro on ' + tipo;
+    s.innerHTML = '<i>' + (tipo === 'bom' ? icone('check', 13) : tipo === 'medindo' ? '…' : '!') + '</i><span>' +
+      (medindo ? 'Conferindo a malha…' : ruins ? ruins + ' problema' + (ruins > 1 ? 's' : '') + ' pra resolver' : atencao ? atencao + ' sugest' + (atencao > 1 ? 'ões' : 'ão') : 'Pronto pra imprimir') + '</span>';
   }
 
   ligarBarra() {
-    const b = this.barra;
-    b.addEventListener('click', ev => {
+    const clique = ev => {
       const t = ev.target.closest('button');
       if (!t) return;
       if (t.dataset.g) this.definirGizmo(t.dataset.g);
@@ -134,15 +305,25 @@ export class Estudio {
       else if (t.dataset.b === 'refazer') this.refazer();
       else if (t.dataset.b === 'enquadrar') this.enquadrar();
       else if (t.dataset.b === 'organizar') this.organizarMesa();
-    });
-    b.querySelector('[data-b=modo]').addEventListener('change', ev => this.definirModoVisual(ev.target.value));
-    b.querySelector('[data-b=arame]').addEventListener('change', ev => this.visor.definirArame(ev.target.checked));
-    b.querySelector('[data-b=facetado]').addEventListener('change', ev => this.visor.definirSombreado(ev.target.checked ? 'facetado' : 'suave'));
+      else if (t.dataset.b === 'tela') this.alternarTelaCheia();
+    };
+    this.topo.addEventListener('click', clique);
+    this.vistasEl.addEventListener('click', clique);
+    this.vistasEl.querySelector('[data-b=modo]').addEventListener('change', ev => this.definirModoVisual(ev.target.value));
+    this.chkArame.addEventListener('change', ev => this.visor.definirArame(ev.target.checked));
+    this.vistasEl.querySelector('[data-b=facetado]').addEventListener('change', ev => this.visor.definirSombreado(ev.target.checked ? 'facetado' : 'suave'));
     this.inputArquivo.addEventListener('change', () => { const f = [...this.inputArquivo.files]; this.inputArquivo.value = ''; if (f.length) this.importarArquivos(f); });
   }
 
+  alternarTelaCheia() {
+    try {
+      if (document.fullscreenElement === this.raiz) document.exitFullscreen();
+      else if (this.raiz.requestFullscreen) this.raiz.requestFullscreen();
+    } catch (e) { /* navegador sem tela cheia */ }
+  }
+
   definirGizmo(m) {
-    this.barra.querySelectorAll('[data-g]').forEach(x => x.classList.toggle('ativo', x.dataset.g === m));
+    this.topo.querySelectorAll('[data-g]').forEach(x => x.classList.toggle('ativo', x.dataset.g === m));
     this.visor.definirGizmo(m);
     if (m !== 'nenhum' && this.ferramenta !== 'navegar') this.definirFerramenta('navegar');
   }
@@ -150,6 +331,33 @@ export class Estudio {
   ligarPalco() {
     const cv = this.visor.renderer.domElement;
     let ini = null;
+    // seta azul do corte: pega antes da câmera (fase de captura)
+    let arrastandoCorte = null;
+    this.palco.addEventListener('pointerdown', ev => {
+      if (ev.button !== 0 || this.ferramenta !== 'corte' || this.previaAtiva || ev.target !== cv) return;
+      if (!this.visor.acertouAlcaCorte(ev)) return;
+      ev.stopPropagation(); ev.preventDefault();
+      arrastandoCorte = ev.pointerId;
+      try { cv.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+      this.visor.realcarAlcaCorte(true);
+    }, true);
+    cv.addEventListener('pointermove', ev => {
+      if (arrastandoCorte != null) { this.emitir('corte-arrasto', this.visor.dDoArrasto(ev)); return; }
+      if (this.ferramenta === 'corte' && !ev.buttons) {
+        const em = this.visor.acertouAlcaCorte(ev);
+        cv.style.cursor = em ? 'grab' : 'crosshair';
+        this.visor.realcarAlcaCorte(em);
+      }
+    });
+    const soltarCorte = ev => {
+      if (arrastandoCorte == null) return false;
+      arrastandoCorte = null;
+      try { cv.releasePointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+      this.visor.realcarAlcaCorte(false);
+      ini = null;
+      return true;
+    };
+    cv.addEventListener('pointerup', ev => { if (soltarCorte(ev)) ev.stopImmediatePropagation(); }, true);
     cv.addEventListener('pointerdown', ev => {
       ini = { x: ev.clientX, y: ev.clientY, b: ev.button };
       if (ev.button === 0 && this.ferramenta === 'pincel' && !this.previaAtiva) {
@@ -209,7 +417,7 @@ export class Estudio {
       else if (k === 'r') this.definirGizmo('girar');
       else if (k === 's') this.definirGizmo('escalar');
       else if (k === 'b') this.definirFerramenta('pincel');
-      else if (k === 'w') { const c = this.barra.querySelector('[data-b=arame]'); c.checked = !c.checked; this.visor.definirArame(c.checked); }
+      else if (k === 'w') { const c = this.chkArame; c.checked = !c.checked; this.visor.definirArame(c.checked); }
     });
   }
 
@@ -234,12 +442,14 @@ export class Estudio {
     if (f !== 'pincel') this.visor.mostrarPincel(null);
     this.visor.renderer.domElement.style.cursor = f === 'navegar' ? '' : 'crosshair';
     this.dica.innerHTML = f === 'pincel' ? 'arraste sobre a peça pra pintar · começando fora da peça, gira a vista'
-      : f === 'navegar' ? 'arrastar: girar · botão direito: mover a vista · rodinha: zoom'
+      : f === 'navegar' ? 'arrastar: girar · botão direito: mover · rodinha: zoom'
+      : f === 'corte' ? 'clique na peça: o corte vai até ali · arraste a seta azul · ↑ ↓ ajustam'
+      : f === 'deitar' ? 'clique na face que deve ficar na mesa · Esc volta'
       : 'clique na peça · Shift soma · Alt tira · Esc volta';
     this.emitir('ferramenta', f);
   }
   definirGizmoSilencioso(m) {
-    this.barra.querySelectorAll('[data-g]').forEach(x => x.classList.toggle('ativo', x.dataset.g === m));
+    this.topo.querySelectorAll('[data-g]').forEach(x => x.classList.toggle('ativo', x.dataset.g === m));
     this.visor.definirGizmo(m);
   }
 
@@ -249,7 +459,10 @@ export class Estudio {
     this.renderCena();
     this.atualizarHud();
     this.vazio.style.display = this.cena.objetos.length ? 'none' : '';
-    const bd = this.barra.querySelector('[data-b=desfazer]'), br = this.barra.querySelector('[data-b=refazer]');
+    this.objetosEl.style.display = this.cena.objetos.length ? '' : 'none';
+    this.renderSaude();
+    if (this.painel.classList.contains('inicio')) this.renderInicio();
+    const bd = this.btDesfazer, br = this.btRefazer;
     bd.disabled = !this.cena.podeDesfazer(); br.disabled = !this.cena.podeRefazer();
     bd.title = this.cena.proximoDesfazer() ? 'Desfazer: ' + this.cena.proximoDesfazer() + ' (Ctrl+Z)' : 'Nada pra desfazer';
     br.title = this.cena.proximoRefazer() ? 'Refazer: ' + this.cena.proximoRefazer() + ' (Ctrl+Y)' : 'Nada pra refazer';
@@ -261,6 +474,8 @@ export class Estudio {
     this.visor.atualizarCaixaSel();
     this.renderCena();
     this.atualizarHud();
+    this.renderSaude();
+    if (this.painel.classList.contains('inicio')) this.renderInicio();
     this.emitir('selecao');
   }
 
@@ -290,13 +505,30 @@ export class Estudio {
     return this.cena.caixaExata({ ...o, transform: t });
   }
 
-  atualizarMotor(n) {
-    const m = this.barra.querySelector('[data-b=motor]');
+  atualizarMotor(n, info) {
+    const m = this.topo.querySelector('[data-b=motor]');
     const pronto = !!this.modoMotor;
-    m.className = 'e3d-motor ' + (n > 0 ? 'ocupado' : pronto ? 'ok' : '');
-    m.querySelector('span').textContent = !pronto ? 'carregando motor…' : n > 0 ? 'calculando…' : (this.modoMotor === 'worker' ? 'motor pronto' : 'motor pronto (modo simples)');
-    m.title = this.modoMotor === 'local' ? 'Rodando sem Web Worker: ' + (this.motor.motivoLocal || '') : 'Geometria calculada em segundo plano (Web Worker)';
-    this.ocupadoEl.classList.toggle('on', n > 0);
+    const aux = this.motor.aux ? this.motor.aux.ocupado : 0;
+    m.className = 'e3d-motor ' + (n > 0 || aux > 0 ? 'ocupado' : pronto ? 'ok' : '');
+    m.querySelector('span').textContent = !pronto ? 'carregando motor…' : n > 0 ? 'calculando…' : aux > 0 ? 'conferindo…' : (this.modoMotor === 'worker' ? 'motor pronto' : 'motor pronto (modo simples)');
+    m.title = this.modoMotor === 'local' ? 'Rodando sem Web Worker: ' + (this.motor.motivoLocal || '') : 'Geometria calculada em segundo plano, sem travar a tela';
+    const on = n > 0;
+    this.ocupadoEl.classList.toggle('on', on);
+    clearInterval(this._relogio);
+    if (on) {
+      const ini = info && info.desde || performance.now();
+      this.ocupadoEl.querySelector('[data-o=rot]').textContent = (info && NOMES_OP[info.op] || 'Calculando') + '…';
+      const tick = () => {
+        const s = (performance.now() - ini) / 1000;
+        this.ocupadoEl.querySelector('[data-o=tempo]').textContent = fmt(s, 1) + ' s' + (n > 1 ? ' · ' + (n - 1) + ' na fila' : '');
+        this.ocupadoEl.querySelector('[data-o=cancelar]').style.display = s > 1.2 && !this.motor.local ? '' : 'none';
+      };
+      tick();
+      this._relogio = setInterval(tick, 100);
+    }
+  }
+  async cancelarCalculo() {
+    if (await this.motor.cancelar()) avisar('Cálculo cancelado.', 'warn');
   }
 
   // roda uma operação do motor mostrando "calculando" e tratando erro
@@ -304,6 +536,7 @@ export class Estudio {
     try {
       return await this.motor.rodar(op, args);
     } catch (e) {
+      if (e && e.codigo === 'cancelado') throw e;
       console.error(e);
       avisar((rotulo ? rotulo + ': ' : '') + (e.message || e), 'warn');
       throw e;
@@ -312,24 +545,33 @@ export class Estudio {
 
   /* ------------------------------------------------------------ lista da cena */
   renderCena() {
-    const p = this.painelCena;
+    const p = this.objetosEl;
     const sel = this.cena.sel;
     p.innerHTML = '';
-    p.appendChild(el('div', { class: 'e3d-titulo' }, 'Objetos na mesa'));
-    if (!this.cena.objetos.length) { p.appendChild(el('p', { class: 'u', style: 'font-size:12px;color:var(--ink-dim)' }, 'Nenhum modelo aberto.')); return; }
+    const cab = el('div', { class: 'e3d-objetos-cab', title: 'Mostrar/esconder a lista' },
+      el('span', { html: icone('camadas', 15) }), 'Objetos', el('span', { class: 'qtd' }, String(this.cena.objetos.length)), el('span', { class: 'seta', html: icone('seta', 15) }));
+    // com um objeto só a lista fica recolhida (não cobre a peça); o clique do usuário manda
+    const recolhida = () => this.listaRecolhida != null ? this.listaRecolhida : this.cena.objetos.length <= 1;
+    cab.onclick = () => { this.listaRecolhida = !recolhida(); p.classList.toggle('recolhido', this.listaRecolhida); };
+    p.classList.toggle('recolhido', recolhida());
+    p.appendChild(cab);
+    const lista = el('div', { class: 'e3d-objetos-lista' });
+    p.appendChild(lista);
+    if (!this.cena.objetos.length) return;
     for (const o of this.cena.objetos) {
       const box = el('div', { class: 'e3d-obj' + (o.id === sel.objeto ? ' sel' : '') });
       const c = this.cena.caixaExata(o);
-      const cab = el('div', { class: 'e3d-obj-cab', title: 'Clique pra escolher · duplo clique renomeia' },
+      const cabO = el('div', { class: 'e3d-obj-cab', title: 'Clique pra escolher · duplo clique renomeia' },
+        el('span', { class: 'e3d-bola', style: 'background:' + (o.partes[0] ? o.partes[0].cor : '#999') }),
         el('span', { class: 'nome' }, o.nome),
         el('span', { class: 'med' }, c ? fmt(c.tam[0], 0) + '×' + fmt(c.tam[1], 0) + '×' + fmt(c.tam[2], 0) : ''),
         el('button', { class: 'e3d-ico', title: o.visivel ? 'Esconder' : 'Mostrar', html: o.visivel ? ICONES.olho : ICONES.olhoFechado, onclick: ev => { ev.stopPropagation(); this.cena.aplicar(o.visivel ? 'Esconder objeto' : 'Mostrar objeto', () => { o.visivel = !o.visivel; }); } }),
-        el('button', { class: 'e3d-ico', title: 'Duplicar', onclick: ev => { ev.stopPropagation(); this.duplicarObjeto(o.id); } }, '⧉'),
-        el('button', { class: 'e3d-ico', title: 'Excluir (Delete)', onclick: ev => { ev.stopPropagation(); this.removerObjeto(o.id); } }, '✕'));
-      cab.addEventListener('click', () => this.cena.selecionar(o.id, o.partes.length === 1 ? o.partes[0].id : null));
-      cab.addEventListener('dblclick', () => this.renomear(o));
-      box.appendChild(cab);
-      if (o.partes.length > 1 || o.id === sel.objeto) {
+        el('button', { class: 'e3d-ico', title: 'Duplicar', html: icone('duplicar', 14), onclick: ev => { ev.stopPropagation(); this.duplicarObjeto(o.id); } }),
+        el('button', { class: 'e3d-ico', title: 'Excluir (Delete)', html: icone('lixo', 14), onclick: ev => { ev.stopPropagation(); this.removerObjeto(o.id); } }));
+      cabO.addEventListener('click', () => this.cena.selecionar(o.id, o.partes.length === 1 ? o.partes[0].id : null));
+      cabO.addEventListener('dblclick', () => this.renomear(o));
+      box.appendChild(cabO);
+      if (o.partes.length > 1) {
         for (const pt of o.partes) {
           const linha = el('div', { class: 'e3d-parte' + (o.id === sel.objeto && pt.id === sel.parte ? ' sel' : ''), title: pt.cor + (pt.paleta ? ' + ' + (pt.paleta.length - 1) + ' cor(es) pintada(s)' : '') },
             el('span', { class: 'e3d-bola', style: 'background:' + pt.cor + (pt.paleta ? ';background:conic-gradient(' + pt.paleta.slice(0, 6).map((h, i, a) => h + ' ' + Math.round(i * 100 / a.length) + '% ' + Math.round((i + 1) * 100 / a.length) + '%').join(',') + ')' : '') }),
@@ -340,13 +582,13 @@ export class Estudio {
           box.appendChild(linha);
         }
       }
-      p.appendChild(box);
+      lista.appendChild(box);
     }
     const acoes = el('div', { class: 'e3d-botoes' },
-      el('button', { class: 'btn', title: 'Todos os objetos viram peças de um objeto só (montagem multicor)', onclick: () => this.juntarObjetos() }, 'Juntar num objeto'),
+      el('button', { class: 'btn', title: 'Todos os objetos viram peças de um objeto só (montagem multicor)', onclick: () => this.juntarObjetos() }, 'Juntar'),
       el('button', { class: 'btn', title: 'Cada peça do objeto escolhido vira um objeto (imprimir separado)', onclick: () => this.separarPecasEmObjetos() }, 'Peças → objetos'),
-      el('button', { class: 'btn danger', onclick: () => this.limparCena() }, 'Limpar mesa'));
-    p.appendChild(acoes);
+      el('button', { class: 'btn danger', onclick: () => this.limparCena() }, 'Limpar'));
+    lista.appendChild(acoes);
   }
 
   renomear(alvo) {
@@ -480,6 +722,7 @@ export class Estudio {
         }
         const novos = this.adicionarObjetos(r.objetos, { rotulo: 'Abrir ' + f.name });
         this.emitir('importou', { resultado: r, objetos: novos, arquivo: f.name });
+        this.abrirFerramenta('inicio');
         avisar(f.name + ': ' + fmtInt(r.triangulos) + ' triângulos, ' + r.objetos.length + ' objeto(s)');
       } catch (e) { /* já avisado */ }
     }
@@ -487,7 +730,7 @@ export class Estudio {
 
   /* ------------------------------------------------------------ visualização */
   definirModoVisual(m) {
-    this.barra.querySelector('[data-b=modo]').value = m;
+    this.vistasEl.querySelector('[data-b=modo]').value = m;
     this.visor.definirModo(m);
     this.recalcularMapas();
   }

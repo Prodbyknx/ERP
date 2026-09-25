@@ -143,7 +143,8 @@ export function montarSelecionar(est) {
     const m = est.visor.selecao(p.id);
     const n = m ? contar(m) : 0;
     const total = p.malha.idx.length / 3;
-    box.innerHTML = n ? '<b>' + fmtInt(n) + '</b> de ' + fmtInt(total) + ' faces selecionadas · ' + fmt(areaSelecionada(p.malha, m), 1) + ' mm² — agora use <b>Separar para impressão</b> (quadro 4).' : 'Nada selecionado em <b>' + p.nome + '</b>.';
+    box.innerHTML = n ? '<b>' + fmtInt(n) + '</b> de ' + fmtInt(total) + ' faces selecionadas · ' + fmt(areaSelecionada(p.malha, m), 1) + ' mm² — agora use <b>Separar</b>.' : 'Nada selecionado em <b>' + p.nome + '</b>.';
+    est.emitir('faces', { parte: p, n, total });
   }
 
   /* -------- detectar partes -------- */
