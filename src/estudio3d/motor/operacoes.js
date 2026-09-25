@@ -14,6 +14,7 @@ import { escreverZip } from '../core/formatos/zip.js';
 import { transformar, juntar, volume, caixa, semFaces, compactar } from '../core/malha.js';
 import { gerarForma } from '../core/formas.js';
 import { combinar, aplicarFuros, aplicarFurosNaCena } from '../core/modelagem.js';
+import { fotosPara3D } from '../core/ia/reconstrucao.js';
 import { BufferGeometry, BufferAttribute } from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 
@@ -102,6 +103,13 @@ export const OPERACOES = {
   forma({ id, params, opc }) { return gerarForma(id, params || {}, opc || {}); },
   // unir / tirar uma da outra / parte comum
   combinar({ objetos, modo, opc }) { return combinar(objetos, modo, opc || {}); },
+  // fotos de várias vistas -> sólido fechado (silhuetas, sem IA, roda na CPU)
+  // (etapa final do pipeline: o mesmo Consertar do editor)
+  fotosPara3D({ entradas, opc }) {
+    const r = fotosPara3D(entradas, opc || {});
+    const rep = OPERACOES.reparar({ parte: { nome: r.nome, malha: r.malha, cor: r.cor, paleta: r.paleta }, opc: {} });
+    return { ...r, malha: rep.parte.malha, cor: rep.parte.cor, paleta: rep.parte.paleta, relatorio: { ...r.relatorio, reparo: rep.passos, triangulos: rep.parte.malha.idx.length / 3 } };
+  },
   // prévia ao vivo dos furos num objeto
   furar({ alvo, furos }) { return aplicarFuros(alvo, furos); },
 

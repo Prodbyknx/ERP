@@ -13,12 +13,17 @@
 //  SUPERFÍCIE: segue a borda exata da seleção e tampa os buracos com a mesma
 //    tampa nas duas peças (lisa quando a borda não é plana). Usado quando o
 //    plano não serve (seleção curva demais ou o prisma pegaria outra parte).
+//
+//  CAMADA: com 'profundidade' numa região curva (o plano não serve), o
+//    detalhe vira uma camada que acompanha a superfície e o resto ganha o
+//    bolso do mesmo formato (ex.: olho pintado numa cabeça redonda).
 import { comContexto, manifold } from './solidos.js';
 import { prepararAdjacencia, limpar, regioes, expandir } from './selecao.js';
 import { criar, subMalha, areaFace, compactar, volume } from './malha.js';
 import { triangularLaco, refinarEAlisar } from './reparo.js';
 import { gerarConectores } from './conectores.js';
 import { componentes } from './topologia.js';
+import { autoInterseccoes } from './validador.js';
 import * as M4 from './mat4.js';
 
 /* ---------------------------------------------------------- utilidades */
@@ -256,6 +261,96 @@ function extrairPorPlano(ctx, atual, R, adj, opc, avisos) {
 
 function normalizar(v) { const L = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / L, v[1] / L, v[2] / L]; }
 
+/* ---------------------------------------------------------- método camada */
+
+// Região pintada numa superfície CURVA com espessura: o plano não serve (a
+// região dobra), então o detalhe vira uma camada de espessura t que acompanha
+// a curvatura e a peça principal ganha o bolso do mesmo formato. As duas peças
+// são montadas direto da malha (sem booleana): o topo do detalhe são as faces
+// originais da região (cor e forma exatas), o fundo é a região empurrada pra
+// dentro pelas normais dos vértices e as paredes descem ao longo da borda.
+// Depois confere se nada se cruza (curva mais fechada que a espessura, ou
+// parede mais fina que ela); se cruzar, suaviza as normais e tenta de novo.
+function extrairPorCamada(ctx, atual, R, adj, opc) {
+  const m = atual.malha, p = m.pos, I = m.idx, nt = R.length, nv0 = p.length / 3;
+  const t = Math.max(0.2, opc.profundidade || 0), folga = Math.max(0, opc.folga || 0);
+  const mapa = new Int32Array(nv0).fill(-1), verts = [];
+  for (let f = 0; f < nt; f++) if (R[f]) for (let k = 0; k < 3; k++) { const v = I[f * 3 + k]; if (mapa[v] < 0) { mapa[v] = verts.length; verts.push(v); } }
+  const nv = verts.length, N0 = new Float64Array(nv * 3), viz = verts.map(() => new Set());
+  // normal do vértice com TODAS as faces em volta (inclusive fora da região):
+  // na borda serrilhada de uma região de cor ela varia suave
+  for (let f = 0; f < nt; f++) {
+    const a = I[f * 3], b = I[f * 3 + 1], c = I[f * 3 + 2];
+    if (mapa[a] < 0 && mapa[b] < 0 && mapa[c] < 0) continue;
+    const ux = p[b * 3] - p[a * 3], uy = p[b * 3 + 1] - p[a * 3 + 1], uz = p[b * 3 + 2] - p[a * 3 + 2];
+    const wx = p[c * 3] - p[a * 3], wy = p[c * 3 + 1] - p[a * 3 + 1], wz = p[c * 3 + 2] - p[a * 3 + 2];
+    const n = [uy * wz - uz * wy, uz * wx - ux * wz, ux * wy - uy * wx];   // |n| = 2·área: média ponderada
+    for (const v of [a, b, c]) { const j = mapa[v]; if (j >= 0) { N0[j * 3] += n[0]; N0[j * 3 + 1] += n[1]; N0[j * 3 + 2] += n[2]; } }
+    if (R[f]) { viz[mapa[a]].add(mapa[b]).add(mapa[c]); viz[mapa[b]].add(mapa[a]).add(mapa[c]); viz[mapa[c]].add(mapa[a]).add(mapa[b]); }
+  }
+  const unit = A => { for (let j = 0; j < A.length; j += 3) { const L = Math.hypot(A[j], A[j + 1], A[j + 2]) || 1; A[j] /= L; A[j + 1] /= L; A[j + 2] /= L; } return A; };
+  unit(N0);
+  // meias-arestas da borda (u -> v como na face da região)
+  const bordas = [];
+  for (let f = 0; f < nt; f++) if (R[f]) for (let k = 0; k < 3; k++) {
+    const o = adj.viz[f * 3 + k];
+    if (o < 0 || !R[o]) bordas.push(I[f * 3 + k], I[f * 3 + (k + 1) % 3]);
+  }
+  if (!bordas.length) return { falhou: 'Não achei a borda da região.' };
+  const temCor = !!m.cor;
+  const kDet = atual.corDetalheIdx != null ? atual.corDetalheIdx : 0, kRes = atual.corRestoIdx != null ? atual.corRestoIdx : 0;
+  // caixa da região + espessura: só ali pode aparecer cruzamento novo
+  const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+  for (const v of verts) for (let e = 0; e < 3; e++) { mn[e] = Math.min(mn[e], p[v * 3 + e]); mx[e] = Math.max(mx[e], p[v * 3 + e]); }
+  const pad = t + folga + 0.01;
+  const perto = (P, mm, f) => { for (let k = 0; k < 3; k++) { const v = mm.idx[f * 3 + k] * 3; if (P[v] > mn[0] - pad && P[v] < mx[0] + pad && P[v + 1] > mn[1] - pad && P[v + 1] < mx[1] + pad && P[v + 2] > mn[2] - pad && P[v + 2] < mx[2] + pad) return true; } return false; };
+  const cruza = mm => { const loc = subMalha(mm, Uint8Array.from({ length: mm.idx.length / 3 }, (_, f) => perto(mm.pos, mm, f) ? 1 : 0)).malha; return autoInterseccoes(loc, { max: 1 }).pares > 0; };
+
+  // suavização proporcional a quantas arestas cabem na espessura (malha fina
+  // de IA tem triângulo bem menor que a espessura: normal crua dobraria)
+  let somaA = 0;
+  for (let i = 0; i < bordas.length; i += 2) { const a = bordas[i] * 3, b = bordas[i + 1] * 3; somaA += Math.hypot(p[a] - p[b], p[a + 1] - p[b + 1], p[a + 2] - p[b + 2]); }
+  const aneis = (t + folga) / Math.max(1e-6, somaA / (bordas.length / 2));
+  const tentativas = [...new Set([0, 1, 4, 12, 40].map(k => Math.min(400, Math.ceil(k * aneis * aneis))))];
+  for (const passos of tentativas) {
+    let N = N0;
+    for (let it = 0; it < passos; it++) {
+      const S = Float64Array.from(N);
+      for (let j = 0; j < nv; j++) for (const q of viz[j]) { S[j * 3] += N[q * 3]; S[j * 3 + 1] += N[q * 3 + 1]; S[j * 3 + 2] += N[q * 3 + 2]; }
+      N = unit(S);
+    }
+    const baseT = nv0, baseF = folga > 0 ? nv0 + nv : nv0;
+    const P = new Float64Array((nv0 + nv * (folga > 0 ? 2 : 1)) * 3);
+    P.set(p);
+    for (let j = 0; j < nv; j++) for (let e = 0; e < 3; e++) {
+      const v = verts[j] * 3 + e;
+      P[(baseT + j) * 3 + e] = p[v] - N[j * 3 + e] * t;
+      if (folga > 0) P[(baseF + j) * 3 + e] = p[v] - N[j * 3 + e] * (t + folga);
+    }
+    const iD = [], iR = [], cD = [], cR = [], oD = [], oR = [];
+    const novaD = (a, b, c) => { iD.push(a, b, c); cD.push(kDet); oD.push(-1); };
+    const novaR = (a, b, c) => { iR.push(a, b, c); cR.push(kRes); oR.push(-1); };
+    for (let f = 0; f < nt; f++) {
+      const a = I[f * 3], b = I[f * 3 + 1], c = I[f * 3 + 2];
+      if (R[f]) {
+        iD.push(a, b, c); cD.push(temCor ? m.cor[f] : kDet); oD.push(atual.origem[f]);
+        novaD(baseT + mapa[a], baseT + mapa[c], baseT + mapa[b]);   // fundo do detalhe
+        novaR(baseF + mapa[a], baseF + mapa[b], baseF + mapa[c]);   // fundo do bolso
+      } else { iR.push(a, b, c); cR.push(temCor ? m.cor[f] : kRes); oR.push(atual.origem[f]); }
+    }
+    for (let i = 0; i < bordas.length; i += 2) {
+      const u = bordas[i], v = bordas[i + 1];
+      novaD(v, u, baseT + mapa[u]); novaD(v, baseT + mapa[u], baseT + mapa[v]);
+      novaR(v, baseF + mapa[u], u); novaR(v, baseF + mapa[v], baseF + mapa[u]);
+    }
+    const d = compactarComOrigem(criar(P, Uint32Array.from(iD), temCor ? Uint16Array.from(cD) : null), oD);
+    const r = compactarComOrigem(criar(P, Uint32Array.from(iR), temCor ? Uint16Array.from(cR) : null), oR);
+    if (cruza(d.malha) || cruza(r.malha)) continue;
+    return { detMalha: d.malha, detOrigem: d.origem, restoMalha: r.malha, restoOrigem: r.origem, metodo: 'camada' };
+  }
+  return { falhou: 'A camada de ' + t.toFixed(1) + ' mm se cruzaria (curva mais fechada ou parede mais fina que a espessura). Use uma espessura menor.' };
+}
+
 /* ---------------------------------------------------------- método superfície */
 
 function extrairPelaSuperficie(atual, R, adj, opc) {
@@ -298,6 +393,16 @@ function extrairPelaSuperficie(atual, R, adj, opc) {
   const det = compactarComOrigem(criar(P, Uint32Array.from(idxD), temCor ? Uint16Array.from(corD) : null), orD);
   const resto = compactarComOrigem(criar(P, Uint32Array.from(idxR), temCor ? Uint16Array.from(corR) : null), orR);
   return { detMalha: det.malha, detOrigem: det.origem, restoMalha: resto.malha, restoOrigem: resto.origem, metodo: 'superficie', lacos: b.lacos.length };
+}
+
+// faces novas (tampa, parede, fundo) precisam das duas cores na paleta
+function paletaDasTampas(atual, corDetalhe) {
+  if (!atual.paleta) return;
+  atual.paleta = atual.paleta.slice();
+  if (atual.paleta.indexOf(corDetalhe) < 0) atual.paleta.push(corDetalhe);
+  if (atual.paleta.indexOf(atual.cor) < 0) atual.paleta.push(atual.cor);
+  atual.corDetalheIdx = atual.paleta.indexOf(corDetalhe);
+  atual.corRestoIdx = atual.paleta.indexOf(atual.cor);
 }
 
 function compactarComOrigem(m, origem) {
@@ -365,19 +470,26 @@ export function separarDetalhe(parte, mascara, opc = {}) {
         if (modo !== 'superficie') {
           res = extrairPorPlano(ctx, atual, R, adj, opc, avisos);
           if (res.falhou) {
-            if (modo === 'plano' || (opc.profundidade > 0)) throw new Error(res.falhou + (opc.profundidade > 0 ? ' Com espessura o corte precisa ser plano: selecione uma região mais plana ou só a parte de cima do detalhe.' : ''));
-            avisos.push(res.falhou + ' Usei o fechamento que segue a superfície.');
-            res = null;
+            if (modo === 'plano') throw new Error(res.falhou);
+            if (opc.profundidade > 0) {
+              // com espessura: camada que acompanha a curvatura
+              paletaDasTampas(atual, corDetalhe);
+              const c = extrairPorCamada(ctx, atual, R, adj, opc);
+              if (c.falhou) throw new Error(res.falhou + ' ' + c.falhou);
+              avisos.push('A região é curva: o detalhe virou uma camada de ' + (+opc.profundidade).toFixed(1) + ' mm que acompanha a superfície.');
+              res = c;
+            } else {
+              avisos.push(res.falhou + ' Usei o fechamento que segue a superfície.');
+              res = null;
+            }
           }
+        } else if (opc.profundidade > 0) {
+          paletaDasTampas(atual, corDetalhe);
+          res = extrairPorCamada(ctx, atual, R, adj, opc);
+          if (res.falhou) throw new Error(res.falhou);
         }
         if (!res) {
-          if (atual.paleta) {
-            atual.paleta = atual.paleta.slice();
-            if (atual.paleta.indexOf(corDetalhe) < 0) atual.paleta.push(corDetalhe);
-            if (atual.paleta.indexOf(atual.cor) < 0) atual.paleta.push(atual.cor);
-            atual.corDetalheIdx = atual.paleta.indexOf(corDetalhe);
-            atual.corRestoIdx = atual.paleta.indexOf(atual.cor);
-          }
+          paletaDasTampas(atual, corDetalhe);
           res = extrairPelaSuperficie(atual, R, adj, opc);
           if (res.falhou) throw new Error(res.falhou);
         }

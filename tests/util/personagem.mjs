@@ -28,7 +28,7 @@ export const PONTOS = {
   laco: [9, -13, 6.5]
 };
 
-export function gerarPersonagem() {
+export function gerarPersonagem(opc = {}) {
   return comContexto(ctx => {
     const { Manifold, CrossSection } = manifold();
     const S = m => ctx.solido({ malha: m, cor: '#000000' });
@@ -55,7 +55,7 @@ export function gerarPersonagem() {
     const corpo = ctx.parte(u, 'personagem', '#1B1B1B').malha;
     // acessório solto (casca separada): argola ao lado
     const argola = ctx.parte(ctx.guardar(ctx.guardar(ctx.guardar(Manifold.cylinder(2, 4, 4, 64)).subtract(ctx.guardar(ctx.guardar(Manifold.cylinder(4, 2.6, 2.6, 48)).translate([0, 0, -1])))).translate([-30, 0, 0])), 'argola', '#1B1B1B').malha;
-    const m = juntar([corpo, argola]);
+    const m = opc.argola === false ? corpo : juntar([corpo, argola]);
     // pintura: olhos brancos, botão vermelho
     const C = centroidesFace(m), nt = m.idx.length / 3, cor = new Uint16Array(nt);
     const d = (t, p) => Math.hypot(C[t * 3] - p[0], C[t * 3 + 1] - p[1], C[t * 3 + 2] - p[2]);

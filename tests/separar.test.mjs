@@ -110,3 +110,43 @@ test('seleção inteligente: clique na orelha cresce até a dobra', () => {
   for (let t = 0; t < sel.length; t++) if (sel[t]) { if (C[t * 3 + 2] > 19) dentro++; else fora++; }
   assert.ok(dentro > 50 && fora === 0, dentro + ' ' + fora);
 });
+
+// Região pintada numa superfície CURVA (faixa em volta da esfera: o plano da
+// borda não serve) com espessura: vira camada que acompanha a curvatura.
+test('região curva com espessura (faixa na esfera) vira camada imprimível, com e sem folga', () => {
+  const m = esfera(10, 5);
+  const C = centroidesFace(m), nt = m.idx.length / 3, mask = new Uint8Array(nt);
+  let area = 0;
+  for (let t = 0; t < nt; t++) if (Math.abs(C[t * 3 + 2]) < 3) mask[t] = 1;
+  for (let t = 0; t < nt; t++) if (mask[t]) { const a = m.idx[t * 3] * 3, b = m.idx[t * 3 + 1] * 3, c = m.idx[t * 3 + 2] * 3, P = m.pos;
+    const u = [P[b] - P[a], P[b + 1] - P[a + 1], P[b + 2] - P[a + 2]], w = [P[c] - P[a], P[c + 1] - P[a + 1], P[c + 2] - P[a + 2]];
+    area += Math.hypot(u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]) / 2; }
+  const v0 = volume(m);
+  for (const folga of [0, 0.15]) {
+    const r = separarDetalhe({ nome: 'Bola', malha: m, cor: '#222222' }, mask, { profundidade: 0.8, folga, limparSelecao: false });
+    assert.deepEqual(r.metodos, ['camada']);
+    for (const p of [r.detalhe, r.principal]) {
+      const v = validar(p.malha, { completo: true });
+      assert.ok(v.fechada && !v.autoInterseccoes && !v.facesDegeneradas && v.volume > 0 && v.componentesInvertidos === 0, JSON.stringify({ ai: v.autoInterseccoes, deg: v.facesDegeneradas, f: v.fechada }));
+    }
+    // camada de ~0,8 mm: volume ≈ área × espessura (a curvatura tira um pouco)
+    const vd = volume(r.detalhe.malha);
+    assert.ok(vd > area * 0.8 * 0.85 && vd < area * 0.8 * 1.02, 'volume da camada ' + vd.toFixed(1) + ' vs ' + (area * 0.8).toFixed(1));
+    // sem folga as duas peças somam a original; com folga sobra o vão do fundo
+    const soma = vd + volume(r.principal.malha);
+    if (!folga) assert.ok(Math.abs(soma - v0) < 1e-3 * v0, 'soma ' + soma + ' vs ' + v0);
+    else assert.ok(soma < v0 && soma > v0 - area * folga * 1.05, 'folga ' + (v0 - soma).toFixed(2));
+    // as duas peças não se sobrepõem
+    const inter = comContexto(ctx => ctx.guardar(ctx.solido({ malha: r.detalhe.malha }).intersect(ctx.solido({ malha: r.principal.malha }))).volume());
+    assert.ok(inter < 1e-3, 'sobreposição ' + inter);
+  }
+});
+
+test('camada mais funda que a parede: recusa com mensagem clara (não gera peça quebrada)', () => {
+  // placa fina de 0,6 mm dobrada em "telha" (curva) e camada de 2 mm pedida
+  const m = esfera(10, 4);
+  const casca = comContexto(ctx => { const { Manifold } = manifold(); const a = ctx.solido({ malha: m }); const b = ctx.guardar(Manifold.sphere(9.4, 96)); return ctx.parte(ctx.guardar(a.subtract(b)), 'casca', '#222222'); });
+  const C = centroidesFace(casca.malha), nt = casca.malha.idx.length / 3, mask = new Uint8Array(nt);
+  for (let t = 0; t < nt; t++) { const r = Math.hypot(C[t * 3], C[t * 3 + 1], C[t * 3 + 2]); if (r > 9.7 && Math.abs(C[t * 3 + 2]) < 3) mask[t] = 1; }
+  assert.throws(() => separarDetalhe(casca, mask, { profundidade: 2, limparSelecao: false }), /parede|cruzaria|pegaria/);
+});
