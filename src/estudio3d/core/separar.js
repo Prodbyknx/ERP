@@ -316,7 +316,10 @@ export function separarDetalhe(parte, mascara, opc = {}) {
   if (mascara.length !== nt0) throw new Error('Seleção não corresponde à peça.');
   const adj0 = prepararAdjacencia(parte.malha);
   for (let h = 0; h < adj0.viz.length; h++) if (adj0.viz[h] < 0) throw new Error('A peça precisa estar fechada (sem buraco nem aresta non-manifold) pra separar. Rode "Analisar e reparar" antes.');
-  const sel = opc.limparSelecao === false ? mascara : limpar(mascara, adj0, 4);
+  // limpeza tira ilhas de 1-3 faces (ruído de pincel); se a seleção INTEIRA
+  // for pequena (ex.: etiqueta plana de 2 triângulos), ela é o que o usuário quer
+  let sel = opc.limparSelecao === false ? mascara : limpar(mascara, adj0, 4);
+  if (!regioes(sel, adj0).n) sel = mascara;
   const reg = regioes(sel, adj0);
   if (!reg.n) throw new Error('Nada selecionado.');
   // cor do detalhe = cor mais presente na seleção
@@ -393,11 +396,16 @@ export function separarDetalhe(parte, mascara, opc = {}) {
         det = ctx.parte(md, opc.nomeDetalhe || 'Detalhe', corDetalhe, true);
         resto = ctx.parte(mr, parte.nome, parte.cor, true);
       }
+      // região que não virou volume (só a pele de cima foi marcada): não vira peça vazia
+      if (!det.malha.idx.length || volume(det.malha) < 1e-3) {
+        avisos.push('Uma das regiões marcadas era só superfície e não virou peça.');
+        continue;
+      }
       detalhes.push(det);
       atual = { malha: resto.malha, cor: resto.cor, paleta: resto.paleta, origem: resto.origem };
       atual.man = ctx.solido(atual, parte.nome);
     }
-    if (!detalhes.length) throw new Error('Nada foi separado.');
+    if (!detalhes.length) throw new Error('A seleção marcou só a superfície do detalhe (ex.: só a face de cima). Clique no detalhe com "Detalhe inteiro" ligado, ou use Expandir, e tente de novo.');
     // o que o corte plano levou de fora da seleção (faixa perto da borda)
     // assume a cor do detalhe: a peça separada é impressa num filamento só
     const raizSel = new Set();

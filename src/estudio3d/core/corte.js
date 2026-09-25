@@ -4,6 +4,7 @@
 import { comContexto, manifold } from './solidos.js';
 import { gerarConectores } from './conectores.js';
 import * as M4 from './mat4.js';
+import { caixa, transladar } from './malha.js';
 
 export function normalizarPlano(plano) {
   const L = Math.hypot(plano.n[0], plano.n[1], plano.n[2]);
@@ -98,6 +99,17 @@ export function cortarPorPlano(partes, plano0, opc = {}) {
     }
     const saida = lado => lado.filter(x => !x.man.isEmpty()).map(x => ctx.parte(x.man, partes[x.i].nome, partes[x.i].cor, true));
     const pa = saida(A), pb = saida(B);
+    // pino solto nasce na origem: coloca em pé, ao lado das peças, na mesma base
+    if (extras.length) {
+      let x1 = -Infinity, y0 = Infinity, z0 = Infinity;
+      for (const p of [...pa, ...pb]) { const c = caixa(p.malha); x1 = Math.max(x1, c.max[0]); y0 = Math.min(y0, c.min[1]); z0 = Math.min(z0, c.min[2]); }
+      let x = x1 + 4;
+      for (const e of extras) {
+        const c = caixa(e.malha);
+        e.malha = transladar(e.malha, x - c.min[0], y0 - c.min[1], z0 - c.min[2]);
+        x += c.tam[0] + 3;
+      }
+    }
     const volA = A.reduce((s, x) => s + (x.man.isEmpty() ? 0 : x.man.volume()), 0);
     const volB = B.reduce((s, x) => s + (x.man.isEmpty() ? 0 : x.man.volume()), 0);
     return { A: pa, B: pb, extras, secao: sec.poligonos, areaSecao: sec.area, frame, relatorio, avisos, volumes: [volA, volB] };

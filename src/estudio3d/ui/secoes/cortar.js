@@ -189,7 +189,7 @@ export function montarCortar(est) {
           const B = novoObjeto({ nome: nomeB, transform: o.transform, partes: r.B.map(p => ({ nome: p.nome, malha: p.malha, cor: p.cor, paleta: p.paleta })) });
           const extras = r.extras.map((x, k) => novoObjeto({ nome: x.nome, transform: o.transform, partes: [{ nome: x.nome, malha: x.malha, cor: x.cor }] }));
           est.cena.objetos.splice(idx, 1, A, B, ...extras);
-          for (const x of extras) { est.cena.centralizar(x); }
+          for (const x of extras) { est.cena.colocarNaMesa(x); }
           est.cena.sel = { objeto: A.id, parte: A.partes.length === 1 ? A.partes[0].id : null };
         });
         q('res').innerHTML = '<div class="e3d-nota ok">Cortado. As partes ficaram no lugar; use <b>Organizar mesa</b> pra imprimir.' + (r.relatorio.length ? ' Conectores: ' + r.relatorio.map(x => x.pino ? x.pino + '/' + x.furo : x.tipo).join(', ') + '.' : '') + '</div>';

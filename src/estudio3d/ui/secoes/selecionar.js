@@ -18,7 +18,8 @@ export function montarSelecionar(est) {
     <div class="seg" data-a="modos">${MODOS.map(m => '<button type="button" data-v="' + m[0] + '">' + m[1] + '</button>').join('')}</div>
     <p class="u" data-a="dica"></p>
     <div data-a="optRegiao"><div class="field"><label>Sensibilidade à dobra <span class="u">menor = para em dobra mais suave</span></label>
-      <div class="e3d-slider"><input type="range" min="5" max="75" value="30" data-a="ang"><b data-a="angv">30°</b></div></div></div>
+      <div class="e3d-slider"><input type="range" min="5" max="75" value="30" data-a="ang"><b data-a="angv">30°</b></div></div>
+      <label class="fer-check" title="Passa pelas quinas pra fora (borda de um botão, aresta de um símbolo em relevo) e para só onde o detalhe encosta no corpo"><input type="checkbox" data-a="inteiro" checked> Pegar o detalhe inteiro <span class="u">botão, olho, símbolo…</span></label></div>
     <div data-a="optPincel" style="display:none">
       <div class="field"><label>Tamanho do pincel <span class="u">raio em mm</span></label>
         <div class="e3d-slider"><input type="range" min="0.3" max="30" step="0.1" value="3" data-a="raio"><b data-a="raiov">3,0</b></div></div>
@@ -88,7 +89,7 @@ export function montarSelecionar(est) {
     const p = o.partes.find(x => x.id === hit.parte); if (!p) return;
     const adj = est.adj(p.malha);
     let nova;
-    if (est.ferramenta === 'regiao') nova = crescerRegiao(p.malha, adj, hit.face, { anguloVizinho: +q('ang').value });
+    if (est.ferramenta === 'regiao') nova = crescerRegiao(p.malha, adj, hit.face, { anguloVizinho: +q('ang').value, detalhe: q('inteiro').checked });
     else if (est.ferramenta === 'casca') nova = componenteConectado(p.malha, adj, hit.face);
     else if (est.ferramenta === 'cor') {
       if (!p.malha.cor) { avisar('Essa peça tem uma cor só — use "Casca inteira" ou a região inteligente.', 'warn'); nova = componenteConectado(p.malha, adj, hit.face); }

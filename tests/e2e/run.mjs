@@ -35,6 +35,7 @@ async function gerarModelos(dir) {
   for (let t = 0; t < cor.length; t++) if (C[t * 3 + 1] < -17.5 && Math.hypot(Math.abs(C[t * 3]) - 7, C[t * 3 + 2] - 24) < 3.4) cor[t] = 1;
   fs.writeFileSync(dir + '/personagem-cor.3mf', escrever3MF({ objetos: [{ nome: 'Personagem', transform: M4.translacao(128, 128, 0), partes: [{ nome: 'Corpo', malha: { ...cab, cor }, cor: '#1B1B1B', paleta: ['#1B1B1B', '#FFFFFF'] }] }] }).bytes);
   fs.writeFileSync(dir + '/chaveiro.stl', escreverSTL(caixaMalha(60, 30, 3), 'chaveiro'));
+  fs.writeFileSync(dir + '/grande.stl', escreverSTL(esfera(40, 7, 0, 0, 40), 'grande'));
   fs.writeFileSync(dir + '/estrela.svg', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path fill="#222" d="M50 5 L61 38 L96 38 L68 59 L79 93 L50 72 L21 93 L32 59 L4 38 L39 38 Z"/></svg>');
 }
 
@@ -272,7 +273,107 @@ async function main() {
   });
   await pg.context().close();
 
-  console.log('4) gerador de chaveiro');
+  console.log('4) auditoria da interface (mouse e teclado de verdade)');
+  pg = await novaPagina(b);
+  await abrirEstudio(pg, 'file://' + teste + '/index.html');
+  await pg.setInputFiles('.e3d input[type=file][multiple]', modelos + '/personagem.stl');
+  await pg.waitForFunction(() => window.Estudio3D.estudio.cena.objetos.length === 1);
+  await pg.waitForTimeout(600);
+  const cam = () => pg.evaluate(() => { const v = window.Estudio3D.estudio.visor; const c = v.camera.position, t = v.controles.target; return { c: [c.x, c.y, c.z], t: [t.x, t.y, t.z] }; });
+  const caixaCanvas = () => pg.evaluate(() => { const r = window.Estudio3D.estudio.visor.renderer.domElement.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
+  const telaObjeto = () => pg.evaluate(() => { const e = window.Estudio3D.estudio; const c = e.cena.caixaExata(e.cena.objetos[0]); return e.visor.telaDe((c.min[0] + c.max[0]) / 2, (c.min[1] + c.max[1]) / 2, (c.min[2] + c.max[2]) / 2); });
+  await passo(pg, 'visor: girar (arrastar), mover a vista (botão direito) e zoom (rodinha)', async () => {
+    const r = await caixaCanvas();
+    const x0 = r.x + r.w * 0.85, y0 = r.y + r.h * 0.5;
+    let a = await cam();
+    await pg.mouse.move(x0, y0); await pg.mouse.down(); await pg.mouse.move(x0 - 120, y0 + 40, { steps: 8 }); await pg.mouse.up(); await pg.waitForTimeout(400);
+    let d = await cam();
+    const ang = (u, v) => { const p = [u.c[0] - u.t[0], u.c[1] - u.t[1], u.c[2] - u.t[2]], q = [v.c[0] - v.t[0], v.c[1] - v.t[1], v.c[2] - v.t[2]]; return Math.acos(Math.min(1, (p[0] * q[0] + p[1] * q[1] + p[2] * q[2]) / Math.hypot(...p) / Math.hypot(...q))) * 180 / Math.PI; };
+    if (ang(a, d) < 10) throw new Error('girar não girou: ' + ang(a, d).toFixed(1) + '°');
+    a = d;
+    await pg.mouse.move(x0, y0); await pg.mouse.down({ button: 'right' }); await pg.mouse.move(x0 - 100, y0 - 60, { steps: 8 }); await pg.mouse.up({ button: 'right' }); await pg.waitForTimeout(400);
+    d = await cam();
+    if (Math.hypot(d.t[0] - a.t[0], d.t[1] - a.t[1], d.t[2] - a.t[2]) < 1) throw new Error('mover a vista não moveu o alvo');
+    a = d;
+    await pg.mouse.move(x0, y0); await pg.mouse.wheel(0, -600); await pg.waitForTimeout(500);
+    d = await cam();
+    const dist = u => Math.hypot(u.c[0] - u.t[0], u.c[1] - u.t[1], u.c[2] - u.t[2]);
+    if (!(dist(d) < dist(a) * 0.95)) throw new Error('zoom não aproximou: ' + dist(a).toFixed(1) + ' -> ' + dist(d).toFixed(1));
+    await pg.evaluate(() => { const e = window.Estudio3D.estudio; e.visor.vista('iso'); e.enquadrar(); });
+  });
+  await passo(pg, 'clicar escolhe a peça, clicar no vazio solta', async () => {
+    await pg.evaluate(() => window.Estudio3D.estudio.cena.selecionar(null, null));
+    const s = await telaObjeto();
+    await pg.mouse.click(s.x, s.y); await pg.waitForTimeout(200);
+    if (!(await pg.evaluate(() => !!window.Estudio3D.estudio.cena.sel.objeto))) throw new Error('clique não escolheu');
+    const r = await caixaCanvas();
+    await pg.mouse.click(r.x + 20, r.y + r.h - 90); await pg.waitForTimeout(200);
+    if (await pg.evaluate(() => !!window.Estudio3D.estudio.cena.sel.objeto)) throw new Error('clique no vazio não soltou');
+  });
+  await passo(pg, 'seta de mover (G): arrastar move a peça; Ctrl+Z desfaz, Ctrl+Y refaz', async () => {
+    await pg.evaluate(() => { const e = window.Estudio3D.estudio; const o = e.cena.objetos[0]; e.cena.selecionar(o.id, o.partes[0].id); });
+    await pg.keyboard.press('g'); await pg.waitForTimeout(300);
+    const antes = await pg.evaluate(() => Array.from(window.Estudio3D.estudio.cena.objetos[0].transform.slice(12, 15)));
+    // a seta de mover fica na origem do objeto: arrasta pela ponta vermelha (eixo X)
+    const s = await pg.evaluate(() => { const v = window.Estudio3D.estudio.visor; const g = v.gizmo.object; const p = g.getWorldPosition(g.position.clone()); const a = v.telaDe(p.x, p.y, p.z); const dist = v.camera.position.distanceTo(p); const k = dist * Math.min(1.9 * Math.tan(Math.PI * v.camera.fov / 360) / v.camera.zoom, 7) / 4 * 0.9; const b = v.telaDe(p.x + k * 0.6, p.y, p.z); return { a, b }; });
+    await pg.mouse.move(s.b.x, s.b.y); await pg.waitForTimeout(100); await pg.mouse.down(); await pg.mouse.move(s.b.x + (s.b.x - s.a.x) * 1.5, s.b.y + (s.b.y - s.a.y) * 1.5, { steps: 10 }); await pg.mouse.up(); await pg.waitForTimeout(300);
+    const depois = await pg.evaluate(() => Array.from(window.Estudio3D.estudio.cena.objetos[0].transform.slice(12, 15)));
+    if (Math.hypot(depois[0] - antes[0], depois[1] - antes[1], depois[2] - antes[2]) < 1) throw new Error('gizmo não moveu: ' + antes + ' -> ' + depois);
+    await pg.keyboard.press('Control+z'); await pg.waitForTimeout(200);
+    const desf = await pg.evaluate(() => Array.from(window.Estudio3D.estudio.cena.objetos[0].transform.slice(12, 15)));
+    if (Math.hypot(desf[0] - antes[0], desf[1] - antes[1], desf[2] - antes[2]) > 1e-6) throw new Error('Ctrl+Z não voltou');
+    await pg.keyboard.press('Control+y'); await pg.waitForTimeout(200);
+    const ref = await pg.evaluate(() => Array.from(window.Estudio3D.estudio.cena.objetos[0].transform.slice(12, 15)));
+    if (Math.hypot(ref[0] - depois[0], ref[1] - depois[1], ref[2] - depois[2]) > 1e-6) throw new Error('Ctrl+Y não refez');
+    await pg.keyboard.press('Escape');
+  });
+  await passo(pg, 'medidas em mm: posição X e altura digitadas viram a medida real', async () => {
+    await abrirSecao(pg, 'transf');
+    await pg.fill('[data-sec=transf] [data-t="px"]', '100'); await pg.press('[data-sec=transf] [data-t="px"]', 'Enter'); await pg.waitForTimeout(200);
+    await pg.fill('[data-sec=transf] [data-t="tz"]', '30'); await pg.press('[data-sec=transf] [data-t="tz"]', 'Enter'); await pg.waitForTimeout(300);
+    const c = await pg.evaluate(() => { const e = window.Estudio3D.estudio; return e.cena.caixaExata(e.cena.objetos[0]); });
+    if (Math.abs(c.tam[2] - 30) > 0.01) throw new Error('altura ' + c.tam[2]);
+    if (Math.abs((c.min[0] + c.max[0]) / 2 - 100) > 0.6 && Math.abs(c.min[0] - 100) > 0.6) throw new Error('posição X ' + c.min[0] + '..' + c.max[0]);
+  });
+  await passo(pg, 'pincel: pinta arrastando, "Apagar" tira, Expandir/Reduzir mudam a seleção', async () => {
+    await abrirSecao(pg, 'sel');
+    await pg.click('[data-sec=sel] [data-a="modos"] button[data-v=pincel]');
+    await pg.evaluate(() => { const e = window.Estudio3D.estudio; e.visor.vista('frente'); e.enquadrar(); });
+    await pg.waitForTimeout(300);
+    const n = () => pg.evaluate(() => { const e = window.Estudio3D.estudio; const p = e.cena.objetos[0].partes[0]; const m = e.visor.selecao(p.id); let k = 0; if (m) for (let i = 0; i < m.length; i++) k += m[i]; return k; });
+    const s = await telaObjeto();
+    await pg.mouse.move(s.x - 30, s.y); await pg.mouse.down(); await pg.mouse.move(s.x + 30, s.y, { steps: 12 }); await pg.mouse.up(); await pg.waitForTimeout(300);
+    const pintado = await n();
+    if (pintado < 20) throw new Error('pincel pintou ' + pintado);
+    await pg.click('[data-sec=sel] [data-a="exp"]'); const exp = await n();
+    await pg.click('[data-sec=sel] [data-a="red"]'); const red = await n();
+    if (!(exp > pintado && red < exp)) throw new Error('expandir/reduzir: ' + pintado + ' -> ' + exp + ' -> ' + red);
+    await pg.click('[data-sec=sel] [data-a="pincelModo"] button[data-v=tirar]');
+    await pg.mouse.move(s.x - 30, s.y); await pg.mouse.down(); await pg.mouse.move(s.x + 30, s.y, { steps: 12 }); await pg.mouse.up(); await pg.waitForTimeout(300);
+    const apagado = await n();
+    if (!(apagado < red)) throw new Error('apagar não tirou: ' + red + ' -> ' + apagado);
+    await pg.click('[data-sec=sel] [data-a="pincelModo"] button[data-v=add]');
+    await pg.click('[data-sec=sel] [data-a="limpar"]');
+    await pg.keyboard.press('Escape');
+  });
+  await passo(pg, 'Cancelar: consertar um modelo de 330 mil triângulos, cancelar no meio, motor volta a funcionar', async () => {
+    await pg.setInputFiles('.e3d input[type=file][multiple]', modelos + '/grande.stl');
+    await pg.waitForFunction(() => window.Estudio3D.estudio.cena.objetos.length === 2, null, { timeout: 60000 });
+    await pg.waitForFunction(() => !/confer|calcul/.test(document.querySelector('.e3d-motor').textContent), null, { timeout: 60000 });
+    await abrirSecao(pg, 'diag');
+    await pg.click('[data-sec=diag] [data-a="reparar"]');
+    await pg.waitForSelector('.e3d-ocupado [data-o=cancelar]', { state: 'visible', timeout: 20000 });
+    const antes = await nObjetos(pg);
+    await pg.click('.e3d-ocupado [data-o=cancelar]');
+    await pg.waitForFunction(() => !document.querySelector('.e3d-ocupado').classList.contains('on'), null, { timeout: 20000 });
+    if (await nObjetos(pg) !== antes) throw new Error('cancelar mudou a cena');
+    const r = await pg.evaluate(async () => { const e = window.Estudio3D.estudio; const p = e.cena.objetos[0].partes[0]; const v = await e.motor.rodar('analisar', { parte: e.parteParaMotor(p), opc: {} }, { canal: 'principal' }); return v.fechada; });
+    if (r !== true) throw new Error('motor não voltou');
+    pg.erros = pg.erros.filter(x => !/Cancelado/.test(x));
+  });
+  await pg.context().close();
+
+  console.log('5) gerador de chaveiro');
   pg = await novaPagina(b);
   await pg.goto('file://' + teste + '/index.html');
   await pg.waitForTimeout(1200);

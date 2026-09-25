@@ -12,6 +12,7 @@ const cosGraus = g => Math.cos(g * Math.PI / 180);
 
 // Cresce a partir de uma face respeitando dobras (ângulo entre faces vizinhas),
 // desvio da normal da semente, cor e distância. Parou numa dobra = limite da peça.
+// opc.detalhe: atravessa quinas convexas (pega o detalhe inteiro de um clique).
 export function crescerRegiao(m, adj, semente, opc = {}) {
   const nt = m.idx.length / 3;
   const out = new Uint8Array(nt);
@@ -35,7 +36,16 @@ export function crescerRegiao(m, adj, semente, opc = {}) {
       if (o < 0 || out[o]) continue;
       if (permitido && !permitido[o]) continue;
       const onx = N[o * 3], ony = N[o * 3 + 1], onz = N[o * 3 + 2];
-      if (fnx * onx + fny * ony + fnz * onz < cosViz) continue;
+      if (fnx * onx + fny * ony + fnz * onz < cosViz) {
+        // "detalhe inteiro": atravessa quina pra FORA (borda de cima de um botão,
+        // aresta de uma estrela em relevo) e só para na dobra pra DENTRO (o
+        // vale onde o detalhe encosta no corpo)
+        if (!opc.detalhe) continue;
+        const dx = C[o * 3] - C[f * 3], dy = C[o * 3 + 1] - C[f * 3 + 1], dz = C[o * 3 + 2] - C[f * 3 + 2];
+        const L = Math.hypot(dx, dy, dz) || 1;
+        const a = (fnx * dx + fny * dy + fnz * dz) / L, b = -(onx * dx + ony * dy + onz * dz) / L;
+        if (!(a < -0.02 && b < -0.02)) continue;
+      }
       if (snx * onx + sny * ony + snz * onz < cosSem) continue;
       if (corSem >= 0 && m.cor[o] !== corSem) continue;
       if (dist2 < Infinity) {
