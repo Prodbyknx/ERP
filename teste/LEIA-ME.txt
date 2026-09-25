@@ -17,8 +17,55 @@ COMO USAR
    de exemplo: Gabriel (admin) e Ana (vendedora).
 
 
-NOVIDADES DESTA VERSÃO (2)
+NOVIDADES DESTA VERSÃO (3)
 ---------------------------
+
+AUDITORIA COM TESTE DE VERDADE (não é "parece que funciona")
+Cada ferramenta foi testada medindo a geometria: peça fechada, sem buraco,
+sem face ruim, volume e posição conferidos, e o arquivo exportado relido.
+Inclui um personagem "de IA" com 219 mil triângulos (orelhas, olhos a
+4,6 mm um do outro, botão, estrela em relevo, laço, cores, peça solta).
+Resultado: 127 testes do motor + 45 passos no navegador, todos passando.
+Detalhe no FERRAMENTAS.txt ("CHECKLIST DA AUDITORIA").
+
+DEFEITOS ACHADOS E CORRIGIDOS
+- Pino solto do corte nascia dentro das peças: agora fica ao lado
+- Selecionar uma etiqueta plana pequena dava "Nada selecionado"
+- Clicar num botão/símbolo em relevo pegava só a face de cima e o
+  "Separar" gerava peça vazia. Agora a seleção pega o detalhe inteiro
+  (caixinha "Pegar o detalhe inteiro", ligada) e o separar avisa em vez
+  de gerar peça vazia
+
+NOVO: FORMAS (trilho da esquerda → Formas)
+Clique e a forma aparece na mesa: cubo, caixa, esfera, cilindro, cone,
+pirâmide, prisma, tubo, anel, cápsula, meia esfera, placa; círculo,
+quadrado, retângulo, triângulo, estrela, hexágono, polígono, coração e
+texto com espessura; e peças prontas: furo de parafuso, argola de
+chaveiro, pino, espaçador, encaixe de ímã e base. Medidas em mm.
+
+NOVO: SÓLIDO OU FURO
+Qualquer peça pode virar Furo. O furo aparece na hora na peça que ele
+atravessa e vai pro arquivo exportado (o objeto-furo não vai).
+
+NOVO: VÁRIAS PEÇAS (Shift + clique, ou Ctrl+A)
+Aparece uma barra com: Unir · Tirar uma da outra (⇄ troca) · Parte comum
+· Agrupar · Alinhar (esquerda, centro, direita, frente, trás, embaixo,
+em cima, espalhar igual, empilhar) · Aplicar furos. A seta de mover
+leva todas juntas. Ctrl+D duplica, Delete apaga as escolhidas.
+
+NOVO: DUPLICAR EM SÉRIE e ÍMÃ
+Em Ajustar: quantas cópias, a distância e a direção. No rodapé do 3D:
+"Ímã" faz a seta andar de 1 em 1 mm e girar de 15 em 15°.
+
+O QUE TESTAR NESTA VERSÃO
+- Formas → Retângulo 60×30×3 → Círculo Ø30 → Shift+clique nos dois →
+  Unir → Círculo Ø5 → Furo → Texto → Exportar
+- Abrir um modelo seu de IA, clicar num olho/botão com "Pegar o detalhe
+  inteiro" e Separar
+
+
+VERSÃO ANTERIOR (2)
+-------------------
 
 ESTÚDIO 3D MAIS RÁPIDO
 A tela não trava mais enquanto ele calcula. Medido num modelo de IA com

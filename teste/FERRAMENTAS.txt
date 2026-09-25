@@ -191,6 +191,36 @@ INÍCIO — "O que você quer fazer?"
    um detalhe, Separar por cor, Nome ou logo, Deitar pra imprimir, Mudar
    o tamanho, Mandar pro Bambu.
 
+FORMAS — adicionar peças prontas (novo)
+   Clique no cartão e a forma aparece na mesa, ao lado da peça escolhida.
+   Em cima do painel ficam as medidas da forma escolhida (em mm): mude e
+   a peça é refeita na hora, no mesmo lugar. Tipo: Sólido ou Furo.
+   3D: cubo, caixa (com canto arredondado), esfera, cilindro, cone,
+   pirâmide, prisma, tubo, anel, cápsula, meia esfera, placa.
+   Planas com espessura: círculo, quadrado, retângulo, triângulo, estrela,
+   hexágono, polígono, coração, texto (com fonte).
+   Prontas pra impressão: furo de parafuso M2–M12 (com rebaixo da cabeça),
+   argola de chaveiro, pino de encaixe (com chanfro), espaçador, encaixe
+   de ímã (já com folga) e base.
+
+   FURO: uma peça marcada como Furo tira material de toda peça sólida que
+   ela atravessa. Aparece furado na tela na hora e sai furado no 3MF/STL.
+   Quando você abre Selecionar/Separar/Cortar/Texto/Consertar numa peça
+   furada, os furos viram parte da geometria (dá pra desfazer).
+
+   VÁRIAS PEÇAS: Shift + clique (no 3D ou na lista), ou Ctrl+A.
+     Unir ................ vira uma peça só (furos escolhidos tiram material)
+     Tirar A de B ........ a primeira escolhida perde o formato das outras
+                           (⇄ troca quem fica)
+     Parte comum ......... fica só onde elas se encostam
+     Agrupar ............. um objeto com várias peças, cada uma com sua cor
+     Alinhar ............. esquerda / centro / direita, frente / trás,
+                           embaixo / em cima, espalhar igual, empilhar
+     Aplicar furos ....... os furos viram geometria
+   A seta de mover leva todas as escolhidas juntas.
+   Ctrl+D duplica, Delete apaga. Em Ajustar: Duplicar em série (cópias,
+   distância e direção). No rodapé do 3D: Ímã (1 mm / 15°).
+
 CONSERTAR — conferir e consertar
    Laudo: Malha fechada · Arestas abertas · Non-manifold · Faces
    invertidas · Degeneradas · Repetidas · Auto-interseção · Cascas soltas
@@ -292,9 +322,52 @@ erro, e o PDF gera normalmente. No modo escuro, uma varredura automática
 confere que nenhum texto das 16 telas fica ilegível, e que o PDF sai
 branco com texto escuro.
 
+CHECKLIST DA AUDITORIA (versão 3) — cada item tem teste automático
+   SISTEMA     build ok · 16 telas abrem sem erro de console · PDF ok
+               (inclusive no modo escuro, branco) · contraste do modo
+               escuro conferido nas 16 telas · fora da aba Ferramentas o
+               app.js só mudou na carga do PDF
+   VISOR       girar, mover a vista, zoom, clicar/soltar, seta de mover
+               (arrastando de verdade) + Ctrl+Z/Ctrl+Y
+   MALHA       detecta buraco, face virada, vértice/face repetida,
+               degenerada, non-manifold, auto-interseção, casca solta;
+               conserta e confere de novo (8 casos + personagem com 200
+               buracos); peça perfeita não é alterada
+   CORTE       5 formatos × 7 planos (reto, inclinado, rente ao fundo e ao
+               topo): as duas partes fechadas e o volume soma igual; corte
+               fora da peça dá erro claro
+   ENCAIXES    8 tipos × 3 formatos: peças fechadas e, montadas, não se
+               atravessam; folga MEDIDA na peça: pino Ø5,00 → furo Ø5,50
+               (folga 0,25), quadrado 5,00 → 5,40 (folga 0,2); pino solto
+               ao lado das peças
+   SELEÇÃO     personagem de 219 mil triângulos: olho, botão, estrela,
+               orelha e laço com 1 clique sem vazar pro corpo (~10 ms);
+               olhos a 4,6 mm não se misturam; somar/tirar, expandir/
+               reduzir, casca inteira, mesma cor, pincel só na frente
+   SEPARAÇÃO   olho, botão, estrela, orelha do personagem: duas peças
+               fechadas, sem colisão, volume e lugar mantidos; por cor:
+               preto/branco/vermelho imprimíveis
+   CORES       3MF sai e volta com a mesma cor por peça e por triângulo;
+               cena de 5 objetos (multipeça, pintura, espelho, escala)
+               passa no validador oficial lib3mf (modo rígido) e no
+               simulador do importador do Bambu
+   EXPORTAÇÃO  STL binário (cabeçalho, contagem, normais pra fora),
+               mover+girar+escalar+espelhar saem certos no 3MF e no STL,
+               3MF em centímetro, STL ASCII e OBJ com quads lidos certos
+   MODELAGEM   27 formas com volume e medida da conta; unir/tirar/parte
+               comum com volume exato (inclusive peça girada e espelhada);
+               furo aplicado na exportação; alinhar/espalhar/empilhar;
+               duplicar em série; e o fluxo completo pela tela: retângulo
+               + círculo → Unir → furo → texto → exportar, com o furo
+               MEDIDO no arquivo
+   Rodar de novo: npm test  e  npm run e2e
+
 O QUE AINDA NÃO FAZ
   - Não abre STEP (não existe biblioteca confiável que rode no
     navegador). Exporte STL ou 3MF do CAD.
+  - Ímã é de grade (mm e graus). Ímã em vértice/borda/superfície ainda
+    não existe; pra encostar uma peça na outra use Alinhar → Empilhar.
+  - Biblioteca própria da empresa (salvar peças prontas) ainda não.
   - Relevo em superfície muito curva fica com o topo reto (plano).
   - O teste com o Bambu foi feito pelo código-fonte dele e pelo
     validador oficial do 3MF, não com o programa aberto. Confira na
