@@ -15,6 +15,8 @@ import { montarSeparar } from './secoes/separar.js';
 import { montarCortar } from './secoes/cortar.js';
 import { montarRelevo } from './secoes/relevo.js';
 import { montarExportar } from './secoes/exportar.js';
+import { montarFormas } from './secoes/formas.js';
+import { alinhar, duplicarEmSerie } from '../core/modelagem.js';
 import { icone } from './icones.js';
 import { calcularSugestoes } from './sugestoes.js';
 
@@ -24,6 +26,7 @@ const ICONES = { olho: icone('olho', 15), olhoFechado: icone('olhoFechado', 15) 
 // quer FAZER, não o nome técnico.
 const FERRAMENTAS = [
   { sec: 'inicio', ico: 'casa', rot: 'Início', titulo: 'O que você quer fazer?', desc: 'Escolha uma tarefa — o Estúdio guia o resto. As sugestões abaixo são do modelo aberto.' },
+  { sec: 'formas', ico: 'formas', rot: 'Formas', titulo: 'Adicionar formas', desc: 'Caixa, cilindro, círculo, estrela, texto, furo de parafuso… Clique e a forma aparece na mesa. Medidas em mm, e dá pra juntar ou furar uma peça com a outra.' },
   { sec: 'diag', ico: 'escudo', rot: 'Consertar', titulo: 'Conferir e consertar', desc: 'Vê se o arquivo imprime e conserta buracos, faces viradas e sobras, sem perder detalhe.' },
   { sec: 'transf', ico: 'ajustar', rot: 'Ajustar', titulo: 'Posição, tamanho e cor', desc: 'Medidas em mm, girar, deitar pra imprimir sem suporte e a cor de cada peça.' },
   { sec: 'sel', ico: 'selecionar', rot: 'Selecionar', titulo: 'Selecionar uma parte', desc: 'Clique numa orelha, olho ou detalhe: a seleção para sozinha na dobra.' },
@@ -35,6 +38,7 @@ const FERRAMENTAS = [
 
 // Atalhos da tela Início: tarefas do dia a dia de quem imprime
 const TAREFAS = [
+  { ico: 'formas', t: 'Criar peça com formas', d: 'Caixa, círculo, texto, furo…', acao: 'formas' },
   { ico: 'escudo', t: 'Consertar o arquivo', d: 'Buracos, faces viradas e sobras', acao: 'consertar' },
   { ico: 'tesoura', t: 'Cortar em duas partes', d: 'Com pino de encaixe', acao: 'corte' },
   { ico: 'separar', t: 'Separar um detalhe', d: 'Orelha, olho, acessório', acao: 'sep' },
@@ -140,7 +144,8 @@ export class Estudio {
         '<option value="cores">Cores</option><option value="normais">Avesso (vermelho)</option><option value="cascas">Cascas soltas</option>' +
         '<option value="problemas">Defeitos da malha</option><option value="espessura">Espessura</option><option value="partes">Partes detectadas</option></select>' +
       '<label class="chip" title="Mostrar os triângulos (W)"><input type="checkbox" data-b="arame">Arame</label>' +
-      '<label class="chip" title="Sombreado facetado"><input type="checkbox" data-b="facetado">Facetado</label>';
+      '<label class="chip" title="Sombreado facetado"><input type="checkbox" data-b="facetado">Facetado</label>' +
+      '<label class="chip" title="Ímã: mover de 1 em 1 mm, girar de 15 em 15°"><input type="checkbox" data-b="ima">Ímã</label>';
     this.chkArame = this.vistasEl.querySelector('[data-b=arame]');
     this.hud = el('div', { class: 'e3d-hud e3d-vidro' });
     this.dica = el('div', { class: 'e3d-dica e3d-vidro', html: 'arrastar: girar · botão direito: mover · rodinha: zoom' });
@@ -148,11 +153,14 @@ export class Estudio {
     this.ocupadoEl.innerHTML = '<span class="roda"></span><div><span data-o="rot">Calculando…</span><small data-o="tempo">0,0 s</small></div><button type="button" class="btn" data-o="cancelar" style="display:none">Cancelar</button>';
     this.ocupadoEl.querySelector('[data-o=cancelar]').onclick = () => this.cancelarCalculo();
     this.previaEl = el('div', { class: 'e3d-previa e3d-vidro', style: 'display:none' });
+    this.multiEl = el('div', { class: 'e3d-multi e3d-vidro', style: 'display:none' });
+    this.palco.append(this.multiEl);
     this.palco.append(this.vazio, this.objetosEl, this.saudeEl, this.vistasEl, this.hud, this.dica, this.ocupadoEl, this.previaEl);
 
     // início (tarefas + sugestões) e os quadros das ferramentas
     this.inicioEl = el('div', { class: 'e3d-inicio' });
     this.painelCorpo.appendChild(this.inicioEl);
+    this.secoes.formas = montarFormas(this);
     this.secoes.diagnostico = montarDiagnostico(this);
     this.secoes.transformar = montarTransformar(this);
     this.secoes.selecionar = montarSelecionar(this);
@@ -168,6 +176,7 @@ export class Estudio {
       if (d.open) {
         this.painel.querySelectorAll('details[open]').forEach(x => { if (x !== d) x.open = false; });
         this.mostrarCabecalho(d.dataset.sec);
+        this.garantirFurosSeFerramenta();
         this.emitir('secao', d.dataset.sec);
       } else {
         this.emitir('secao-fechou', d.dataset.sec);
@@ -175,6 +184,13 @@ export class Estudio {
       }
     }, true);
 
+    this.furados = new Map();
+    this.visor.exibir = (o, p) => {
+      if (o.papel === 'furo') return p.malha;
+      const f = this.furados.get(o.id);
+      if (!f || f.chave !== this.chaveFuros(o)) return p.malha;
+      return f.malhas.get(p.id) || p.malha;
+    };
     this.visor.pedirBVH = malha => this.motor.local ? Promise.resolve(null)
       : this.motor.rodar('bvh', { malha: { pos: malha.pos, idx: malha.idx } }, { canal: 'aux' }).catch(() => null);
     this.visor.on('secao', () => {});
@@ -248,7 +264,7 @@ export class Estudio {
     h.appendChild(el('div', { class: 'e3d-bloco-tit' }, 'Tarefas'));
     const g = el('div', { class: 'e3d-tarefas' });
     for (const t of TAREFAS) {
-      g.appendChild(el('button', { type: 'button', class: 'e3d-tarefa', 'data-tarefa': t.acao, disabled: !o ? true : null, onclick: () => this.executarTarefa(t.acao), html: '<i>' + icone(t.ico, 18) + '</i><b>' + t.t + '</b><span>' + t.d + '</span>' }));
+      g.appendChild(el('button', { type: 'button', class: 'e3d-tarefa', 'data-tarefa': t.acao, disabled: !o && t.acao !== 'formas' ? true : null, onclick: () => this.executarTarefa(t.acao), html: '<i>' + icone(t.ico, 18) + '</i><b>' + t.t + '</b><span>' + t.d + '</span>' }));
     }
     h.appendChild(g);
   }
@@ -312,6 +328,7 @@ export class Estudio {
     this.vistasEl.querySelector('[data-b=modo]').addEventListener('change', ev => this.definirModoVisual(ev.target.value));
     this.chkArame.addEventListener('change', ev => this.visor.definirArame(ev.target.checked));
     this.vistasEl.querySelector('[data-b=facetado]').addEventListener('change', ev => this.visor.definirSombreado(ev.target.checked ? 'facetado' : 'suave'));
+    this.vistasEl.querySelector('[data-b=ima]').addEventListener('change', ev => this.visor.definirIma(ev.target.checked));
     this.inputArquivo.addEventListener('change', () => { const f = [...this.inputArquivo.files]; this.inputArquivo.value = ''; if (f.length) this.importarArquivos(f); });
   }
 
@@ -409,9 +426,11 @@ export class Estudio {
       const k = ev.key.toLowerCase();
       if ((ev.ctrlKey || ev.metaKey) && k === 'z' && !ev.shiftKey) { ev.preventDefault(); this.desfazer(); }
       else if ((ev.ctrlKey || ev.metaKey) && (k === 'y' || (k === 'z' && ev.shiftKey))) { ev.preventDefault(); this.refazer(); }
+      else if ((ev.ctrlKey || ev.metaKey) && k === 'a') { ev.preventDefault(); this.cena.selecionarTodos(); }
+      else if ((ev.ctrlKey || ev.metaKey) && k === 'd') { ev.preventDefault(); this.duplicarSelecao(); }
       else if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
       else if (k === 'escape') { if (this.previaAtiva) this.cancelarPrevia(); else if (this.ferramenta !== 'navegar') this.definirFerramenta('navegar'); else this.definirGizmo('nenhum'); }
-      else if (k === 'delete') { const o = this.cena.objetoSel(); if (o) this.removerObjeto(o.id); }
+      else if (k === 'delete') this.removerSelecao();
       else if (k === 'f') this.enquadrar();
       else if (k === 'g') this.definirGizmo('mover');
       else if (k === 'r') this.definirGizmo('girar');
@@ -428,8 +447,8 @@ export class Estudio {
     if (this.previaAtiva) return;
     const hit = this.visor.intersectar(ev);
     if (this.ferramenta === 'navegar' || !hit) {
-      if (hit) this.cena.selecionar(hit.objeto, hit.parte);
-      else if (this.ferramenta === 'navegar') this.cena.selecionar(null, null);
+      if (hit) this.cena.selecionar(hit.objeto, hit.parte, ev.shiftKey);
+      else if (this.ferramenta === 'navegar' && !ev.shiftKey) this.cena.selecionar(null, null);
       return;
     }
     if (hit.objeto !== this.cena.sel.objeto || hit.parte !== this.cena.sel.parte) this.cena.selecionar(hit.objeto, hit.parte);
@@ -467,6 +486,8 @@ export class Estudio {
     bd.title = this.cena.proximoDesfazer() ? 'Desfazer: ' + this.cena.proximoDesfazer() + ' (Ctrl+Z)' : 'Nada pra desfazer';
     br.title = this.cena.proximoRefazer() ? 'Refazer: ' + this.cena.proximoRefazer() + ' (Ctrl+Y)' : 'Nada pra refazer';
     if (this.visor.modo !== 'cores' && this.visor.modo !== 'normais') this.recalcularMapas();
+    this.renderMulti();
+    this.agendarFuros();
     this.emitir('mudou');
   }
   aoSelecionar() {
@@ -476,6 +497,8 @@ export class Estudio {
     this.atualizarHud();
     this.renderSaude();
     if (this.painel.classList.contains('inicio')) this.renderInicio();
+    this.renderMulti();
+    this.garantirFurosSeFerramenta();
     this.emitir('selecao');
   }
 
@@ -559,16 +582,16 @@ export class Estudio {
     p.appendChild(lista);
     if (!this.cena.objetos.length) return;
     for (const o of this.cena.objetos) {
-      const box = el('div', { class: 'e3d-obj' + (o.id === sel.objeto ? ' sel' : '') });
+      const box = el('div', { class: 'e3d-obj' + (o.id === sel.objeto ? ' sel' : this.cena.multi.includes(o.id) ? ' multi' : '') + (o.papel === 'furo' ? ' furo' : '') });
       const c = this.cena.caixaExata(o);
       const cabO = el('div', { class: 'e3d-obj-cab', title: 'Clique pra escolher · duplo clique renomeia' },
-        el('span', { class: 'e3d-bola', style: 'background:' + (o.partes[0] ? o.partes[0].cor : '#999') }),
+        o.papel === 'furo' ? el('span', { class: 'e3d-tag-furo', title: 'Furo: tira material de quem atravessa' }, 'furo') : el('span', { class: 'e3d-bola', style: 'background:' + (o.partes[0] ? o.partes[0].cor : '#999') }),
         el('span', { class: 'nome' }, o.nome),
         el('span', { class: 'med' }, c ? fmt(c.tam[0], 0) + '×' + fmt(c.tam[1], 0) + '×' + fmt(c.tam[2], 0) : ''),
         el('button', { class: 'e3d-ico', title: o.visivel ? 'Esconder' : 'Mostrar', html: o.visivel ? ICONES.olho : ICONES.olhoFechado, onclick: ev => { ev.stopPropagation(); this.cena.aplicar(o.visivel ? 'Esconder objeto' : 'Mostrar objeto', () => { o.visivel = !o.visivel; }); } }),
         el('button', { class: 'e3d-ico', title: 'Duplicar', html: icone('duplicar', 14), onclick: ev => { ev.stopPropagation(); this.duplicarObjeto(o.id); } }),
         el('button', { class: 'e3d-ico', title: 'Excluir (Delete)', html: icone('lixo', 14), onclick: ev => { ev.stopPropagation(); this.removerObjeto(o.id); } }));
-      cabO.addEventListener('click', () => this.cena.selecionar(o.id, o.partes.length === 1 ? o.partes[0].id : null));
+      cabO.addEventListener('click', ev => this.cena.selecionar(o.id, o.partes.length === 1 ? o.partes[0].id : null, ev.shiftKey));
       cabO.addEventListener('dblclick', () => this.renomear(o));
       box.appendChild(cabO);
       if (o.partes.length > 1) {
@@ -627,7 +650,7 @@ export class Estudio {
     const o = this.cena.objeto(id);
     if (!o) return;
     const c = this.cena.caixaExata(o);
-    const d = novoObjeto({ nome: o.nome + ' (cópia)', transform: M4.multiplicar(M4.translacao(c ? c.tam[0] + 6 : 10, 0, 0), o.transform), partes: o.partes.map(p => ({ ...p, id: undefined })) });
+    const d = novoObjeto({ nome: o.nome + ' (cópia)', transform: M4.multiplicar(M4.translacao(c ? c.tam[0] + 6 : 10, 0, 0), o.transform), papel: o.papel, forma: o.forma, partes: o.partes.map(p => ({ ...p, id: undefined })) });
     this.cena.aplicar('Duplicar', () => { this.cena.objetos.push(d); this.cena.sel = { objeto: d.id, parte: d.partes.length === 1 ? d.partes[0].id : null }; });
   }
   juntarObjetos() {
@@ -691,7 +714,173 @@ export class Estudio {
     for (let i = 0; i < 16; i++) if (Math.abs(t[i] - o.transform[i]) > 1e-9) mudou = true;
     if (!mudou) return;
     const modo = this.visor.modoGizmo;
-    this.cena.aplicar(modo === 'girar' ? 'Girar' : modo === 'escalar' ? 'Escalar' : 'Mover', () => { o.transform = t; });
+    const outros = modo === 'mover' ? this.cena.objetosSel().filter(x => x !== o) : [];
+    const delta = M4.multiplicar(t, M4.inverter(o.transform));
+    this.cena.aplicar(modo === 'girar' ? 'Girar' : modo === 'escalar' ? 'Escalar' : outros.length ? 'Mover ' + (outros.length + 1) + ' peças' : 'Mover', () => {
+      o.transform = t;
+      for (const x of outros) x.transform = M4.multiplicar(delta, x.transform);
+    });
+  }
+
+  /* ------------------------------------------------------------ modelagem simples */
+  definirPapel(o, papel) {
+    if (!o || o.papel === papel) return;
+    this.cena.aplicar(papel === 'furo' ? 'Usar ' + o.nome + ' como furo' : 'Usar ' + o.nome + ' como sólido', () => { o.papel = papel; });
+    if (papel === 'furo') avisar('Agora ' + o.nome + ' é um furo: onde ele atravessar outra peça, sai material.');
+  }
+  duplicarSelecao() { for (const o of this.cena.objetosSel()) this.duplicarObjeto(o.id); }
+  removerSelecao() {
+    const objs = this.cena.objetosSel();
+    if (!objs.length) return;
+    if (objs.length === 1) { this.removerObjeto(objs[0].id); return; }
+    const ids = new Set(objs.map(o => o.id));
+    this.cena.aplicar('Excluir ' + objs.length + ' peças', () => { this.cena.objetos = this.cena.objetos.filter(o => !ids.has(o.id)); this.cena.sel = { objeto: null, parte: null }; this.cena.multi = []; });
+  }
+  duplicarEmSerie(o, n, passo) {
+    if (!o || n < 1) return;
+    const ts = duplicarEmSerie(o.transform, Math.min(100, Math.round(n)), passo);
+    const copias = ts.map((t, k) => novoObjeto({ nome: o.nome + ' ' + (k + 2), transform: t, papel: o.papel, forma: o.forma, partes: o.partes.map(p => ({ ...p, id: undefined })) }));
+    this.cena.aplicar('Duplicar em série (' + copias.length + ')', () => {
+      this.cena.objetos.push(...copias);
+      this.cena.multi = [o.id, ...copias.map(c => c.id)];
+    });
+  }
+  alinharSelecao(modo) {
+    const objs = this.cena.objetosSel();
+    if (objs.length < 2) { avisar('Escolha pelo menos duas peças (Shift + clique).', 'warn'); return; }
+    const caixas = objs.map(o => this.cena.caixaExata(o));
+    const d = alinhar(caixas, modo);
+    this.cena.aplicar('Alinhar', () => { objs.forEach((o, k) => { const [x, y, z] = d[k]; if (x || y || z) o.transform = M4.multiplicar(M4.translacao(x, y, z), o.transform); }); });
+  }
+  // unir / tirar uma da outra / parte comum (geometria de verdade, no motor)
+  async combinarSelecao(modo) {
+    const objs = this.cena.objetosSel();
+    if (objs.length < 2) { avisar('Escolha pelo menos duas peças (Shift + clique).', 'warn'); return; }
+    const base = objs[0];
+    const rotulo = modo === 'unir' ? 'Unir' : modo === 'subtrair' ? 'Tirar ' + objs.slice(1).map(o => o.nome).join(', ') + ' de ' + base.nome : 'Parte comum';
+    let r;
+    try { r = await this.rodar('combinar', { objetos: objs.map(o => this.paraMotor(o)), modo, opc: { base: 0 } }, rotulo); } catch (e) { return; }
+    const novo = novoObjeto({ nome: r.nome, transform: r.transform, partes: r.partes });
+    const ids = new Set(objs.map(o => o.id));
+    this.cena.aplicar(rotulo, () => {
+      const i = this.cena.objetos.findIndex(o => ids.has(o.id));
+      this.cena.objetos = this.cena.objetos.filter(o => !ids.has(o.id));
+      this.cena.objetos.splice(Math.max(0, i), 0, novo);
+      this.cena.sel = { objeto: novo.id, parte: novo.partes.length === 1 ? novo.partes[0].id : null };
+      this.cena.multi = [novo.id];
+    });
+    avisar(rotulo + ' — feito (dá pra desfazer).');
+  }
+  agruparSelecao() {
+    const objs = this.cena.objetosSel();
+    if (objs.length < 2) return;
+    const ref = objs[0], inv = M4.inverter(ref.transform);
+    const partes = [];
+    for (const o of objs) {
+      const rel = M4.multiplicar(inv, o.transform);
+      for (const p of o.partes) partes.push({ ...p, id: undefined, nome: o.partes.length === 1 ? o.nome : p.nome, malha: M4.ehIdentidade(rel) ? p.malha : transformar(p.malha, rel) });
+    }
+    const novo = novoObjeto({ nome: ref.nome + ' (grupo)', transform: ref.transform, partes });
+    const ids = new Set(objs.map(o => o.id));
+    this.cena.aplicar('Agrupar', () => {
+      this.cena.objetos = this.cena.objetos.filter(o => !ids.has(o.id));
+      this.cena.objetos.push(novo);
+      this.cena.sel = { objeto: novo.id, parte: null }; this.cena.multi = [novo.id];
+    });
+  }
+
+  // barra que aparece com 2+ peças escolhidas
+  renderMulti() {
+    const objs = this.cena.objetosSel();
+    const b = this.multiEl;
+    const on = objs.length >= 2 && !this.previaAtiva;
+    this.raiz.classList.toggle('com-multi', on);
+    if (!on) { b.style.display = 'none'; return; }
+    b.style.display = 'flex';
+    b.innerHTML = '';
+    const temFuro = this.cena.objetos.some(o => o.papel === 'furo');
+    const base = objs[0], resto = objs.slice(1);
+    b.append(
+      el('b', null, objs.length + ' peças'),
+      el('button', { class: 'btn primary', title: 'Vira uma peça só (furos tiram material)', onclick: () => this.combinarSelecao('unir') }, 'Unir'),
+      el('button', { class: 'btn', title: 'Tira ' + resto.map(o => o.nome).join(', ') + ' de ' + base.nome, onclick: () => this.combinarSelecao('subtrair') }, 'Tirar ', el('span', { class: 'u' }, resto.length === 1 ? resto[0].nome : resto.length + ' peças'), ' de ', el('span', { class: 'u' }, base.nome)),
+      el('button', { class: 'btn so-ico', title: 'Trocar quem fica e quem sai', html: '⇄', onclick: () => { this.cena.multi = [...this.cena.multi.slice(1), this.cena.multi[0]]; this.renderMulti(); } }),
+      el('button', { class: 'btn', title: 'Fica só onde as peças se encostam', onclick: () => this.combinarSelecao('intersectar') }, 'Parte comum'),
+      el('button', { class: 'btn', title: 'Várias peças num objeto só, cada uma com sua cor', onclick: () => this.agruparSelecao() }, 'Agrupar'),
+      this.botaoAlinhar(),
+      temFuro ? el('button', { class: 'btn', title: 'Os furos passam a fazer parte da geometria', onclick: () => this.aplicarFurosAgora() }, 'Aplicar furos') : null);
+  }
+  botaoAlinhar() {
+    const w = el('div', { class: 'e3d-alinhar' });
+    const pop = el('div', { class: 'e3d-alinhar-pop e3d-vidro' });
+    const op = [['esq', 'Esquerda'], ['centroX', 'Centro (X)'], ['dir', 'Direita'], ['frente', 'Frente'], ['centroY', 'Centro (Y)'], ['tras', 'Trás'], ['base', 'Embaixo'], ['centroZ', 'Meio (Z)'], ['topo', 'Em cima'], ['distribuirX', 'Espalhar igual (X)'], ['distribuirY', 'Espalhar igual (Y)'], ['emCima', 'Empilhar uma na outra']];
+    for (const [m, t] of op) pop.appendChild(el('button', { class: 'btn', 'data-alinhar': m, onclick: () => { pop.classList.remove('on'); this.alinharSelecao(m); } }, t));
+    w.append(el('button', { class: 'btn', onclick: ev => { ev.stopPropagation(); pop.classList.toggle('on'); } }, 'Alinhar ▾'), pop);
+    return w;
+  }
+
+  /* ------------------------------------------------------------ furos ao vivo */
+  idMalha(m) { if (!this._idsM) { this._idsM = new WeakMap(); this._seqM = 0; } let i = this._idsM.get(m); if (!i) { i = ++this._seqM; this._idsM.set(m, i); } return i; }
+  chaveFuros(o) {
+    const furos = this.cena.objetos.filter(f => f.papel === 'furo' && f.visivel);
+    return Array.from(o.transform).join(',') + '|' + o.partes.map(p => this.idMalha(p.malha)).join(',') + '|' +
+      furos.map(f => f.id + ':' + Array.from(f.transform).join(',') + ':' + f.partes.map(p => this.idMalha(p.malha)).join(',')).join(';');
+  }
+  agendarFuros() { clearTimeout(this._tFuros); this._tFuros = setTimeout(() => this.atualizarFuros(), 120); }
+  async atualizarFuros() {
+    const furos = this.cena.objetos.filter(o => o.papel === 'furo' && o.visivel);
+    const toca = (a, b) => a && b && a.min.every((v, i) => v <= b.max[i] + 0.01) && b.min.every((v, i) => v <= a.max[i] + 0.01);
+    let mudou = false;
+    for (const o of this.cena.objetos) {
+      if (o.papel === 'furo') continue;
+      const chave = this.chaveFuros(o);
+      const f = this.furados.get(o.id);
+      if (f && f.chave === chave) continue;
+      const co = this.cena.caixaExata(o);
+      const usados = furos.filter(x => toca(co, this.cena.caixaExata(x)));
+      if (!usados.length) { if (f) { this.furados.delete(o.id); mudou = true; } continue; }
+      let r = null;
+      try { r = await this.motor.rodar('furar', { alvo: this.paraMotor(o), furos: usados.map(x => this.paraMotor(x)) }, { canal: 'aux' }); } catch (e) { r = null; }
+      if (this.chaveFuros(o) !== chave || !this.cena.objeto(o.id)) continue;   // mudou enquanto calculava
+      const malhas = new Map();
+      if (r) o.partes.forEach((p, i) => { if (r.partes[i] && r.partes[i].malha !== undefined) malhas.set(p.id, r.partes[i].malha); });
+      this.furados.set(o.id, { chave, malhas, furos: usados.map(x => x.id) });
+      mudou = true;
+    }
+    for (const id of [...this.furados.keys()]) if (!this.cena.objeto(id)) this.furados.delete(id);
+    if (mudou) this.visor.sincronizar();
+  }
+  // os furos passam a ser geometria (e os objetos-furo usados saem da mesa)
+  async aplicarFurosAgora(soDe) {
+    const furos = this.cena.objetos.filter(o => o.papel === 'furo' && o.visivel);
+    if (!furos.length) return false;
+    const alvos = this.cena.objetos.filter(o => o.papel !== 'furo' && (!soDe || soDe.includes(o.id)));
+    const res = [];
+    for (const o of alvos) {
+      let r;
+      try { r = await this.rodar('furar', { alvo: this.paraMotor(o), furos: furos.map(x => this.paraMotor(x)) }, 'Aplicar furos'); } catch (e) { return false; }
+      if (r) res.push({ o, r });
+    }
+    if (!res.length) { avisar('Nenhum furo encosta nas peças.', 'warn'); return false; }
+    const usados = new Set(); res.forEach(({ r }) => r.furosUsados.forEach(i => usados.add(furos[i].id)));
+    this.cena.aplicar('Aplicar furos', () => {
+      for (const { o, r } of res) o.partes = o.partes.map((p, i) => r.partes[i] === null ? null : { ...p, malha: r.partes[i].malha }).filter(Boolean);
+      // o furo só sai da mesa se não fura mais nenhuma outra peça
+      const outrosAlvos = this.cena.objetos.filter(o => o.papel !== 'furo' && !res.some(x => x.o === o));
+      this.cena.objetos = this.cena.objetos.filter(o => !(usados.has(o.id) && !outrosAlvos.some(a => this.furados.get(a.id) && (this.furados.get(a.id).furos || []).includes(o.id))));
+    });
+    this.furados.clear();
+    avisar('Furos aplicados na peça (dá pra desfazer).');
+    return true;
+  }
+  // ferramentas que usam as faces da peça trabalham na peça já furada
+  garantirFurosSeFerramenta() {
+    const d = this.painel.querySelector('details[open]');
+    if (!d || !['sel', 'sep', 'corte', 'relevo', 'diag'].includes(d.dataset.sec)) return;
+    const o = this.cena.objetoSel();
+    if (!o || o.papel === 'furo') return;
+    const f = this.furados.get(o.id);
+    if (f && f.chave === this.chaveFuros(o) && f.malhas.size) this.aplicarFurosAgora([o.id]);
   }
 
   desfazer() { if (this.previaAtiva) this.cancelarPrevia(); const r = this.cena.desfazer(); if (r) avisar('Desfeito: ' + r); }
@@ -763,6 +952,7 @@ export class Estudio {
       el('button', { class: 'btn', onclick: () => this.cancelarPrevia() }, 'Cancelar'));
     if (cfg.notas && cfg.notas.length) this.previaEl.appendChild(el('div', { style: 'flex-basis:100%;font-size:11.5px;color:var(--warn)' }, cfg.notas.join(' · ')));
     this.previaEl.style.display = 'flex';
+    this.multiEl.style.display = 'none';
   }
   confirmarPrevia() {
     const cfg = this.previaAtiva;
@@ -784,7 +974,7 @@ export class Estudio {
   }
 
   // objetos de/para o formato do motor
-  paraMotor(o) { return { nome: o.nome, transform: o.transform, partes: o.partes.map(p => ({ nome: p.nome, malha: p.malha, cor: p.cor, paleta: p.paleta })) }; }
+  paraMotor(o) { return { nome: o.nome, transform: o.transform, papel: o.papel || 'solido', partes: o.partes.map(p => ({ nome: p.nome, malha: p.malha, cor: p.cor, paleta: p.paleta })) }; }
   parteParaMotor(p) { return { nome: p.nome, malha: p.malha, cor: p.cor, paleta: p.paleta }; }
 }
 

@@ -247,6 +247,28 @@ html[data-tema=escuro] .e3d{ --e3d-fundo-a:#20242b; --e3d-fundo-b:#121418;
   .e3d-previa{ max-width:calc(100% - 24px) }
   .e3d-hud, .e3d-dica{ display:none }
 }
+/* ---------- formas, propriedades, seleção múltipla ---------- */
+.e3d-formas{ display:grid; grid-template-columns:repeat(3, 1fr); gap:6px }
+.e3d-forma{ display:flex; flex-direction:column; align-items:center; gap:5px; padding:10px 4px 8px; border-radius:12px; border:1px solid var(--line);
+  background:var(--panel); color:var(--ink-soft); cursor:pointer; font:600 11px/1.15 var(--sans); text-align:center; transition:border-color .15s, color .15s, transform .12s }
+.e3d-forma:hover{ border-color:color-mix(in srgb, var(--brand) 55%, var(--line)); color:var(--brand); transform:translateY(-1px) }
+.e3d-props{ padding:12px 14px; border-radius:14px; border:1px solid color-mix(in srgb, var(--brand) 35%, var(--line)); background:color-mix(in srgb, var(--brand) 5%, var(--panel)); margin-bottom:6px }
+.e3d-props-tit{ display:flex; align-items:center; gap:8px; margin-bottom:10px; color:var(--brand) }
+.e3d-props-tit b{ color:var(--ink); font-size:14px }
+.e3d-multi{ position:absolute; left:0; right:0; margin:0 auto; width:max-content; bottom:64px; z-index:6; padding:7px 8px 7px 12px; display:flex; gap:5px; align-items:center;
+  font:600 12.5px var(--sans); max-width:calc(100% - 24px); flex-wrap:wrap; justify-content:center; animation:e3dsobe .2s var(--ease) }
+@keyframes e3dsobe{ from{ opacity:0; transform:translateY(6px) } }
+.e3d.com-multi .e3d-hud{ display:none }
+.e3d-multi .btn{ height:32px; padding:0 11px; font-size:12px; border-radius:9px; display:inline-flex; align-items:center; gap:3px }
+.e3d-multi .btn .u{ font-weight:500; color:inherit; opacity:.75; max-width:90px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.e3d-multi .btn.so-ico{ width:32px; padding:0; justify-content:center }
+.e3d-alinhar{ position:relative }
+.e3d-alinhar-pop{ display:none; position:absolute; bottom:40px; left:50%; transform:translateX(-50%); padding:8px; grid-template-columns:repeat(3, auto); gap:4px; z-index:8 }
+.e3d-alinhar-pop.on{ display:grid }
+.e3d-alinhar-pop .btn{ white-space:nowrap }
+.e3d-obj.multi{ background:color-mix(in srgb, #1f6feb 8%, transparent); border-color:color-mix(in srgb, #1f6feb 40%, transparent) }
+.e3d-tag-furo{ font:700 9.5px var(--sans); text-transform:uppercase; letter-spacing:.05em; color:#fff; background:#e5484d; border-radius:6px; padding:2px 5px }
+@media (max-width:900px){ .e3d-multi{ bottom:62px } .e3d-formas{ grid-template-columns:repeat(4, 1fr) } }
 .ferr-modos{ margin-bottom:14px }
 `;
 

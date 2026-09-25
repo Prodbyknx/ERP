@@ -57,7 +57,9 @@ export function novoObjeto(o) {
     id: o.id || novoId('o'), nome: o.nome || 'Objeto',
     transform: o.transform ? Float64Array.from(o.transform) : M4.identidade(),
     partes: (o.partes || []).map(novaParte),
-    visivel: o.visivel !== false
+    visivel: o.visivel !== false,
+    papel: o.papel === 'furo' ? 'furo' : 'solido',     // furo tira material de quem ele atravessa
+    forma: o.forma || null                              // { id, params, texto? } quando veio da biblioteca
   };
 }
 
@@ -68,6 +70,7 @@ export class Cena {
     this.pilhaRefazer = [];
     this.ouvintes = new Map();
     this.sel = { objeto: null, parte: null };
+    this.multi = [];                           // seleção múltipla (Shift+clique); a principal é sel.objeto
     this.mesa = { x: 256, y: 256 };            // Bambu A1 / P1 / X1
     this.limite = 40;
   }
@@ -80,7 +83,7 @@ export class Cena {
   // toda mudança passa por aqui: guarda o antes e avisa a tela
   aplicar(rotulo, fn) {
     const antes = this.instantaneo();
-    const selAntes = { ...this.sel };
+    const selAntes = { ...this.sel, multi: this.multi.slice() };
     const r = fn();
     this.pilhaDesfazer.push({ rotulo, estado: antes, sel: selAntes });
     if (this.pilhaDesfazer.length > this.limite) this.pilhaDesfazer.shift();
@@ -94,8 +97,8 @@ export class Cena {
   desfazer() {
     const u = this.pilhaDesfazer.pop();
     if (!u) return null;
-    this.pilhaRefazer.push({ rotulo: u.rotulo, estado: this.instantaneo(), sel: { ...this.sel } });
-    this.objetos = u.estado; this.sel = u.sel;
+    this.pilhaRefazer.push({ rotulo: u.rotulo, estado: this.instantaneo(), sel: { ...this.sel, multi: this.multi.slice() } });
+    this.objetos = u.estado; this.restaurarSel(u.sel);
     this.conferirSelecao();
     this.emitir('mudou', { rotulo: u.rotulo, desfeito: true });
     return u.rotulo;
@@ -103,8 +106,8 @@ export class Cena {
   refazer() {
     const r = this.pilhaRefazer.pop();
     if (!r) return null;
-    this.pilhaDesfazer.push({ rotulo: r.rotulo, estado: this.instantaneo(), sel: { ...this.sel } });
-    this.objetos = r.estado; this.sel = r.sel;
+    this.pilhaDesfazer.push({ rotulo: r.rotulo, estado: this.instantaneo(), sel: { ...this.sel, multi: this.multi.slice() } });
+    this.objetos = r.estado; this.restaurarSel(r.sel);
     this.conferirSelecao();
     this.emitir('mudou', { rotulo: r.rotulo, refeito: true });
     return r.rotulo;
@@ -112,16 +115,40 @@ export class Cena {
   proximoDesfazer() { const u = this.pilhaDesfazer[this.pilhaDesfazer.length - 1]; return u ? u.rotulo : null; }
   proximoRefazer() { const u = this.pilhaRefazer[this.pilhaRefazer.length - 1]; return u ? u.rotulo : null; }
 
+  restaurarSel(s) { this.sel = { objeto: s.objeto, parte: s.parte }; this.multi = (s.multi || []).slice(); }
   conferirSelecao() {
+    this.multi = this.multi.filter(id => this.objeto(id));
+    if (this.sel.objeto && !this.multi.includes(this.sel.objeto)) this.multi = this.multi.length ? [...this.multi, this.sel.objeto] : [this.sel.objeto];
+    if (!this.sel.objeto) this.multi = [];
     const o = this.objeto(this.sel.objeto);
     if (!o) { this.sel = { objeto: this.objetos.length ? null : null, parte: null }; return; }
     if (!o.partes.some(p => p.id === this.sel.parte)) this.sel.parte = o.partes.length === 1 ? o.partes[0].id : null;
   }
-  selecionar(objId, parteId) {
-    this.sel = { objeto: objId || null, parte: parteId || null };
+  // somar: Shift+clique -> entra/sai da seleção múltipla
+  selecionar(objId, parteId, somar) {
+    if (somar && objId) {
+      if (this.multi.includes(objId) && this.multi.length > 1) {
+        this.multi = this.multi.filter(x => x !== objId);
+        if (this.sel.objeto === objId) { const u = this.objeto(this.multi[this.multi.length - 1]); this.sel = { objeto: u.id, parte: u.partes.length === 1 ? u.partes[0].id : null }; }
+      } else {
+        if (!this.multi.includes(objId)) this.multi.push(objId);
+        this.sel = { objeto: objId, parte: parteId || null };
+      }
+    } else {
+      this.sel = { objeto: objId || null, parte: parteId || null };
+      this.multi = objId ? [objId] : [];
+    }
     this.conferirSelecao();
     this.emitir('selecao', this.sel);
   }
+  selecionarTodos() {
+    if (!this.objetos.length) return;
+    this.multi = this.objetos.map(o => o.id);
+    const u = this.objetos[this.objetos.length - 1];
+    this.sel = { objeto: u.id, parte: u.partes.length === 1 ? u.partes[0].id : null };
+    this.emitir('selecao', this.sel);
+  }
+  objetosSel() { return this.multi.map(id => this.objeto(id)).filter(Boolean); }
   objeto(id) { return this.objetos.find(o => o.id === id) || null; }
   parte(objId, parteId) { const o = this.objeto(objId); return o ? o.partes.find(p => p.id === parteId) || null : null; }
   objetoSel() { return this.objeto(this.sel.objeto); }

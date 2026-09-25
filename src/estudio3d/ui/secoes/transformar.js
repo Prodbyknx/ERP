@@ -27,6 +27,17 @@ export function montarTransformar(est) {
       <button class="btn" data-a="deitarClique" title="Clique numa face da peça: ela vai pra mesa">Deitar na face que eu clicar</button>
     </div>
     <div style="margin-top:14px;border-top:1px solid var(--line-soft);padding-top:10px">
+      <div class="e3d-titulo">Tipo</div>
+      <div class="seg" data-a="papel"><button type="button" data-v="solido" class="active">Sólido</button><button type="button" data-v="furo">Furo</button></div>
+      <p class="u" style="margin:-4px 0 0">Furo tira material de todas as peças que ele atravessa — na tela e no arquivo exportado.</p>
+    </div>
+    <div style="margin-top:14px;border-top:1px solid var(--line-soft);padding-top:10px">
+      <div class="e3d-titulo">Duplicar em série</div>
+      <div class="e3d-l3"><div><label>Cópias</label><input type="text" data-a="serieN" value="4"></div><div><label>Distância (mm)</label><input type="text" data-a="serieD" value="10"></div>
+        <div><label>Direção</label><select data-a="serieE"><option value="0">X (lado)</option><option value="1">Y (fundo)</option><option value="2">Z (pra cima)</option></select></div></div>
+      <div class="e3d-botoes"><button class="btn" data-a="serie">Criar cópias</button></div>
+    </div>
+    <div style="margin-top:14px;border-top:1px solid var(--line-soft);padding-top:10px">
       <div class="e3d-titulo">Cor da peça</div>
       <p class="u" data-a="corAlvo">Escolha uma peça (clique nela).</p>
       <div style="display:flex;gap:8px;align-items:center"><input type="color" data-a="cor"><input type="text" data-a="hex" style="width:110px" maxlength="7" placeholder="#RRGGBB"><span class="e3d-cores-hex" data-a="nomeCor"></span></div>
@@ -49,6 +60,7 @@ export function montarTransformar(est) {
     const inputs = d.querySelectorAll('input[data-t]');
     inputs.forEach(i => { i.disabled = !o; });
     q('[data-a=alvo]').textContent = o ? 'Objeto: ' + o.nome : 'Escolha um objeto.';
+    q('[data-a=papel]').querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === (o && o.papel === 'furo' ? 'furo' : 'solido')));
     if (o) {
       const dc = estado(o);
       const c = est.cena.caixaExata(o);
@@ -117,6 +129,13 @@ export function montarTransformar(est) {
     const o = est.objetoAtual(); if (!o) return;
     const c = est.cena.caixaExata(o), cx = (c.min[0] + c.max[0]) / 2;
     est.cena.aplicar('Espelhar', () => { o.transform = M4.multiplicar(M4.multiplicar(M4.translacao(cx, 0, 0), M4.multiplicar(M4.escala(-1, 1, 1), M4.translacao(-cx, 0, 0))), o.transform); });
+  };
+  q('[data-a=papel]').addEventListener('click', ev => { const b = ev.target.closest('button'); const o = est.objetoAtual(); if (b && o) est.definirPapel(o, b.dataset.v); });
+  q('[data-a=serie]').onclick = () => {
+    const o = est.objetoAtual(); if (!o) { avisar('Escolha a peça.', 'warn'); return; }
+    const n = Math.round(lerNumero(q('[data-a=serieN]').value, 4)), dist = lerNumero(q('[data-a=serieD]').value, 10), e = +q('[data-a=serieE]').value;
+    const passo = [0, 0, 0]; passo[e] = dist;
+    est.duplicarEmSerie(o, n, passo);
   };
   q('[data-a=zerar]').onclick = () => {
     const o = est.objetoAtual(); if (!o) return;

@@ -373,7 +373,91 @@ async function main() {
   });
   await pg.context().close();
 
-  console.log('5) gerador de chaveiro');
+  console.log('5) modelagem simples: o fluxo do funcionário');
+  pg = await novaPagina(b);
+  await abrirEstudio(pg, 'file://' + teste + '/index.html');
+  const doEst = (f, a) => pg.evaluate(f, a);
+  const campoForma = async (k, v) => { await pg.fill('[data-sec=formas] [data-p="' + k + '"]', String(v)); await pg.press('[data-sec=formas] [data-p="' + k + '"]', 'Enter'); await pg.waitForTimeout(400); };
+  const esperarMotor = () => pg.waitForFunction(() => !/calcul/.test(document.querySelector('.e3d-motor').textContent) && !document.querySelector('.e3d-ocupado').classList.contains('on'), null, { timeout: 60000 });
+  const posX = async (x, y) => { await abrirSecao(pg, 'transf'); await pg.fill('[data-sec=transf] [data-t="px"]', String(x)); await pg.press('[data-sec=transf] [data-t="px"]', 'Enter'); if (y != null) { await pg.fill('[data-sec=transf] [data-t="py"]', String(y)); await pg.press('[data-sec=transf] [data-t="py"]', 'Enter'); } await pg.waitForTimeout(200); };
+  let arqModelagem = null;
+  await passo(pg, 'retângulo 60×30×3 + círculo Ø30 na ponta, selecionar os dois e UNIR', async () => {
+    await pg.click('.e3d-rail [data-ferr=formas]');
+    await pg.click('[data-sec=formas] [data-forma=retangulo]'); await esperarMotor(); await pg.waitForTimeout(300);
+    await campoForma('largura', 60); await campoForma('comprimento', 30); await campoForma('espessura', 3); await esperarMotor();
+    const ret = await doEst(() => { const e = window.Estudio3D.estudio; const o = e.cena.objetoSel(); return { id: o.id, c: e.cena.caixaExata(o) }; });
+    if (Math.abs(ret.c.tam[0] - 60) > 1e-6 || Math.abs(ret.c.tam[1] - 30) > 1e-6 || Math.abs(ret.c.tam[2] - 3) > 1e-6) throw new Error('retângulo ' + ret.c.tam);
+    await pg.click('.e3d-rail [data-ferr=formas]');
+    await pg.click('[data-sec=formas] [data-forma=circulo]'); await esperarMotor(); await pg.waitForTimeout(300);
+    await campoForma('diametro', 30); await campoForma('espessura', 3); await esperarMotor();
+    const cx = (ret.c.min[0] + ret.c.max[0]) / 2, cy = (ret.c.min[1] + ret.c.max[1]) / 2;
+    await posX(ret.c.max[0], cy);                                    // centro do círculo na ponta direita
+    await doEst(id => { const e = window.Estudio3D.estudio; const c = e.cena.objetoSel(); e.cena.selecionar(id, null); e.cena.selecionar(c.id, null, true); }, ret.id);
+    await pg.waitForSelector('.e3d-multi', { state: 'visible' });
+    await pg.click('.e3d-multi .btn.primary'); await esperarMotor(); await pg.waitForTimeout(300);
+    const r = await doEst(() => { const e = window.Estudio3D.estudio; return { n: e.cena.objetos.length, c: e.cena.caixaExata(e.cena.objetos[0]) }; });
+    if (r.n !== 1) throw new Error('unir deixou ' + r.n + ' objetos');
+    if (Math.abs(r.c.tam[0] - 75) > 0.01) throw new Error('largura unida ' + r.c.tam[0]);
+  });
+  await passo(pg, 'círculo Ø5 marcado como FURO na ponta: aparece furado ao vivo', async () => {
+    const u = await doEst(() => { const e = window.Estudio3D.estudio; return e.cena.caixaExata(e.cena.objetos[0]); });
+    await pg.click('.e3d-rail [data-ferr=formas]');
+    await pg.click('[data-sec=formas] [data-forma=circulo]'); await esperarMotor(); await pg.waitForTimeout(300);
+    await campoForma('diametro', 5); await campoForma('espessura', 3); await esperarMotor();
+    await pg.click('[data-sec=formas] .e3d-props [data-v=furo]'); await pg.waitForTimeout(200);
+    await posX(u.max[0] - 8, (u.min[1] + u.max[1]) / 2);
+    await pg.waitForFunction(() => { const e = window.Estudio3D.estudio; const o = e.cena.objetos[0]; const f = e.furados.get(o.id); return f && f.malhas.size > 0; }, null, { timeout: 30000 });
+    const vis = await doEst(() => { const e = window.Estudio3D.estudio; const o = e.cena.objetos[0]; const it = e.visor.itens.get(o.partes[0].id); return it.malha !== o.partes[0].malha; });
+    if (!vis) throw new Error('a tela não mostra a peça furada');
+  });
+  await passo(pg, 'texto "144" em relevo de 0,8 mm em cima', async () => {
+    await doEst(() => { const e = window.Estudio3D.estudio; const o = e.cena.objetos.find(x => x.papel !== 'furo'); e.cena.selecionar(o.id, o.partes[0].id); });
+    await abrirSecao(pg, 'relevo'); await pg.waitForTimeout(300);
+    await pg.fill('[data-sec=relevo] [data-a="texto"]', '144');
+    await pg.selectOption('[data-sec=relevo] [data-a="modo"]', 'alto');
+    await pg.fill('[data-sec=relevo] [data-a="altura"]', '0,8');
+    await pg.fill('[data-sec=relevo] [data-a="largura"]', '30');
+    await pg.click('[data-sec=relevo] [data-a="ir"]'); await confirmarPrevia(pg); await esperarMotor();
+  });
+  await passo(pg, 'EXPORTAR: o 3MF tem o furo de verdade, o texto, e nenhum objeto-furo', async () => {
+    await abrirSecao(pg, 'exp');
+    const [dl] = await Promise.all([pg.waitForEvent('download', { timeout: 120000 }), pg.click('[data-sec=exp] [data-a="3mf"]')]);
+    arqModelagem = path.join(tmp, 'modelagem.3mf'); await dl.saveAs(arqModelagem);
+    const { executar } = await import('../../src/estudio3d/motor/operacoes.js');
+    const { volume, transformar } = await import('../../src/estudio3d/core/malha.js');
+    const { validar } = await import('../../src/estudio3d/core/validador.js');
+    const { comContexto } = await import('../../src/estudio3d/core/solidos.js');
+    const r = executar('importar', { nome: 'm.3mf', bytes: new Uint8Array(fs.readFileSync(arqModelagem)), extras: {} });
+    if (r.objetos.length !== 1) throw new Error('objetos no arquivo: ' + r.objetos.map(o => o.nome).join(', '));
+    const o = r.objetos[0];
+    for (const p of o.partes) { const v = validar(p.malha, { completo: true }); if (v.arestasAbertas || v.arestasNaoManifold || v.autoInterseccoes || v.facesDegeneradas) throw new Error('peça exportada com defeito: ' + JSON.stringify({ a: v.arestasAbertas, nm: v.arestasNaoManifold, ai: v.autoInterseccoes, d: v.facesDegeneradas })); }
+    const mundo = o.partes.map(p => transformar(p.malha, o.transform));
+    const vol = mundo.reduce((s, m) => s + volume(m), 0);
+    const base = 60 * 30 * 3 + Math.PI * 15 * 15 * 3 / 2, furo = Math.PI * 2.5 * 2.5 * 3;
+    if (!(vol > base - furo - 2 && vol < base - furo + 60 * 30 * 0.8)) throw new Error('volume ' + vol.toFixed(1) + ' (base ' + base.toFixed(1) + ', furo ' + furo.toFixed(1) + ')');
+    // a 1,5 mm de altura a seção tem o furo (área = base - furo)
+    const area = comContexto(ctx => mundo.reduce((s, m) => s + ctx.guardar(ctx.guardar(ctx.solido({ malha: m, cor: '#000' })).slice(1.5)).area(), 0));
+    const esperado = 60 * 30 + Math.PI * 15 * 15 / 2 - Math.PI * 2.5 * 2.5;
+    if (Math.abs(area - esperado) > 0.6) throw new Error('seção a 1,5 mm: ' + area.toFixed(2) + ' (esperado ' + esperado.toFixed(2) + ' — sem furo seria ' + (esperado + Math.PI * 6.25).toFixed(2) + ')');
+  });
+  await passo(pg, 'duplicar em série (4 cópias a cada 10 mm) e alinhar', async () => {
+    await pg.click('.e3d-rail [data-ferr=formas]');
+    await pg.click('[data-sec=formas] [data-forma=cilindro]'); await esperarMotor(); await pg.waitForTimeout(300);
+    await abrirSecao(pg, 'transf');
+    await pg.fill('[data-sec=transf] [data-a="serieN"]', '4'); await pg.fill('[data-sec=transf] [data-a="serieD"]', '25');
+    await pg.click('[data-sec=transf] [data-a="serie"]'); await pg.waitForTimeout(300);
+    const xs = await doEst(() => { const e = window.Estudio3D.estudio; return e.cena.objetosSel().map(o => o.transform[12]); });
+    if (xs.length !== 5) throw new Error('cópias: ' + xs.length);
+    for (let k = 1; k < 5; k++) if (Math.abs(xs[k] - xs[0] - 25 * k) > 1e-6) throw new Error('distância errada: ' + xs);
+    await pg.click('.e3d-multi .e3d-alinhar > .btn'); await pg.click('.e3d-multi [data-alinhar=base]');
+    await pg.click('.e3d-multi .e3d-alinhar > .btn'); await pg.click('.e3d-multi [data-alinhar=centroY]');
+    const ys = await doEst(() => { const e = window.Estudio3D.estudio; return e.cena.objetosSel().map(o => { const c = e.cena.caixaExata(o); return [(c.min[1] + c.max[1]) / 2, c.min[2]]; }); });
+    for (const [y, z] of ys) if (Math.abs(y - ys[0][0]) > 1e-6 || Math.abs(z) > 1e-6) throw new Error('alinhar: ' + JSON.stringify(ys));
+  });
+  await pg.screenshot({ path: path.join(tmp, 'modelagem.png') });
+  await pg.context().close();
+
+  console.log('6) gerador de chaveiro');
   pg = await novaPagina(b);
   await pg.goto('file://' + teste + '/index.html');
   await pg.waitForTimeout(1200);

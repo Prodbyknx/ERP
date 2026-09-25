@@ -12,6 +12,8 @@ import { escrever3MF } from '../core/formatos/tmf.js';
 import { escreverSTL } from '../core/formatos/stl.js';
 import { escreverZip } from '../core/formatos/zip.js';
 import { transformar, juntar, volume, caixa, semFaces, compactar } from '../core/malha.js';
+import { gerarForma } from '../core/formas.js';
+import { combinar, aplicarFuros, aplicarFurosNaCena } from '../core/modelagem.js';
 import { BufferGeometry, BufferAttribute } from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 
@@ -96,7 +98,16 @@ export const OPERACOES = {
     });
   },
 
+  // biblioteca de formas (sempre sólido fechado, em mm)
+  forma({ id, params, opc }) { return gerarForma(id, params || {}, opc || {}); },
+  // unir / tirar uma da outra / parte comum
+  combinar({ objetos, modo, opc }) { return combinar(objetos, modo, opc || {}); },
+  // prévia ao vivo dos furos num objeto
+  furar({ alvo, furos }) { return aplicarFuros(alvo, furos); },
+
   exportar3MF({ cena, opc }) {
+    // furos entram na geometria de verdade; objeto-furo não vai pro arquivo
+    cena = aplicarFurosNaCena(cena);
     const r = escrever3MF(cena, opc || {});
     return { bytes: r.bytes, cores: r.cores, avisos: r.avisos };
   },
@@ -104,6 +115,7 @@ export const OPERACOES = {
   // STL: um arquivo por objeto (peças juntas) ou por peça; vários -> zip
   exportarSTL({ cena, opc }) {
     opc = opc || {};
+    cena = aplicarFurosNaCena(cena);
     const arquivos = [];
     const usados = new Set();
     const nomeUnico = n => { let s = n.replace(/[^\w\u00C0-\u00FF .-]/g, '').trim().replace(/\s+/g, '_') || 'peca'; let k = s, i = 2; while (usados.has(k)) k = s + '_' + i++; usados.add(k); return k; };

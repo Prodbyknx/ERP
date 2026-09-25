@@ -221,6 +221,12 @@ export class Visor {
     return out;
   }
 
+  coresFuro(m) {
+    const nt = m.idx.length / 3, out = new Float32Array(nt * 3), c = hexParaLinear('#e5484d');
+    for (let t = 0; t < nt; t++) { out[t * 3] = c[0]; out[t * 3 + 1] = c[1]; out[t * 3 + 2] = c[2]; }
+    return out;
+  }
+
   novoItem(obj, parte, grupo) {
     const geom = this.construirGeometria(parte.malha);
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0, side: THREE.FrontSide });
@@ -264,15 +270,21 @@ export class Visor {
       if (!g) { g = new THREE.Group(); g.userData.objeto = o.id; this.grupos.set(o.id, g); this.raizObjetos.add(g); }
       this.aplicarMatriz(g, o.transform);
       g.visible = o.visivel !== false;
+      const furo = o.papel === 'furo';
       for (const p of o.partes) {
         vivos.add(p.id);
+        const mEx = this.exibir ? this.exibir(o, p) : p.malha;
         let it = this.itens.get(p.id);
-        if (it && (it.malha !== p.malha || it.mesh.parent !== g)) { this.descartarItem(p.id); it = null; }
-        if (!it) it = this.novoItem(o, p, g);
+        if (it && (it.malha !== mEx || it.mesh.parent !== g)) { this.descartarItem(p.id); it = null; }
+        if (!it) it = this.novoItem(o, mEx === p.malha ? p : { ...p, malha: mEx }, g);
         it.parte = p;
         it.mesh.visible = p.visivel !== false;
-        const chave = p.cor + '|' + (p.paleta ? p.paleta.join(',') : '');
-        if (chave !== it.chaveCor) { it.chaveCor = chave; it.base = this.coresBase(p); }
+        // furo: vermelho translúcido (mostra o que vai sair da peça)
+        const mat = it.mesh.material;
+        if (mat.transparent !== furo) { mat.transparent = furo; mat.opacity = furo ? 0.42 : 1; mat.depthWrite = !furo; mat.needsUpdate = true; }
+        it.mesh.renderOrder = furo ? 5 : 0;
+        const chave = (furo ? 'furo|' : '') + p.cor + '|' + (p.paleta ? p.paleta.join(',') : '') + '|' + it.malha.idx.length;
+        if (chave !== it.chaveCor) { it.chaveCor = chave; it.base = furo ? this.coresFuro(it.malha) : this.coresBase({ ...p, malha: it.malha }); }
         this.pintar(p.id);
       }
     }
@@ -296,9 +308,11 @@ export class Visor {
     const nt = it.malha.idx.length / 3;
     const attr = it.geom.getAttribute('color');
     const c = attr.array;
-    const sel = this.selecaoFaces.get(parteId);
+    let sel = this.selecaoFaces.get(parteId);
+    if (sel && sel.length !== nt) sel = null;
     let fonte = it.base;
-    const mapa = this.mapas.get(parteId);
+    let mapa = this.mapas.get(parteId);
+    if (mapa && mapa.length !== nt * 3) mapa = null;        // mapa de outra geometria (ex.: prévia dos furos)
     if (this.modo !== 'cores' && this.modo !== 'normais' && mapa) fonte = mapa;
     const normais = this.modo === 'normais';
     const azulClaro = [srgbParaLinear(150), srgbParaLinear(178), srgbParaLinear(214)];
@@ -368,6 +382,13 @@ export class Visor {
   /* ------------------------------------------------ gizmo e caixa */
 
   definirGizmo(modo) { this.modoGizmo = modo; this.atualizarGizmo(); }
+  // ímã: mover de 1 em 1 mm, girar de 15 em 15°, escalar de 5 em 5%
+  definirIma(on) {
+    this.ima = !!on;
+    this.gizmo.setTranslationSnap(on ? 1 : null);
+    this.gizmo.setRotationSnap(on ? THREE.MathUtils.degToRad(15) : null);
+    this.gizmo.setScaleSnap(on ? 0.05 : null);
+  }
   atualizarGizmo() {
     const o = this.cena.objetoSel();
     const g = o ? this.grupos.get(o.id) : null;
@@ -381,6 +402,15 @@ export class Visor {
   atualizarCaixaSel() {
     const o = this.cena.objetoSel();
     const g = o ? this.grupos.get(o.id) : null;
+    // as outras peças da seleção múltipla ganham caixa azul
+    if (!this.caixasExtra) this.caixasExtra = [];
+    const extras = this.previa ? [] : this.cena.objetosSel().filter(x => x !== o);
+    while (this.caixasExtra.length < extras.length) { const h = new THREE.Box3Helper(new THREE.Box3(), new THREE.Color('#1f6feb')); this.scene.add(h); this.caixasExtra.push(h); }
+    this.caixasExtra.forEach((h, i) => {
+      const c = extras[i] && this.cena.caixaExata(extras[i]);
+      h.visible = !!c;
+      if (c) { h.box.min.set(c.min[0], c.min[1], c.min[2]); h.box.max.set(c.max[0], c.max[1], c.max[2]); }
+    });
     if (!g || this.previa) { this.caixaSel.visible = false; return; }
     const c = this.cena.caixaExata(o);
     if (!c) { this.caixaSel.visible = false; return; }
