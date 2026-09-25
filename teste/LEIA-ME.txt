@@ -17,8 +17,41 @@ COMO USAR
    de exemplo: Gabriel (admin) e Ana (vendedora).
 
 
-NOVIDADES DESTA VERSÃO (3)
----------------------------
+NOVIDADES DESTA VERSÃO (4) — FOTOS -> 3D (etapas 2 e 3, teste)
+-------------------------------------------------------------
+
+LABORATÓRIO FOTOS -> 3D  (abra  laboratorio-fotos-3d.html  com dois cliques)
+Não é a interface final e não mexe no Estúdio. Você põe de 2 a 9 fotos
+(frente, costas, lados, 3/4, de cima), diz a altura real em mm e ele
+gera um sólido FECHADO e imprimível, neste computador, sem IA e sem
+internet (casca visual pelas silhuetas).
+Mostra, medido: se é imprimível, a fidelidade de cada vista (silhueta
+da foto × modelo, em cores), medidas, volume e tempo.
+Baixa o 3MF (abra no Estúdio pelo "Abrir") e o 3MF separado por cor.
+Fotos: fundo liso, objeto inteiro, câmera longe com zoom, mesma
+distância. O que as fotos não mostram (cavidades) fica preenchido.
+O campo "Servidor de IA próprio" liga no servidor com GPU (pasta
+servidor-ia do projeto). Sem GPU ele diz que não está disponível;
+não finge que funciona.
+
+AMOSTRAS PRA IMPRIMIR  (pasta  amostras)
+- pecas-modeladas-no-sistema.3mf: 10 peças feitas do zero no sistema
+  (caixa com tampa, suporte em L com furos M4, chaveiro, base de ímã,
+  pino e furo com folga, suporte de celular, placa, pião, dado,
+  embutido em duas cores).
+- fotos-para-3d/: as fotos de teste, o modelo gerado delas, o mesmo
+  modelo separado por cor (preto, olhos brancos, botão vermelho) e o
+  benchmark.json.
+Imprima e me diga: medidas, encaixes e acabamento.
+
+SEPARAR POR COR EM SUPERFÍCIE CURVA
+Antes: uma região pintada numa superfície redonda (ex.: olho numa
+cabeça) com espessura era recusada. Agora ela vira uma camada que
+acompanha a curva, e a peça principal ganha o bolso do mesmo formato.
+
+
+NOVIDADES DA VERSÃO 3
+---------------------
 
 AUDITORIA COM TESTE DE VERDADE (não é "parece que funciona")
 Cada ferramenta foi testada medindo a geometria: peça fechada, sem buraco,

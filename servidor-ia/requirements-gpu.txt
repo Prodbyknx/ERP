@@ -1,0 +1,7 @@
+# Adaptador Hunyuan3D-2mv (GPU NVIDIA, CUDA). Instale o PyTorch certo pra sua
+# CUDA antes (https://pytorch.org/get-started/locally/), depois:
+#   git clone https://github.com/Tencent-Hunyuan/Hunyuan3D-2 && cd Hunyuan3D-2
+#   pip install -r requirements.txt && pip install -e .
+# Pesos baixados do Hugging Face no 1º uso (tencent/Hunyuan3D-2mv, ~5 GB).
+-r requirements.txt
+trimesh

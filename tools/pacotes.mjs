@@ -17,7 +17,7 @@ const TAGS_NUVEM = [
   '<script src="cloud.js"></script>'
 ];
 const SO_PRODUCAO = new Set(['config.js', 'supabase.min.js', 'cloud.js', '_headers']);
-const DOCS_TESTE = ['teste.js', 'LEIA-ME.txt', 'AUDITORIA.txt', 'FERRAMENTAS.txt'];
+const DOCS_TESTE = ['teste.js', 'LEIA-ME.txt', 'AUDITORIA.txt', 'FERRAMENTAS.txt', 'laboratorio-fotos-3d.html', 'laboratorio-fotos-3d.js'];
 
 export function indexDeTeste(html) {
   for (const t of TAGS_NUVEM) {
@@ -58,6 +58,10 @@ export function gerarPacotes() {
   fs.writeFileSync(path.join(teste, 'index.html'),
     indexDeTeste(fs.readFileSync(path.join(site, 'index.html'), 'utf8')));
   for (const d of DOCS_TESTE) fs.copyFileSync(path.join(raiz, 'teste', d), path.join(teste, d));
+  // amostras geradas pelos testes (fotos sintéticas, 3MFs, benchmark), se existirem
+  const amostras = path.join(teste, 'amostras');
+  if (fs.existsSync(path.join(dist, 'ia-demo'))) { fs.mkdirSync(path.join(amostras, 'fotos-para-3d'), { recursive: true }); copiarPasta(path.join(dist, 'ia-demo'), path.join(amostras, 'fotos-para-3d')); }
+  if (fs.existsSync(path.join(dist, 'pecas-modeladas-no-sistema.3mf'))) { fs.mkdirSync(amostras, { recursive: true }); fs.copyFileSync(path.join(dist, 'pecas-modeladas-no-sistema.3mf'), path.join(amostras, 'pecas-modeladas-no-sistema.3mf')); }
 
   const obrigatorios = ['index.html', 'app.js', 'html2pdf.bundle.min.js'];
   for (const p of [prod, teste]) {

@@ -1,0 +1,4 @@
+# Servidor + adaptador "silhuetas" (CPU, usa o Node do projeto)
+fastapi>=0.110
+uvicorn>=0.29
+pillow>=10

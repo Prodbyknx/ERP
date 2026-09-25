@@ -87,6 +87,7 @@ async function abrirEstudio(pg, url) {
 async function main() {
   console.log('build + pacotes…');
   await construir();
+  await construir({ entrada: 'src/estudio3d/lab/fotos3d.js', saida: 'teste/laboratorio-fotos-3d.js' });
   const { teste } = gerarPacotes();
   const modelos = path.join(tmp, 'modelos'); fs.mkdirSync(modelos);
   await gerarModelos(modelos);
@@ -476,6 +477,44 @@ async function main() {
   await passo(pg, 'gerador: Abrir no Estúdio 3D', async () => {
     await pg.click('#fer_estudio');
     await pg.waitForFunction(() => window.Estudio3D && window.Estudio3D.estudio && window.Estudio3D.estudio.cena.objetos.length === 1, null, { timeout: 60000 });
+  });
+  await pg.context().close();
+
+  console.log('7) laboratório fotos -> 3D (pacote de teste, file://)');
+  const { cenaDeFotos } = await import('../util/fotos.mjs');
+  const { escreverPNG } = await import('../util/png.mjs');
+  const cena = cenaDeFotos(), dirFotos = path.join(tmp, 'fotos'); fs.mkdirSync(dirFotos);
+  for (const v of ['frente', 'costas', 'esquerda', 'direita', 'frenteEsquerda', 'frenteDireita']) fs.writeFileSync(path.join(dirFotos, v + '.png'), escreverPNG(cena.FOTOS[v].rgba, cena.FOTOS[v].w, cena.FOTOS[v].h));
+  pg = await novaPagina(b);
+  const errosLab = []; pg.on('pageerror', e => errosLab.push(e.message));
+  await pg.goto('file://' + teste + '/laboratorio-fotos-3d.html');
+  let arqLab = null;
+  await passo(pg, 'lab: 6 fotos -> sólido imprimível, fiel às fotos, com comparação por vista', async () => {
+    for (const v of ['frente', 'costas', 'esquerda', 'direita', 'frenteEsquerda', 'frenteDireita']) await pg.setInputFiles('.vista[data-v=' + v + '] input', path.join(dirFotos, v + '.png'));
+    await pg.fill('#altura', String(cena.H));
+    await pg.click('#gerar');
+    await pg.waitForSelector('#saida:not([hidden])', { timeout: 120000 });
+    const t = await pg.textContent('#numeros');
+    if (!/Imprimível[^]*sim/.test(t)) throw new Error('não imprimível: ' + t);
+    const fid = +(t.match(/pior vista[\d.]+% \/ ([\d.]+)%/) || [])[1];
+    if (!(fid > 95)) throw new Error('fidelidade ' + fid + ': ' + t);
+    if (await pg.locator('#comparar canvas').count() !== 6) throw new Error('comparação por vista');
+    if (errosLab.length) throw new Error(errosLab.join(' | '));
+  });
+  await passo(pg, 'lab: 3MF inteiro e 3MF separado por cor que o Bambu lê', async () => {
+    const [d1] = await Promise.all([pg.waitForEvent('download', { timeout: 60000 }), pg.click('#b3mf')]);
+    arqLab = path.join(tmp, 'lab.3mf'); await d1.saveAs(arqLab);
+    const [d2] = await Promise.all([pg.waitForEvent('download', { timeout: 120000 }), pg.click('#bcor')]);
+    const arqCor = path.join(tmp, 'lab-cor.3mf'); await d2.saveAs(arqCor);
+    const vols = simular(arqCor).objetos.flatMap(o => o.volumes);
+    if (vols.length < 3 || vols.some(v => !v.cor_volume)) throw new Error(JSON.stringify(vols));
+  });
+  await pg.context().close();
+  pg = await novaPagina(b);
+  await abrirEstudio(pg, 'file://' + teste + '/index.html');
+  await passo(pg, 'lab: o 3MF das fotos entra no Estúdio pelo Abrir (mesmo caminho de modelo importado)', async () => {
+    await pg.setInputFiles('.e3d input[type=file][multiple]', arqLab);
+    await pg.waitForFunction(() => window.Estudio3D.estudio.cena.objetos.length === 1, null, { timeout: 60000 });
   });
   await pg.context().close();
   await b.close();

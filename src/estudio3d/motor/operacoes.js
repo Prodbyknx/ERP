@@ -14,7 +14,8 @@ import { escreverZip } from '../core/formatos/zip.js';
 import { transformar, juntar, volume, caixa, semFaces, compactar } from '../core/malha.js';
 import { gerarForma } from '../core/formas.js';
 import { combinar, aplicarFuros, aplicarFurosNaCena } from '../core/modelagem.js';
-import { fotosPara3D } from '../core/ia/reconstrucao.js';
+import { fotosPara3D, prepararVistas } from '../core/ia/reconstrucao.js';
+import { melhorGiro, normalizar, avaliar } from '../core/ia/avaliacao.js';
 import { BufferGeometry, BufferAttribute } from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 
@@ -110,6 +111,33 @@ export const OPERACOES = {
     const rep = OPERACOES.reparar({ parte: { nome: r.nome, malha: r.malha, cor: r.cor, paleta: r.paleta }, opc: {} });
     return { ...r, malha: rep.parte.malha, cor: rep.parte.cor, paleta: rep.parte.paleta, relatorio: { ...r.relatorio, reparo: rep.passos, triangulos: rep.parte.malha.idx.length / 3 } };
   },
+  // Resultado de QUALQUER gerador (arquivo do servidor de IA já importado, ou
+  // o local) -> peça do editor: consertar, pôr no referencial das fotos (Z pra
+  // cima, giro que bate com as fotos, altura em mm, na mesa) e medir (benchmark).
+  posProcessarIA({ partes, entradas, opc }) {
+    opc = opc || {};
+    const t0 = Date.now();
+    const paleta = [];
+    const idxCor = h => { let k = paleta.indexOf(h); if (k < 0) { k = paleta.length; paleta.push(h); } return k; };
+    const malhas = partes.map(p => {
+      if (!p.malha.cor || !p.paleta) return { ...p.malha, cor: null, _k: idxCor(p.cor || '#B4BAC4') };
+      const mapa = p.paleta.map(idxCor);
+      return { ...p.malha, cor: Uint16Array.from(p.malha.cor, k => mapa[k]) };
+    });
+    const junta = malhas.length === 1 && !malhas[0].cor ? malhas[0] : juntar(malhas, malhas.map(m => m._k || 0));
+    const malha0 = paleta.length > 1 ? junta : { pos: junta.pos, idx: junta.idx };
+    const rep = OPERACOES.reparar({ parte: { nome: opc.nome || 'Modelo das fotos', malha: malha0, cor: paleta[0], paleta: paleta.length > 1 ? paleta : null }, opc: {} });
+    const prep = prepararVistas(entradas, opc.alturaMM || 60, opc);
+    const g = opc.girar === false
+      ? { giro: 0, malha: normalizar(rep.parte.malha, { eixoCima: opc.eixoCima, alturaMM: prep.alturaMM }) }
+      : melhorGiro(rep.parte.malha, prep, { eixoCima: opc.eixoCima, alturaMM: prep.alturaMM });
+    const avaliacao = avaliar(g.malha, prep, { fidelidade: g.fidelidade, reparo: rep.passos });
+    return {
+      parte: { ...rep.parte, malha: g.malha },
+      relatorio: { giro: g.giro, reparo: rep.passos, avaliacao, avisos: prep.avisos, ms: Date.now() - t0 }
+    };
+  },
+  transformarParte({ parte, transform }) { return { parte: { ...parte, malha: transformar(parte.malha, transform) } }; },
   // prévia ao vivo dos furos num objeto
   furar({ alvo, furos }) { return aplicarFuros(alvo, furos); },
 

@@ -43,4 +43,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(im
   const dev = process.argv.includes('--dev');
   const x = await construir({ minificar: !dev });
   console.log('gerado', path.relative(raiz, x.destino), (x.bytes / 1024 / 1024).toFixed(2) + ' MB', '(worker ' + (x.worker / 1024).toFixed(0) + ' KB, wasm ' + (x.wasm / 1024).toFixed(0) + ' KB b64)');
+  // laboratório Fotos -> 3D: só vai no pacote de teste
+  const l = await construir({ minificar: !dev, entrada: 'src/estudio3d/lab/fotos3d.js', saida: 'teste/laboratorio-fotos-3d.js' });
+  console.log('gerado', path.relative(raiz, l.destino), (l.bytes / 1024 / 1024).toFixed(2) + ' MB');
 }

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laboratório Fotos → 3D</title>
+<style>
+  :root { --fundo:#f6f7f9; --cartao:#fff; --texto:#1c2027; --suave:#5d6673; --borda:#dde1e7; --acento:#5b4bdb; --erro:#c62828; }
+  @media (prefers-color-scheme: dark) { :root { --fundo:#101216; --cartao:#181b21; --texto:#e7eaf0; --suave:#9aa3b1; --borda:#2a2f38; --acento:#8f84ff; --erro:#ff6b6b; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--fundo); color:var(--texto); }
+  main { max-width:1080px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:16px; margin:0 0 10px; }
+  .sub { color:var(--suave); margin:0 0 18px; }
+  section { background:var(--cartao); border:1px solid var(--borda); border-radius:14px; padding:16px; margin-bottom:14px; }
+  #vistas { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px; }
+  .vista { display:flex; flex-direction:column; gap:6px; cursor:pointer; font-size:13px; color:var(--suave); }
+  .vista .img { aspect-ratio:1; border:1.5px dashed var(--borda); border-radius:10px; display:grid; place-items:center; overflow:hidden; background:var(--fundo); }
+  .vista.ok .img { border-style:solid; border-color:var(--acento); }
+  .vista img { width:100%; height:100%; object-fit:contain; }
+  .linha { display:flex; flex-wrap:wrap; gap:10px; align-items:end; }
+  label.campo { display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--suave); }
+  input[type=number], input[type=text], input[type=password], select { font:inherit; color:var(--texto); background:var(--fundo); border:1px solid var(--borda); border-radius:8px; padding:7px 10px; min-width:0; }
+  button { font:inherit; font-weight:600; border:0; border-radius:10px; padding:9px 16px; background:var(--acento); color:#fff; cursor:pointer; }
+  button.sec { background:transparent; color:var(--texto); border:1px solid var(--borda); }
+  button:disabled { opacity:.5; cursor:wait; }
+  #msg { min-height:1.5em; margin-top:10px; color:var(--suave); } #msg.erro { color:var(--erro); }
+  table { width:100%; border-collapse:collapse; font-size:14px; } th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--borda); vertical-align:top; } th { color:var(--suave); font-weight:500; width:45%; }
+  #comparar { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:10px; }
+  figure { margin:0; } canvas { width:100%; height:auto; border:1px solid var(--borda); border-radius:8px; background:var(--fundo); }
+  figcaption { font-size:12px; color:var(--suave); margin-top:4px; }
+  .legenda span { display:inline-block; width:10px; height:10px; border-radius:2px; margin:0 4px 0 12px; vertical-align:middle; }
+  ul { margin:6px 0 0; padding-left:18px; color:var(--suave); font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Laboratório: fotos → modelo 3D</h1>
+  <p class="sub">Teste do motor novo (etapas 2–3). Não é a interface final. O 3MF gerado abre no Estúdio 3D (Ferramentas → Abrir arquivo).</p>
+
+  <section>
+    <h2>1. Fotos (quanto mais vistas, mais fiel)</h2>
+    <div id="vistas"></div>
+    <ul>
+      <li>Fundo liso de uma cor (ou PNG sem fundo), objeto inteiro no quadro, sem cortar.</li>
+      <li>Câmera longe com zoom (pouca perspectiva), na altura do meio do objeto, mesma distância em todas.</li>
+      <li>Mínimo 2 vistas; 4 (frente, costas e lados) já dão um sólido imprimível; 3/4 e de cima refinam.</li>
+      <li>Sem IA, o que as fotos não mostram (buracos e cavidades) fica preenchido.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>2. Medida e gerador</h2>
+    <div class="linha">
+      <label class="campo">Altura real (mm)<input id="altura" type="number" value="60" min="1" step="0.5"></label>
+      <label class="campo">Gerador<select id="prov"><option value="local">Silhuetas — neste computador, sem IA</option><option value="servidor">Servidor de IA próprio (GPU)</option></select></label>
+      <button id="gerar">Gerar 3D</button>
+    </div>
+    <div id="srv" class="linha" hidden style="margin-top:10px">
+      <label class="campo">Endereço<input id="url" type="text" value="http://localhost:8765"></label>
+      <label class="campo">Token<input id="token" type="password"></label>
+      <label class="campo">Modelo<input id="modelo" type="text" value="hunyuan3d-2mv"></label>
+      <button class="sec" id="testar">Testar conexão</button>
+    </div>
+    <div id="msg"></div>
+  </section>
+
+  <section id="saida" hidden>
+    <h2>3. Resultado medido</h2>
+    <table id="numeros"></table>
+    <p class="legenda">Silhueta de cada foto × modelo: <span style="background:#2ea043"></span>bate <span style="background:#da3633"></span>faltou no modelo <span style="background:#3884ff"></span>sobrou no modelo</p>
+    <div id="comparar"></div>
+    <div class="linha" style="margin-top:14px">
+      <button id="b3mf">Baixar 3MF</button>
+      <button class="sec" id="bcor">Baixar 3MF separado por cor</button>
+    </div>
+  </section>
+</main>
+<script src="laboratorio-fotos-3d.js"></script>
+</body>
+</html>
