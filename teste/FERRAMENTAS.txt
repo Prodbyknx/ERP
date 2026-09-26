@@ -466,6 +466,20 @@ CHECKLIST DA VERSÃO 9 — várias placas
                  "tudo num arquivo" reaberto volta com 3 placas (3+2+2);
                  Preparar traz pra dentro a caixa que passava da borda
 
+CHECKLIST DA VERSÃO 10 — abrir no Bambu Studio
+   LINK          lido do jeito que o código do Bambu lê (decodifica, corta
+                 no "file=", separa no "&name=", exige .3mf): endereço e
+                 nome voltam iguais; nome seguro (acento, barra, vazio)
+   SEM NUVEM     o botão baixa o 3MF e explica "Sempre abrir arquivos
+                 deste tipo"
+   COM NUVEM     (Supabase simulado) sobe pra estudio3d/<usuário>/
+                 bambu.3mf, sobrescrevendo, com o passe da sessão (sem
+                 renovar nem guardar sessão — não mexe no login do ERP);
+                 abre bambustudio://open?file=…&name=…3mf; o que subiu é
+                 um 3MF válido; também pelo Preparar e pelo gerador de
+                 chaveiro (com as cores); envio demorado mostra "Abrir
+                 agora" (o navegador só abre programa logo após clique)
+
 O QUE AINDA NÃO FAZ
   - Arredondar borda de forma livre (curva que não é reta nem círculo):
     recusa com aviso. Use Suavizar.
@@ -476,6 +490,9 @@ O QUE AINDA NÃO FAZ
   - Placas: o Bambu Studio abre um arquivo por placa (não um projeto com
     todas as placas juntas) — ver o motivo no LEIA-ME.
   - Tamanho da mesa fixo em 256 × 256 mm (A1/P1/X1). A1 mini ainda não.
+  - Mandar direto pra impressora: não (precisa fatiar no Bambu Studio).
+  - "Abrir no Bambu Studio" direto só no site publicado, com a pasta
+    estudio3d criada no Supabase (estudio3d-bambu.sql). Sem ela, baixa.
   - Preparar pra imprimir não gira a peça sozinho (orientação é decisão
     sua): ele mostra o problema e o botão "Deitar na maior face plana".
   - Não abre STEP (não existe biblioteca confiável que rode no

@@ -2,6 +2,7 @@
 import { el, baixar, avisar, nomeArquivo } from '../util.js';
 import { nomeDaCor } from '../../core/cores.js';
 import * as M4 from '../../core/mat4.js';
+import { abrirNoBambu, explicar } from '../bambu.js';
 
 export function montarExportar(est) {
   const d = el('details', { 'data-sec': 'exp' });
@@ -9,7 +10,8 @@ export function montarExportar(est) {
     <div class="field"><label>O que exportar</label>
       <div class="seg" data-a="escopo"><button type="button" data-v="tudo" class="active">Tudo na mesa</button><button type="button" data-v="sel">Só o objeto escolhido</button></div></div>
     <div class="field"><label>Nome do arquivo</label><input type="text" data-a="nome" placeholder="modelo"></div>
-    <div class="e3d-botoes"><button class="btn primary largo" data-a="3mf">Baixar 3MF (Bambu Studio / Orca)</button></div>
+    <div class="e3d-botoes"><button class="btn primary largo" data-a="bambu">Abrir no Bambu Studio</button></div>
+    <div class="e3d-botoes"><button class="btn largo" data-a="3mf">Baixar 3MF (Bambu Studio / Orca)</button></div>
     <div class="e3d-nota" data-a="cores"></div>
     <p class="u">No Bambu Studio, ao abrir, ele mostra as cores do arquivo e cria os filamentos com o MESMO código de cor — confira e dê OK. Cada objeto daqui vira um objeto lá; peças de um objeto viram partes, cada uma no seu filamento. Medidas em mm, na mesma posição.</p>
     <div style="margin-top:12px;border-top:1px solid var(--line-soft);padding-top:10px">
@@ -77,6 +79,29 @@ export function montarExportar(est) {
       q('res').innerHTML = '<div class="e3d-nota ok">3MF gerado: ' + r.cores.length + ' filamento(s) na ordem ' + r.cores.map((h, i) => (i + 1) + '=' + h).join(', ') + '.' + (r.avisos.length ? '<br>' + r.avisos.join('<br>') : '') + (fora.length ? '<br>Atenção: tem objeto abaixo da mesa (Z negativo) — o Bambu vai subir ele.' : '') + '</div>';
     } finally { q('3mf').disabled = false; }
   }
+  // ABRIR NO BAMBU STUDIO: gera o 3MF e abre direto (uma placa por vez:
+  // com várias placas, abre a ativa). t0 = hora do clique.
+  async function abrirBambu(t0 = Date.now(), onde = q('res')) {
+    const multi = est.cena.placas > 1 && (escopo === 'todas' || escopo === 'placa');
+    const vis = est.cena.objetos.filter(o => o.visivel);
+    const objs = multi ? paraExportar(vis.filter(o => est.cena.placaDe(o) === est.cena.placaAtiva), est.cena.placaAtiva) : objetos();
+    if (!objs.length) { avisar(multi ? 'A placa ' + (est.cena.placaAtiva + 1) + ' está vazia.' : 'Nada pra abrir.', 'warn'); return null; }
+    const nome = nomeArquivo(q('nome').value || objs[0].nome) + (multi ? ' - placa ' + (est.cena.placaAtiva + 1) : '');
+    q('bambu').disabled = true;
+    try {
+      const miniatura = await est.visor.miniatura(256).catch(() => null);
+      const x = await est.rodar('exportar3MF', { cena: { objetos: objs }, opc: { titulo: nome, miniatura } }, 'Preparando pro Bambu Studio');
+      const r = await abrirNoBambu(x.bytes, nome, t0);
+      onde.innerHTML = '';
+      const nota = el('div', { class: 'e3d-nota ' + (r.modo === 'bambu' ? 'ok' : ''), html: explicar(r) });
+      onde.appendChild(nota);
+      if (r.modo === 'bambu') {
+        const b = el('button', { type: 'button', class: 'btn ' + (r.aTempo ? '' : 'primary'), 'data-a': 'abrirAgora', onclick: () => r.abrirDeNovo() }, r.aTempo ? 'Abrir de novo' : 'Abrir agora');
+        onde.appendChild(el('div', { class: 'e3d-botoes' }, b));
+      }
+      return r;
+    } finally { q('bambu').disabled = false; }
+  }
   // TODAS AS PLACAS: um 3MF por placa, cada um com as peças na placa 1
   async function expPlacas() {
     const grupos = porPlaca();
@@ -105,9 +130,13 @@ export function montarExportar(est) {
     q('res').innerHTML = '<div class="e3d-nota ok">' + (r.zip ? r.arquivos.length + ' arquivos STL no zip.' : 'STL gerado.') + '</div>';
   }
   q('3mf').onclick = exp3mf;
+  q('bambu').onclick = () => abrirBambu(Date.now());
   q('stl').onclick = expStl;
   d.addEventListener('toggle', () => { if (d.open) render(); });
   est.on('mudou', () => { if (d.open) render(); });
   est.on('selecao', () => { if (d.open) render(); });
-  return { el: d, render, exp3mf };
+  // o botão mostra qual placa vai abrir
+  const rotuloBambu = () => { q('bambu').textContent = est.cena.placas > 1 && (escopo === 'todas' || escopo === 'placa') ? 'Abrir a placa ' + (est.cena.placaAtiva + 1) + ' no Bambu Studio' : 'Abrir no Bambu Studio'; };
+  est.on('mudou', rotuloBambu); d.addEventListener('toggle', rotuloBambu); q('escopo').addEventListener('click', rotuloBambu);
+  return { el: d, render, exp3mf, abrirBambu };
 }

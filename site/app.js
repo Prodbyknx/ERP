@@ -12614,6 +12614,34 @@ function ferBaixar3MF() {
     .then(function () { if (bt) bt.disabled = false; });
 }
 
+// Abre direto no Bambu Studio (o Estúdio sobe o 3MF pra pasta particular na
+// nuvem e manda o link pro Bambu; sem nuvem, baixa o arquivo e explica)
+function ferAbrirNoBambu() {
+  if (!FER.peca || !FER.malhas) return;
+  var pecas = ferPecasParaEstudio();
+  if (!pecas.length) return;
+  var nome = ferNomeBase(), t0 = Date.now();
+  var bt = document.getElementById('fer_bambu'), res = document.getElementById('fer_bambu_res');
+  if (bt) bt.disabled = true;
+  if (res) res.textContent = 'Preparando o arquivo…';
+  carregarEstudio()
+    .then(function (E) { return E.abrirNoBambuGerador(pecas, nome, t0); })
+    .then(function (o) {
+      if (!res) return;
+      res.innerHTML = o.texto;
+      if (o.r.modo === 'bambu') {
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'btn small' + (o.r.aTempo ? '' : ' primary');
+        b.textContent = o.r.aTempo ? 'Abrir de novo' : 'Abrir agora';
+        b.style.marginLeft = '6px';
+        b.onclick = function () { o.r.abrirDeNovo(); };
+        res.appendChild(b);
+      }
+    })
+    .catch(function (e) { console.error(e); if (res) res.textContent = ''; toast('Não consegui preparar o arquivo: ' + (e.message || e), 'warn'); })
+    .then(function () { if (bt) bt.disabled = false; });
+}
+
 function ferAbrirNoEstudio() {
   if (!FER.peca || !FER.malhas) return;
   var pecas = ferPecasParaEstudio();
@@ -12860,6 +12888,7 @@ function renderFerramentas() {
   ferBindSeg('ferr_modo_seg', function (v) { ferModoFerramentas(v).catch(function () {}); });
   var bt = document.getElementById('fer_stl'); if (bt) bt.onclick = ferBaixarSTL;
   var b3 = document.getElementById('fer_3mf'); if (b3) b3.onclick = ferBaixar3MF;
+  var bB = document.getElementById('fer_bambu'); if (bB) bB.onclick = ferAbrirNoBambu;
 
   // girar o 3D com o mouse / dedo
   var cv3 = document.getElementById('fer_cv3d');
