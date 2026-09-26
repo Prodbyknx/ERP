@@ -58,6 +58,26 @@ export function crescerRegiao(m, adj, semente, opc = {}) {
   return out;
 }
 
+// A parte ligada à face semente que fica do lado de fora do plano {n,d}
+// (n aponta pra parte): mão até o pulso, orelha até a base, chifre…
+export function parteAlemDoPlano(m, adj, semente, plano) {
+  const nt = m.idx.length / 3, out = new Uint8Array(nt), C = adj.centros, n = plano.n;
+  const lado = f => C[f * 3] * n[0] + C[f * 3 + 1] * n[1] + C[f * 3 + 2] * n[2] - plano.d;
+  if (semente < 0 || lado(semente) < 0) return out;
+  const fila = new Int32Array(nt);
+  let a = 0, b = 0;
+  fila[b++] = semente; out[semente] = 1;
+  while (a < b) {
+    const f = fila[a++];
+    for (let k = 0; k < 3; k++) {
+      const o = adj.viz[f * 3 + k];
+      if (o < 0 || out[o] || lado(o) < 0) continue;
+      out[o] = 1; fila[b++] = o;
+    }
+  }
+  return out;
+}
+
 // Tudo que está ligado à face (a "casca" / ilha inteira)
 export function componenteConectado(m, adj, semente) {
   return crescerRegiao(m, adj, semente, { anguloVizinho: 180 });

@@ -103,3 +103,26 @@ test('cascas sobrepostas pela seleção: vira um sólido antes (mão sai inteira
   assert.ok(r.avisos.some(a => /cascas/.test(a)));
   assert.ok(caixa(r.detalhe.malha).tam[2] > 15, 'mão inteira');
 });
+
+test('SELECIONAR PARTE até o ponto fino (orelha/mão/cabeça num clique) e Separar essa seleção: plano, 2 sólidos', async () => {
+  const { parteAlemDoPlano, prepararAdjacencia } = await import('../src/estudio3d/core/selecao.js');
+  const { construirBVH, lancarRaio } = await import('../src/estudio3d/core/bvh.js');
+  const { soldar } = await import('../src/estudio3d/core/malha.js');
+  for (const v of ['ia', 'sujo']) {
+  // 'sujo' soldado como o importador faz (o STL cru chega com buracos e invertidos)
+  const m = v === 'sujo' ? soldar(BONECOS[v].malha).malha : BONECOS[v].malha, adj = prepararAdjacencia(m), bvh = construirBVH(m);
+  for (const [k, p, dir] of [['mao', CLIQUES.mao, [-1, 0, 0]], ['cabeca', CLIQUES.cabeca, [0, 1, 0]]]) {
+    // face clicada: raio vindo de fora na direção da peça
+    const h = lancarRaio(bvh, p[0] - dir[0] * 5, p[1] - dir[1] * 5, p[2] - dir[2] * 5, dir[0], dir[1], dir[2]);
+    assert.ok(h && h.face >= 0, k + ' sem face');
+    const s = sugerirSeparacao([{ nome: 'B', malha: m, cor: '#999999' }], p);
+    const mask = parteAlemDoPlano(m, adj, h.face, s.plano);
+    const r = separarDetalhe({ nome: 'B', malha: m, cor: '#999999' }, mask, {});
+    assert.ok(r.metodos.every(x => /plano/.test(x)), k + ' ' + r.metodos.join());
+    const vd = valido(r.detalhe.malha, k), vr = valido(r.principal.malha, k + ' resto');
+    assert.equal(vr.componentes, 1);
+    assert.ok(vd.volume > ESPERADO[k][0] && vd.volume < ESPERADO[k][1], k + ' volume ' + vd.volume);
+    if (v === 'sujo') assert.ok(r.avisos.some(a => /Consertei/.test(a)), 'conserto automático');
+  }
+  }
+});

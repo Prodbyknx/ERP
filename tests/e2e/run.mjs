@@ -516,6 +516,23 @@ async function main() {
     await pg.keyboard.press('Control+z');
     await pg.waitForFunction(() => window.Estudio3D.estudio.cena.objetos.length === 1, null, { timeout: 20000 });
   });
+  await passo(pg, 'selecionar a cabeça num clique (até o pescoço) e Separar: 2 sólidos válidos', async () => {
+    await abrirSecao(pg, 'sel');
+    await pg.click('[data-sec=sel] [data-a=modos] button[data-v=membro]');
+    const s = await pg.evaluate(() => { const e = window.Estudio3D.estudio, c = e.cena.caixaExata(e.cena.objetos[0]); return e.visor.telaDe(c.min[0] + 26.4, c.min[1] + 1.5, c.min[2] + 99); });
+    await pg.mouse.click(s.x, s.y);
+    await pg.waitForFunction(() => /faces|mm²/.test(document.querySelector('[data-sec=sel] [data-a=info]').textContent), null, { timeout: 60000 });
+    await abrirSecao(pg, 'sep');
+    await pg.click('[data-sec=sep] [data-a="ir"]');
+    await pg.waitForFunction(() => document.querySelector('.e3d-previa')?.offsetParent || document.querySelector('[data-sec=sep] .erro'), null, { timeout: 120000 });
+    const erro = await pg.evaluate(() => document.querySelector('[data-sec=sep] .erro')?.textContent);
+    if (erro) throw new Error(erro);
+    await confirmarPrevia(pg);
+    await pg.waitForFunction(() => window.Estudio3D.estudio.cena.objetos.length === 2, null, { timeout: 60000 });
+    const v0 = await valida(0), v1 = await valida(1);
+    const cab = Math.min(v0, v1);
+    if (!(cab > 5000 && cab < 9000)) throw new Error('a parte não é a cabeça: ' + cab.toFixed(0));
+  });
   await pg.context().close();
 
   console.log('7) laboratório fotos -> 3D (pacote de teste, file://)');

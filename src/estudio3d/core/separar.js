@@ -20,7 +20,7 @@
 import { comContexto, manifold } from './solidos.js';
 import { prepararAdjacencia, limpar, regioes, expandir } from './selecao.js';
 import { criar, subMalha, areaFace, compactar, volume } from './malha.js';
-import { triangularLaco, refinarEAlisar } from './reparo.js';
+import { triangularLaco, refinarEAlisar, reparar } from './reparo.js';
 import { gerarConectores, dimensionarConector } from './conectores.js';
 import { componentes } from './topologia.js';
 import { autoInterseccoes } from './validador.js';
@@ -489,6 +489,39 @@ function compactarComOrigem(m, origem) {
   return { malha: subMalha(m, todas).malha, origem: Int32Array.from(origem) };
 }
 
+// Conserta a malha (solda, orientação, buracos) e leva a seleção pelas faces
+// iguais (mesmo centro); tampa nova herda a seleção das vizinhas.
+function consertarComMascara(parte, mascara) {
+  const adj0 = prepararAdjacencia(parte.malha);
+  let aberta = false;
+  for (let h = 0; h < adj0.viz.length && !aberta; h++) if (adj0.viz[h] < 0) aberta = true;
+  if (!aberta) return null;
+  const r = reparar(parte.malha, {});
+  const m = r.malha, nt = m.idx.length / 3;
+  const chave = (x, y, z) => Math.round(x * 1e4) + ',' + Math.round(y * 1e4) + ',' + Math.round(z * 1e4);
+  const C0 = centroidesDe(parte.malha), mapa = new Map();
+  for (let f = 0; f < mascara.length; f++) mapa.set(chave(C0[f * 3], C0[f * 3 + 1], C0[f * 3 + 2]), mascara[f]);
+  const C = centroidesDe(m), out = new Uint8Array(nt), novo = new Uint8Array(nt);
+  for (let f = 0; f < nt; f++) { const v = mapa.get(chave(C[f * 3], C[f * 3 + 1], C[f * 3 + 2])); if (v === undefined) novo[f] = 1; else out[f] = v; }
+  const adj = prepararAdjacencia(m);
+  for (let volta = 0; volta < 8; volta++) {
+    let mudou = false;
+    for (let f = 0; f < nt; f++) {
+      if (!novo[f]) continue;
+      let sim = 0, nao = 0;
+      for (let k = 0; k < 3; k++) { const o = adj.viz[f * 3 + k]; if (o < 0 || novo[o] === 1) continue; if (out[o]) sim++; else nao++; }
+      if (sim + nao) { out[f] = sim > nao ? 1 : 0; novo[f] = 2; mudou = true; }
+    }
+    if (!mudou) break;
+  }
+  return { parte: { ...parte, malha: m }, mascara: out, aviso: 'Consertei a malha antes de separar' + (r.passos.length ? ': ' + r.passos.join(', ') : '') + '.' };
+}
+function centroidesDe(m) {
+  const nt = m.idx.length / 3, c = new Float64Array(nt * 3), p = m.pos, I = m.idx;
+  for (let f = 0; f < nt; f++) for (let e = 0; e < 3; e++) c[f * 3 + e] = (p[I[f * 3] * 3 + e] + p[I[f * 3 + 1] * 3 + e] + p[I[f * 3 + 2] * 3 + e]) / 3;
+  return c;
+}
+
 function unirCascasComMascara(parte, mascara) {
   const adj = prepararAdjacencia(parte.malha);
   for (let h = 0; h < adj.viz.length; h++) if (adj.viz[h] < 0) return null;   // aberta: o erro claro vem depois
@@ -537,6 +570,10 @@ function preencherBuracos(sel, adj, malha) {
 // opc: { modo:'auto'|'plano'|'superficie', profundidade, folga, deslocamento, margem, conector, nomeDetalhe }
 export function separarDetalhe(parte, mascara, opc = {}) {
   const avisos = [];
+  if (mascara.length !== parte.malha.idx.length / 3) throw new Error('Seleção não corresponde à peça.');
+  // malha aberta (STL cru com buraco): conserta aqui mesmo e leva a seleção junto
+  const rep = consertarComMascara(parte, mascara);
+  if (rep) { parte = rep.parte; mascara = rep.mascara; avisos.push(rep.aviso); }
   // cascas que se atravessam (braço solto sobre o corpo) viram UM sólido antes
   // de tudo; a seleção vai junto pelas faces de origem
   const un = unirCascasComMascara(parte, mascara);

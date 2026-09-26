@@ -1,10 +1,12 @@
 // Painel 3 — selecionar região (sem editar triângulo por triângulo) e
 // detectar partes. Tudo roda na thread principal: é rápido (BFS em arrays).
 import { el, fmt, fmtInt, avisar } from '../util.js';
-import { crescerRegiao, componenteConectado, expandir, reduzir, inverter, similar, suavizarBorda, limpar, contar, areaSelecionada, uniao, subtrair } from '../../core/selecao.js';
+import { crescerRegiao, parteAlemDoPlano, componenteConectado, expandir, reduzir, inverter, similar, suavizarBorda, limpar, contar, areaSelecionada, uniao, subtrair } from '../../core/selecao.js';
 import { corDeRotulo } from './diagnostico.js';
+import * as M4 from '../../core/mat4.js';
 
 const MODOS = [
+  ['membro', 'Parte (até o ponto fino)', 'Clique numa mão, orelha, chifre, cabeça…: seleciona ela inteira até o ponto mais fino (pulso, base, pescoço). Bom pra modelo orgânico, sem dobras marcadas.'],
   ['regiao', 'Região inteligente', 'Clique numa parte: a seleção cresce até encontrar uma dobra (onde uma peça encontra a outra).'],
   ['pincel', 'Pincel', 'Pinte arrastando sobre a peça. Começando fora da peça, arrastar gira a vista.'],
   ['casca', 'Casca inteira', 'Clique: pega tudo que está ligado (uma "ilha" da malha).'],
@@ -81,6 +83,22 @@ export function montarSelecionar(est) {
     if (ev && (ev.altKey || ev.ctrlKey || ev.metaKey) && atual) return subtrair(atual, nova);
     return nova;
   }
+
+  // parte orgânica até o ponto mais fino (o motor acha o pulso/base/pescoço)
+  est.on('clique', async ({ hit, ev }) => {
+    if (est.ferramenta !== 'membro') return;
+    const o = est.cena.objeto(hit.objeto); if (!o) return;
+    const p = o.partes.find(x => x.id === hit.parte); if (!p) return;
+    const G = M4.inverter(o.transform);
+    const ponto = M4.aplicarPonto(G, hit.ponto.x, hit.ponto.y, hit.ponto.z);
+    q('info').textContent = 'Procurando onde essa parte termina…';
+    let r;
+    try { r = await est.rodar('sugerirSeparacao', { partes: [est.parteParaMotor(p)], ponto, opc: {} }, 'Achar a parte'); }
+    catch (e) { q('info').textContent = e.message || String(e); return; }
+    const nova = parteAlemDoPlano(p.malha, est.adj(p.malha), hit.face, r.plano);
+    if (!contar(nova)) { q('info').textContent = 'Não achei a parte nesse ponto. Tente clicar mais no meio dela.'; return; }
+    definir(p, combinar(p, nova, ev), 'parte até o ponto fino');
+  });
 
   est.on('clique', ({ hit, ev }) => {
     if (!d.open && !['regiao', 'casca', 'cor', 'parte'].includes(est.ferramenta)) return;
