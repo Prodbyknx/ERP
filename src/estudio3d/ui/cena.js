@@ -2,7 +2,7 @@
 // A geometria é imutável: toda operação cria malha nova, então o histórico
 // guarda só referências (barato) e desfazer é trocar o estado inteiro.
 import * as M4 from '../core/mat4.js';
-import { caixa, juntarCaixas } from '../core/malha.js';
+import { caixa, juntarCaixas, transformar } from '../core/malha.js';
 import { normalizarHex, COR_PADRAO, PALETA_PECAS } from '../core/cores.js';
 
 let seq = 1;
@@ -60,6 +60,7 @@ export function novoObjeto(o) {
     visivel: o.visivel !== false,
     papel: o.papel === 'furo' ? 'furo' : 'solido',     // furo tira material de quem ele atravessa
     forma: o.forma || null,                             // { id, params, texto? } quando veio da biblioteca
+    esticado: o.esticado ? Float64Array.from(o.esticado) : undefined,   // escala que já foi pra malha (só pra mostrar %)
     operacoes: o.forma && o.operacoes ? o.operacoes : undefined   // Modificar feitos na forma (refeitos ao mudar medida)
   };
 }
@@ -86,12 +87,36 @@ export class Cena {
     const antes = this.instantaneo();
     const selAntes = { ...this.sel, multi: this.multi.slice() };
     const r = fn();
+    this.fixarEsticar();
     this.pilhaDesfazer.push({ rotulo, estado: antes, sel: selAntes });
     if (this.pilhaDesfazer.length > this.limite) this.pilhaDesfazer.shift();
     this.pilhaRefazer = [];
     this.conferirSelecao();
     this.emitir('mudou', { rotulo });
     return r;
+  }
+  // A escala não fica na matriz: vai pra malha (a peça no mundo não muda).
+  // Assim toda medida em mm das ferramentas vale na peça de verdade — pino
+  // Ø5 numa peça escalada a 50% continua Ø5. Girar/espelhar/mover ficam na
+  // matriz. 'esticado' guarda o total, pro painel mostrar a escala em %.
+  fixarEsticar() {
+    for (const o of this.objetos) {
+      const sep = M4.separarEsticar(o.transform);
+      if (!sep) continue;
+      const S = sep.esticar;
+      for (const p of o.partes) p.malha = transformar(p.malha, S);
+      o.transform = sep.rigida;
+      o.esticado = M4.multiplicar(S, o.esticado || M4.identidade());
+      if (M4.ehIdentidade(o.esticado, 1e-9)) o.esticado = undefined;
+      if (o.forma) {
+        // escalas seguidas viram uma só; se voltou ao tamanho original, some
+        const ops = (o.operacoes || []).slice(), ult = ops[ops.length - 1];
+        const m = ult && ult.tipo === 'esticar' ? M4.multiplicar(S, Float64Array.from(ult.m)) : S;
+        if (ult && ult.tipo === 'esticar') ops.pop();
+        if (!M4.ehIdentidade(m, 1e-9)) ops.push({ tipo: 'esticar', m: Array.from(m) });
+        o.operacoes = ops.length ? ops : undefined;
+      }
+    }
   }
   podeDesfazer() { return this.pilhaDesfazer.length > 0; }
   podeRefazer() { return this.pilhaRefazer.length > 0; }

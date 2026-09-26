@@ -149,6 +149,7 @@ function raioCaixa(cx, o, ox, oy, oz, ix, iy, iz, tmax) {
 
 // Primeiro acerto. ignorar: face a pular (a de origem). Devolve {t, face} ou null.
 export function lancarRaio(bvh, ox, oy, oz, dx, dy, dz, tmax = Infinity, ignorar = -1, tmin = 1e-9) {
+  dx = dx || 0; dy = dy || 0; dz = dz || 0;   // -0 vira +0 (1/-0 = -Infinity estragava o teste da caixa)
   const p = bvh.malha.pos, idx = bvh.malha.idx;
   const ix = 1 / dx, iy = 1 / dy, iz = 1 / dz;
   let melhor = tmax, face = -1;
@@ -175,6 +176,7 @@ export function lancarRaio(bvh, ox, oy, oz, dx, dy, dz, tmax = Infinity, ignorar
 
 // Todos os acertos ao longo do raio (pra teste dentro/fora por paridade)
 export function contarCruzamentos(bvh, ox, oy, oz, dx, dy, dz) {
+  dx = dx || 0; dy = dy || 0; dz = dz || 0;   // -0 vira +0 (1/-0 = -Infinity estragava o teste da caixa)
   const p = bvh.malha.pos, idx = bvh.malha.idx;
   const ix = 1 / dx, iy = 1 / dy, iz = 1 / dz;
   const ts = [];
@@ -200,6 +202,7 @@ export function contarCruzamentos(bvh, ox, oy, oz, dx, dy, dz) {
 
 // distâncias de todos os cruzamentos do raio (ordenadas, sem repetir aresta)
 export function cruzamentosRaio(bvh, ox, oy, oz, dx, dy, dz) {
+  dx = dx || 0; dy = dy || 0; dz = dz || 0;   // -0 vira +0 (1/-0 = -Infinity estragava o teste da caixa)
   const p = bvh.malha.pos, idx = bvh.malha.idx;
   const ix = 1 / dx, iy = 1 / dy, iz = 1 / dz;
   const ts = [];

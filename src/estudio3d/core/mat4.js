@@ -174,3 +174,40 @@ export function de3MF(v) {
   m[12] = v[9]; m[13] = v[10]; m[14] = v[11];
   return m;
 }
+
+// Separa T em RÍGIDA (giro/espelho + posição) · ESTICAR (simétrica positiva).
+// null se T já é rígida. Serve pra levar a escala pra malha: aí toda medida
+// em mm (pino, folga, parede, raio, relevo, pincel) vale na peça de verdade.
+export function separarEsticar(m, tol = 1e-7) {
+  const L = [[m[0], m[4], m[8]], [m[1], m[5], m[9]], [m[2], m[6], m[10]]];
+  const C = [0, 1, 2].map(i => [0, 1, 2].map(j => L[0][i] * L[0][j] + L[1][i] * L[1][j] + L[2][i] * L[2][j]));
+  let rigida = true;
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) if (Math.abs(C[i][j] - (i === j ? 1 : 0)) > tol) rigida = false;
+  if (rigida) return null;
+  const { V, d } = autovalores3(C);
+  const s = d.map(x => Math.sqrt(Math.max(x, 1e-30)));
+  const S = [0, 1, 2].map(i => [0, 1, 2].map(j => V[i][0] * s[0] * V[j][0] + V[i][1] * s[1] * V[j][1] + V[i][2] * s[2] * V[j][2]));
+  const Si = [0, 1, 2].map(i => [0, 1, 2].map(j => V[i][0] / s[0] * V[j][0] + V[i][1] / s[1] * V[j][1] + V[i][2] / s[2] * V[j][2]));
+  const R = [0, 1, 2].map(i => [0, 1, 2].map(j => L[i][0] * Si[0][j] + L[i][1] * Si[1][j] + L[i][2] * Si[2][j]));
+  const r = identidade(), e = identidade();
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) { r[j * 4 + i] = R[i][j]; e[j * 4 + i] = S[i][j]; }
+  r[12] = m[12]; r[13] = m[13]; r[14] = m[14];
+  return { rigida: r, esticar: e };
+}
+
+// autovalores/autovetores de 3x3 simétrica (Jacobi); V em colunas
+function autovalores3(A0) {
+  const A = A0.map(l => l.slice()), V = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  for (let it = 0; it < 50; it++) {
+    let p = 0, q = 1, mx = Math.abs(A[0][1]);
+    if (Math.abs(A[0][2]) > mx) { p = 0; q = 2; mx = Math.abs(A[0][2]); }
+    if (Math.abs(A[1][2]) > mx) { p = 1; q = 2; mx = Math.abs(A[1][2]); }
+    if (mx < 1e-15) break;
+    const th = (A[q][q] - A[p][p]) / (2 * A[p][q]);
+    const t = Math.sign(th || 1) / (Math.abs(th) + Math.sqrt(th * th + 1)), c = 1 / Math.sqrt(t * t + 1), sn = t * c;
+    for (let k = 0; k < 3; k++) { const akp = A[k][p], akq = A[k][q]; A[k][p] = c * akp - sn * akq; A[k][q] = sn * akp + c * akq; }
+    for (let k = 0; k < 3; k++) { const apk = A[p][k], aqk = A[q][k]; A[p][k] = c * apk - sn * aqk; A[q][k] = sn * apk + c * aqk; }
+    for (let k = 0; k < 3; k++) { const vkp = V[k][p], vkq = V[k][q]; V[k][p] = c * vkp - sn * vkq; V[k][q] = sn * vkp + c * vkq; }
+  }
+  return { V, d: [A[0][0], A[1][1], A[2][2]] };
+}

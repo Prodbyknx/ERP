@@ -18,6 +18,7 @@ export function montarEsculpir(est) {
     <div class="field"><label>Tamanho <span class="u">raio em mm</span></label><div class="e3d-slider"><input type="range" min="1" max="60" step="0.5" value="8" data-a="raio"><b data-a="raiov">8,0</b></div></div>
     <div class="field"><label>Força</label><div class="e3d-slider"><input type="range" min="0.05" max="1" step="0.05" value="0.4" data-a="forca"><b data-a="forcav">0,40</b></div></div>
     <div class="field"><label>Simetria <span class="u">mexe de um lado, o outro acompanha</span></label><div class="seg" data-a="sim"><button type="button" data-v="" class="active">Nenhuma</button><button type="button" data-v="x">X</button><button type="button" data-v="y">Y</button></div></div>
+    <label class="fer-check" title="Divide os triângulos debaixo do pincel durante o traço: dá pra esculpir detalhe até numa caixa simples"><input type="checkbox" data-a="detalhe" checked> Detalhe automático debaixo do pincel</label>
     <div class="e3d-nota" data-a="info">Arraste sobre a peça pra esculpir. Começando fora dela, arrastar gira a vista.</div>
     <div class="e3d-botoes"><button type="button" class="btn" data-a="refinar" title="Divide os triângulos pra o pincel ter onde mexer">Mais detalhe na malha</button></div>
     <div class="e3d-titulo" style="margin-top:16px">Deformar a peça inteira</div>
@@ -44,11 +45,33 @@ export function montarEsculpir(est) {
   const trocar = (o, p, malha) => { p.malha = malha; if (o.forma) { o.forma = undefined; o.operacoes = undefined; } };
   const alvo = hit => { const o = est.cena.objeto(hit.objeto); const p = o && o.partes.find(x => x.id === hit.parte); return p ? { o, p } : null; };
 
+  // o detalhe automático criou triângulos: cresce os buffers da tela (a
+  // pontaria/BVH continua valendo pros antigos e é refeita de vez em quando)
+  function crescerTela(ses) {
+    const g = ses.it.geom, s = ses.s, nt = s.nt;
+    for (const k of ['position', 'normal', 'color']) {
+      const at = g.attributes[k];
+      if (at && nt * 9 > at.array.length) {
+        const na = new Float32Array(Math.ceil(nt * 1.5) * 9); na.set(at.array);
+        g.setAttribute(k, new at.constructor(na, 3));
+      }
+    }
+    const col = g.attributes.color && g.attributes.color.array;
+    const origem = f => { while (f >= s.nt0) f = s.pai[f - s.nt0]; return f; };
+    if (col) for (let f = ses.ntTela; f < nt; f++) { const p = origem(f); for (let k = 0; k < 9; k++) col[f * 9 + k] = col[p * 9 + k]; }
+    if (col) g.attributes.color.needsUpdate = true;
+    const velho = g.index.array, ni = new Uint32Array(nt * 3);
+    ni.set(velho.subarray(0, Math.min(velho.length, ses.ntTela * 3)));
+    for (let i = ses.ntTela * 3; i < nt * 3; i++) ni[i] = i;
+    g.setIndex(new g.index.constructor(ni, 1));
+    ses.ntTela = nt; ses.bvhVelha = true;
+  }
   // atualiza na tela só os triângulos dos vértices mexidos
   function atualizarTela(ses, mexidos) {
-    const g = ses.it.geom, pos = g.attributes.position.array, nor = g.attributes.normal.array, I = ses.s.idx, P = ses.s.pos, fv = ses.s.fv;
+    if (ses.s.nt > ses.ntTela) crescerTela(ses);
+    const g = ses.it.geom, pos = g.attributes.position.array, nor = g.attributes.normal.array, I = ses.s.idx, P = ses.s.pos, vf = ses.s.vf;
     const faces = new Set();
-    for (const v of mexidos) for (let i = fv.inicio[v]; i < fv.inicio[v + 1]; i++) faces.add(fv.lista[i]);
+    for (const v of mexidos) for (const f of vf[v]) faces.add(f);
     for (const f of faces) {
       const a = I[f * 3] * 3, b = I[f * 3 + 1] * 3, c = I[f * 3 + 2] * 3;
       const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], wx = P[c] - P[a], wy = P[c + 1] - P[a + 1], wz = P[c + 2] - P[a + 2];
@@ -56,9 +79,15 @@ export function montarEsculpir(est) {
       [a, b, c].forEach((v, k) => { const o = f * 9 + k * 3; pos[o] = P[v]; pos[o + 1] = P[v + 1]; pos[o + 2] = P[v + 2]; nor[o] = nx; nor[o + 1] = ny; nor[o + 2] = nz; });
     }
     g.attributes.position.needsUpdate = true; g.attributes.normal.needsUpdate = true;
+    const agora = performance.now();
+    if (ses.bvhVelha && !(ses.rebuild > agora - 300)) { ses.rebuild = ses.refit = agora; ses.bvhVelha = false; if (g.disposeBoundsTree) g.disposeBoundsTree(); g.computeBoundsTree(); g.computeBoundingSphere(); g.computeBoundingBox(); }
+    else if (!(ses.refit > agora - 80)) { ses.refit = agora; if (g.boundsTree) g.boundsTree.refit(); g.computeBoundingSphere(); g.computeBoundingBox(); }
     est.visor.pedirRender();
   }
-  function opcoes() { return { tipo: segVal('tipo'), raio: +q('raio').value, forca: +q('forca').value, simetria: segVal('sim') || null }; }
+  // eixo do MUNDO (o que o usuário vê) -> eixo da peça, mesmo se ela foi girada
+  const dirLocal = (o, k) => { const d = M4.aplicarDirecao(M4.inverter(o.transform), k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0); const a = d.map(Math.abs), i = a.indexOf(Math.max(...a)); return { i, sentido: Math.sign(d[i]) || 1 }; };
+  const eixoLocal = (o, k) => dirLocal(o, k).i;
+  function opcoes(o) { const sv = segVal('sim'), R = +q('raio').value; return { tipo: segVal('tipo'), raio: R, forca: +q('forca').value, simetria: sv ? eixoLocal(o, sv === 'x' ? 0 : 1) : null, detalhe: q('detalhe').checked ? Math.max(0.15, Math.min(4, R / 7)) : 0 }; }
 
   // chamado pelo Estúdio (pointerdown/move/up com a ferramenta 'esculpir')
   function pincel(hit, ev, inicio) {
@@ -67,13 +96,14 @@ export function montarEsculpir(est) {
       if (!a) return;
       const it = est.visor.itens.get(a.p.id);
       if (!it) return;
-      if (arestaMedia(a.p.malha) > +q('raio').value / 2) q('info').innerHTML = '<span class="aviso">Malha grossa pra esse pincel: clique em <b>Mais detalhe na malha</b> pra o resultado sair liso.</span>';
-      sessao = { s: criarSessao(a.p.malha, { raio: +q('raio').value }), o: a.o, p: a.p, it };
+      if (!q('detalhe').checked && arestaMedia(a.p.malha) > +q('raio').value / 2) q('info').innerHTML = '<span class="aviso">Malha grossa pra esse pincel: clique em <b>Mais detalhe na malha</b> pra o resultado sair liso.</span>';
+      const s0 = criarSessao(a.p.malha, { raio: +q('raio').value });
+      sessao = { s: s0, o: a.o, p: a.p, it, ntTela: s0.nt };
     }
     if (!sessao || hit.parte !== sessao.p.id) return;
     const G = M4.inverter(sessao.o.transform);
     const c = M4.aplicarPonto(G, hit.ponto.x, hit.ponto.y, hit.ponto.z);
-    atualizarTela(sessao, tocar(sessao.s, c, opcoes()));
+    atualizarTela(sessao, tocar(sessao.s, c, opcoes(sessao.o)));
     cursorPincel(hit);
   }
   function cursorPincel(hit) {
@@ -91,7 +121,7 @@ export function montarEsculpir(est) {
       return;
     }
     est.cena.aplicar('Esculpir ' + o.nome, () => trocar(o, p, r.malha));
-    q('info').textContent = 'Traço aplicado (Ctrl+Z desfaz). ' + fmt(r.malha.idx.length / 3, 0) + ' triângulos.';
+    q('info').textContent = 'Traço aplicado (Ctrl+Z desfaz). ' + fmt(r.malha.idx.length / 3, 0) + ' triângulos' + (r.novosTriangulos ? ' (+' + fmt(r.novosTriangulos, 0) + ' de detalhe)' : '') + '.';
   }
 
   async function refinar() {
@@ -122,7 +152,7 @@ export function montarEsculpir(est) {
       confirmar: () => est.cena.aplicar(titulo + ' ' + o.nome, () => trocar(o, p, r.parte.malha))
     });
   }
-  q('aplDef').onclick = () => comPrevia('deformar', { opc: { tipo: segVal('def'), valor: lerNumero(q('valDef').value, 0), eixo: +segVal('eixo') } }, DEF.find(x => x[0] === segVal('def'))[1]);
+  q('aplDef').onclick = () => { const o = est.objetoAtual(); comPrevia('deformar', { opc: { tipo: segVal('def'), valor: lerNumero(q('valDef').value, 0), ...(o ? (x => ({ eixo: x.i, sentido: x.sentido }))(dirLocal(o, +segVal('eixo'))) : { eixo: +segVal('eixo') }) } }, DEF.find(x => x[0] === segVal('def'))[1]); };
   q('aplSuave').onclick = () => {
     const p = est.parteAtual(), mask = p && est.visor.selecao(p.id);
     comPrevia('suavizar', { opc: { passos: +q('passos').value, manterMedidas: q('manter').checked, mascara: mask || null } }, mask ? 'Suavizar seleção' : 'Suavizar');

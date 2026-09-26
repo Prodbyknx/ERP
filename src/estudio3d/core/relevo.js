@@ -10,6 +10,7 @@
 import { comContexto, manifold, segmentos } from './solidos.js';
 import * as M4 from './mat4.js';
 import { dentro, caixa2D } from './geo2d.js';
+import { mapaDaSuperficie } from './envolver.js';
 
 export const MODOS_RELEVO = [
   { id: 'alto', nome: 'Alto-relevo (mesma cor)' },
@@ -76,9 +77,29 @@ export function aplicarRelevo(partes, alvo, forma, opc = {}) {
     if (!sup.amostras || sup.fora === sup.amostras) throw new Error('O desenho ficou fora da peça. Ajuste posição ou tamanho.');
     if (sup.fora > 0 && modo !== 'recorte') avisos.push('Parte do desenho passa da borda da peça (' + Math.round(100 * sup.fora / sup.amostras) + '%).');
     const faixa = sup.zMax - sup.zMin;
-    if (faixa > 0.05 && modo !== 'recorte') avisos.push('A superfície não é plana sob o desenho (varia ' + faixa.toFixed(2) + ' mm): o topo do relevo fica plano.');
     const Fm = Array.from(F);
-    const prisma = (csx, z0, z1) => ctx.guardar(ctx.guardar(ctx.guardar(Manifold.extrude(csx, z1 - z0)).translate([0, 0, z0])).transform(Fm));
+    const prismaReto = (csx, z0, z1) => ctx.guardar(ctx.guardar(ctx.guardar(Manifold.extrude(csx, z1 - z0)).translate([0, 0, z0])).transform(Fm));
+    let prisma = prismaReto, envolveu = false;
+    // superfície curva: o desenho ENVOLVE (medida ao longo da superfície) e a
+    // altura/profundidade acompanha a curva. z0/z1 passam a ser em relação à
+    // superfície (não ao plano mais alto).
+    if (faixa > 0.05 && modo !== 'recorte' && opc.envolver !== false) {
+      const b = cs.bounds(), mg = 1 + (opc.folga || 0);
+      const mapa = mapaDaSuperficie(pAlvo.malha, F, { x0: b.min[0] - mg, x1: b.max[0] + mg, y0: b.min[1] - mg, y1: b.max[1] + mg });
+      if (mapa && mapa.f) {
+        const L = Math.max(mapa.passo * 1.5, 0.25);
+        prisma = (csx, z0, z1, rel) => {
+          if (!rel) return prismaReto(csx, z0, z1);
+          const K = ctx.guardar(ctx.guardar(Manifold.extrude(csx, 1)).refineToLength(L));
+          return ctx.guardar(K.warp(v => { const r = mapa.f(v[0], v[1]), h = z0 + v[2] * (z1 - z0); v[0] = r.p[0] + r.n[0] * h; v[1] = r.p[1] + r.n[1] * h; v[2] = r.p[2] + r.n[2] * h; }));
+        };
+        envolveu = true;
+      } else if (mapa && mapa.falta === 'volta') {
+        throw new Error('O desenho (' + (Math.max(b.max[0] - b.min[0], 0)).toFixed(1).replace('.', ',') + ' mm) é maior que a volta da peça nesse lugar (' + mapa.volta.toFixed(1).replace('.', ',') + ' mm): ia sobrepor. Diminua o tamanho.');
+      } else avisos.push('Não deu pra envolver a superfície nesse lugar (o desenho passa da borda): ficou com o topo plano. Diminua o desenho ou mude a posição.');
+      // o "passa da borda" da amostragem plana não vale quando envolve
+      if (envolveu) for (let i = avisos.length - 1; i >= 0; i--) if (/passa da borda da peça/.test(avisos[i])) avisos.splice(i, 1);
+    } else if (faixa > 0.05 && modo !== 'recorte') avisos.push('A superfície não é plana sob o desenho (varia ' + faixa.toFixed(2) + ' mm): o topo do relevo fica plano.');
     const altura = Math.max(0.05, opc.altura != null ? opc.altura : 1);
     const prof = Math.max(0.05, opc.profundidade != null ? opc.profundidade : 0.6);
     const folga = Math.max(0, opc.folga || 0);
@@ -87,7 +108,7 @@ export function aplicarRelevo(partes, alvo, forma, opc = {}) {
     let novaParte = null;
     let alvoNovo;
     if (modo === 'alto' || modo === 'alto-cor') {
-      const K = prisma(cs, sup.zMin - 0.3, sup.zMax + altura);
+      const K = envolveu ? prisma(cs, -0.4, altura, true) : prisma(cs, sup.zMin - 0.3, sup.zMax + altura);
       if (modo === 'alto') {
         alvoNovo = ctx.guardar(S.add(K));
       } else {
@@ -97,11 +118,12 @@ export function aplicarRelevo(partes, alvo, forma, opc = {}) {
       }
       if (lado === 'verso') avisos.push('Relevo saindo pelo verso: a peça vai precisar de suporte ou ser impressa de lado. Pro verso, gravação ou embutido costumam ser melhores.');
     } else if (modo === 'baixo') {
-      const K = prisma(cs, sup.zMin - prof, sup.zMax + 1);
+      const K = envolveu ? prisma(cs, -prof, 0.6, true) : prisma(cs, sup.zMin - prof, sup.zMax + 1);
       alvoNovo = ctx.guardar(S.subtract(K));
     } else if (modo === 'embutido') {
-      const Kp = folga > 0 ? prisma(ctx.guardar(cs.offset(folga, 'Round', 2, segmentos(1))), sup.zMin - prof - folga, sup.zMax + 1) : prisma(cs, sup.zMin - prof, sup.zMax + 1);
-      const Kd = prisma(cs, sup.zMin - prof, sup.zMax + 1);
+      const z0 = envolveu ? 0 : sup.zMin, z1 = envolveu ? 0.6 : sup.zMax + 1;
+      const Kp = folga > 0 ? prisma(ctx.guardar(cs.offset(folga, 'Round', 2, segmentos(1))), z0 - prof - folga, z1, envolveu) : prisma(cs, z0 - prof, z1, envolveu);
+      const Kd = prisma(cs, z0 - prof, z1, envolveu);
       const peca = ctx.guardar(S.intersect(Kd));
       alvoNovo = ctx.guardar(S.subtract(Kp));
       novaParte = ctx.parte(ctx.primitiva(peca, corNova), opc.nome || 'Embutido', corNova);
@@ -124,6 +146,6 @@ export function aplicarRelevo(partes, alvo, forma, opc = {}) {
     if (fino.isEmpty()) avisos.push('O traço é mais fino que o bico de ' + bico + ' mm: pode não sair na impressão. Aumente o tamanho.');
     else if (fino.area() < cs.area() * 0.35) avisos.push('Tem traços muito finos para o bico de ' + bico + ' mm.');
     if ((modo === 'baixo' || modo === 'embutido') && prof < 0.4) avisos.push('Profundidade abaixo de 0,4 mm quase não aparece.');
-    return { partes: novas, avisos, referencial: Array.from(F), superficie: sup, indiceNova: novaParte ? novas.length - 1 : -1 };
+    return { partes: novas, avisos, referencial: Array.from(F), superficie: sup, envolveu, indiceNova: novaParte ? novas.length - 1 : -1 };
   });
 }

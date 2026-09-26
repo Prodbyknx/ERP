@@ -18,7 +18,7 @@ export const FERR_MOD = [
   ['espelhar', 'Espelhar', 'Espelha a peça. Com "unir": modele metade e ganhe a peça inteira, costura exata no meio.'],
   ['medir', 'Medir', 'Clique em dois pontos pra ver a distância; clique numa borda pra ver o comprimento ou o diâmetro.']
 ];
-export const NOME_OP = { arredondar: 'Arredondar', chanfrar: 'Chanfrar', puxar: 'Puxar/empurrar', casca: 'Oca', espelhar: 'Espelhar' };
+export const NOME_OP = { arredondar: 'Arredondar', chanfrar: 'Chanfrar', puxar: 'Puxar/empurrar', casca: 'Oca', espelhar: 'Espelhar', esticar: 'Tamanho (escala)' };
 
 function faceMaisPerto(m, q) {
   const P = m.pos, I = m.idx;

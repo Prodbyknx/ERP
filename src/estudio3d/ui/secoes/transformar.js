@@ -51,8 +51,12 @@ export function montarTransformar(est) {
   const q = s => d.querySelector(s);
   const campo = k => q('[data-t=' + k + ']');
 
+  // a escala já foi pra malha (cena.fixarEsticar): o painel mostra a matriz
+  // "de antes" (rígida · esticado) e, ao aplicar, desconta o esticado
+  const vista = o => o.esticado ? M4.multiplicar(o.transform, o.esticado) : o.transform;
+  const real = (o, T) => o.esticado ? M4.multiplicar(T, M4.inverter(o.esticado)) : T;
   function estado(o) {
-    const dc = M4.decompor(o.transform);
+    const dc = M4.decompor(vista(o));
     return dc;
   }
   function render() {
@@ -103,7 +107,7 @@ export function montarTransformar(est) {
     }
     const T = M4.compor(pos, rot, esc);
     est.cena.aplicar(k[0] === 'p' ? 'Posição' : k[0] === 'r' ? 'Rotação' : 'Tamanho', () => {
-      o.transform = T;
+      o.transform = real(o, T);
       if (k[0] !== 'p' && dc.pos[2] >= -1e-6) est.cena.colocarNaMesa(o);
     });
   }
@@ -140,7 +144,7 @@ export function montarTransformar(est) {
   q('[data-a=zerar]').onclick = () => {
     const o = est.objetoAtual(); if (!o) return;
     const dc = estado(o);
-    est.cena.aplicar('Redefinir rotação e escala', () => { o.transform = M4.translacao(dc.pos[0], dc.pos[1], dc.pos[2]); est.cena.colocarNaMesa(o); });
+    est.cena.aplicar('Redefinir rotação e escala', () => { o.transform = real(o, M4.translacao(dc.pos[0], dc.pos[1], dc.pos[2])); est.cena.colocarNaMesa(o); });
   };
 
   /* ---------------- deitar na face (melhor orientação pra imprimir) ---------------- */

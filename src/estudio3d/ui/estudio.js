@@ -19,6 +19,7 @@ import { montarFormas } from './secoes/formas.js';
 import { montarModificar } from './secoes/modificar.js';
 import { montarEsculpir } from './secoes/esculpir.js';
 import { montarDesenhar } from './secoes/desenhar.js';
+import { prepararParaImpressao } from './preparar.js';
 import { alinhar, duplicarEmSerie } from '../core/modelagem.js';
 import { icone } from './icones.js';
 import { calcularSugestoes } from './sugestoes.js';
@@ -44,6 +45,7 @@ const FERRAMENTAS = [
 
 // Atalhos da tela Início: tarefas do dia a dia de quem imprime
 const TAREFAS = [
+  { ico: 'check', t: 'Preparar pra imprimir', d: 'Conserta, põe na mesa e confere tudo', acao: 'preparar' },
   { ico: 'formas', t: 'Criar peça com formas', d: 'Caixa, círculo, texto, furo…', acao: 'formas' },
   { ico: 'escudo', t: 'Consertar o arquivo', d: 'Buracos, faces viradas e sobras', acao: 'consertar' },
   { ico: 'tesoura', t: 'Cortar em duas partes', d: 'Com pino de encaixe', acao: 'corte' },
@@ -106,6 +108,7 @@ export class Estudio {
         bt('data-g="escalar" title="Escalar (S)"', 'escalar', '<span class="rot-lg">Escalar</span>') +
       '</div>' +
       '<span class="grow"></span>' +
+      bt('data-b="preparar" title="Confere e arruma tudo pra imprimir: conserta a malha, põe na mesa, confere tamanho, paredes finas e posição"', 'check', '<span class="rot-lg">Preparar pra imprimir</span>', 'destaque') +
       bt('data-b="organizar" title="Põe todos os objetos lado a lado na mesa"', 'organizar', '<span class="rot-lg">Organizar mesa</span>') +
       bt('data-b="tela" title="Tela cheia (mais espaço pro 3D)"', 'telaCheia', '', 'so-ico') +
       '<span class="e3d-motor" data-b="motor"><i></i><span>carregando motor…</span></span>';
@@ -300,6 +303,7 @@ export class Estudio {
         break;
       }
       case 'espessura': this.definirModoVisual('espessura'); this.abrirFerramenta('diag'); break;
+      case 'preparar': prepararParaImpressao(this); break;
       case 'unidade': this.abrirFerramenta('diag'); break;
       default: this.abrirFerramenta(acao);
     }
@@ -330,6 +334,7 @@ export class Estudio {
       else if (t.dataset.b === 'refazer') this.refazer();
       else if (t.dataset.b === 'enquadrar') this.enquadrar();
       else if (t.dataset.b === 'organizar') this.organizarMesa();
+      else if (t.dataset.b === 'preparar') prepararParaImpressao(this);
       else if (t.dataset.b === 'tela') this.alternarTelaCheia();
     };
     this.topo.addEventListener('click', clique);
@@ -386,6 +391,13 @@ export class Estudio {
     cv.addEventListener('pointerup', ev => { if (soltarCorte(ev)) ev.stopImmediatePropagation(); }, true);
     cv.addEventListener('pointerdown', ev => {
       ini = { x: ev.clientX, y: ev.clientY, b: ev.button };
+      // Desenhar: pegar um ponto já marcado pra arrastar
+      if (ev.button === 0 && this.ferramenta === 'desenhar' && !this.previaAtiva && this.secoes.desenhar.segurar(ev)) {
+        this.arrastandoPonto = true;
+        this.visor.controles.enabled = false;
+        cv.setPointerCapture(ev.pointerId);
+        return;
+      }
       const pin = this.alvoPincel();
       if (ev.button === 0 && pin && !this.previaAtiva) {
         const hit = this.visor.intersectar(ev);
@@ -398,6 +410,7 @@ export class Estudio {
       }
     });
     cv.addEventListener('pointermove', ev => {
+      if (this.arrastandoPonto) { this.secoes.desenhar.mover(ev); return; }
       const pin = this.alvoPincel();
       if (pin) {
         const hit = this.visor.intersectar(ev);
@@ -406,6 +419,12 @@ export class Estudio {
       }
     });
     const fim = ev => {
+      if (this.arrastandoPonto) {
+        this.arrastandoPonto = false;
+        this.visor.controles.enabled = true;
+        try { cv.releasePointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+        if (this.secoes.desenhar.soltar()) { ini = null; return; }   // arrastou: não é clique
+      }
       if (this.pintando) {
         this.pintando = false;
         this.visor.controles.enabled = true;
@@ -481,7 +500,7 @@ export class Estudio {
       : f === 'deitar' ? 'clique na face que deve ficar na mesa · Esc volta'
       : f === 'modificar' ? 'clique na borda ou na face da peça · Esc volta'
       : f === 'esculpir' ? 'arraste sobre a peça pra esculpir · começando fora dela, gira a vista'
-      : f === 'desenhar' ? 'clique na mesa pra marcar pontos · clique no 1º pra fechar'
+      : f === 'desenhar' ? 'clique na mesa pra marcar pontos · clique no 1º pra fechar · arraste um ponto pra mudar'
       : 'clique na peça · Shift soma · Alt tira · Esc volta';
     this.emitir('ferramenta', f);
   }

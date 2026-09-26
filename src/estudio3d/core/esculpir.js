@@ -1,34 +1,36 @@
 // ESCULPIR (deformação com pincel): puxar, empurrar, inflar, achatar,
-// suavizar — com raio, força, queda suave e simetria ao vivo. Só mexe nos
-// vértices (a malha continua fechada); ao soltar, confere se a peça não se
-// cruzou e, se cruzou, desfaz o traço. Roda na tela (é interativo) e só
-// recalcula o que está debaixo do pincel.
-import { facesDoVertice, vizinhosDoVertice } from './topologia.js';
-import { criar, caixa } from './malha.js';
+// suavizar — com raio, força, queda suave, simetria ao vivo e DETALHE
+// AUTOMÁTICO (divide as arestas longas debaixo do pincel durante o traço,
+// sem precisar refinar a peça inteira antes). A malha continua fechada; ao
+// soltar, confere se a peça não se cruzou e, se cruzou, desfaz o traço.
+// Roda na tela (é interativo) e só recalcula o que está debaixo do pincel.
+import { criar, caixa, subMalha } from './malha.js';
 import { autoInterseccoes } from './validador.js';
-import { subMalha } from './malha.js';
 
 export const PINCEIS = ['puxar', 'empurrar', 'inflar', 'achatar', 'suavizar'];
 
-// grade de vértices pra achar quem está no raio
-function grade(pos, cel) {
-  const m = new Map(), n = pos.length / 3;
-  for (let v = 0; v < n; v++) {
-    const k = Math.floor(pos[v * 3] / cel) + ',' + Math.floor(pos[v * 3 + 1] / cel) + ',' + Math.floor(pos[v * 3 + 2] / cel);
-    const l = m.get(k); if (l) l.push(v); else m.set(k, [v]);
-  }
-  return m;
-}
+const chave = (x, y, z, cel) => Math.floor(x / cel) + ',' + Math.floor(y / cel) + ',' + Math.floor(z / cel);
 
 export function criarSessao(malha, opc = {}) {
-  const pos = Float64Array.from(malha.pos);
+  const nv = malha.pos.length / 3, nt = malha.idx.length / 3;
+  const pos = new Float64Array(Math.ceil(nv * 1.25) * 3 + 300); pos.set(malha.pos);
+  const idx = new Uint32Array(Math.ceil(nt * 1.25) * 3 + 300); idx.set(malha.idx);
+  let cor = null;
+  if (malha.cor) { cor = new Uint16Array(Math.ceil(nt * 1.25) + 100); cor.set(malha.cor); }
+  const vf = Array.from({ length: nv }, () => []);
+  for (let t = 0; t < nt; t++) for (let k = 0; k < 3; k++) vf[malha.idx[t * 3 + k]].push(t);
   const cx = caixa(malha);
   const s = {
-    malha, pos, idx: malha.idx, fv: facesDoVertice(malha), viz: vizinhosDoVertice(malha),
-    centro: cx.min.map((v, i) => (v + cx.max[i]) / 2), cel: Math.max(0.5, opc.raio || 5), mexidos: new Set()
+    malha, pos, idx, cor, nv, nt, nt0: nt, vf, pai: [],
+    centro: cx.min.map((v, i) => (v + cx.max[i]) / 2), cel: Math.max(0.5, opc.raio || 5), mexidos: new Set(), grade: new Map()
   };
-  s.grade = grade(pos, s.cel);
+  for (let v = 0; v < nv; v++) gradeAdd(s, v);
   return s;
+}
+
+function gradeAdd(s, v) {
+  const k = chave(s.pos[v * 3], s.pos[v * 3 + 1], s.pos[v * 3 + 2], s.cel), l = s.grade.get(k);
+  if (l) l.push(v); else s.grade.set(k, [v]);
 }
 
 function noRaio(s, c, R) {
@@ -44,8 +46,8 @@ function noRaio(s, c, R) {
 
 function normalVertice(s, v) {
   const P = s.pos, I = s.idx, n = [0, 0, 0];
-  for (let i = s.fv.inicio[v]; i < s.fv.inicio[v + 1]; i++) {
-    const f = s.fv.lista[i], a = I[f * 3] * 3, b = I[f * 3 + 1] * 3, c = I[f * 3 + 2] * 3;
+  for (const f of s.vf[v]) {
+    const a = I[f * 3] * 3, b = I[f * 3 + 1] * 3, c = I[f * 3 + 2] * 3;
     const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], wx = P[c] - P[a], wy = P[c + 1] - P[a + 1], wz = P[c + 2] - P[a + 2];
     n[0] += uy * wz - uz * wy; n[1] += uz * wx - ux * wz; n[2] += ux * wy - uy * wx;
   }
@@ -53,13 +55,117 @@ function normalVertice(s, v) {
   return [n[0] / L, n[1] / L, n[2] / L];
 }
 
-// um toque do pincel em c (referencial da peça). opc: { tipo, raio, forca (0..1), simetria: 'x'|'y'|null }
-// devolve os vértices mexidos
+function vizinhos(s, v) {
+  const out = new Set(), I = s.idx;
+  for (const f of s.vf[v]) for (let k = 0; k < 3; k++) { const u = I[f * 3 + k]; if (u !== v) out.add(u); }
+  return out;
+}
+
+// ---------------------------------------------------------------- detalhe
+function crescer(s, nvNovo, ntNovo) {
+  if (nvNovo * 3 > s.pos.length) { const p = new Float64Array(Math.ceil(nvNovo * 1.5) * 3); p.set(s.pos); s.pos = p; }
+  if (ntNovo * 3 > s.idx.length) {
+    const i = new Uint32Array(Math.ceil(ntNovo * 1.5) * 3); i.set(s.idx); s.idx = i;
+    if (s.cor) { const c = new Uint16Array(Math.ceil(ntNovo * 1.5)); c.set(s.cor); s.cor = c; }
+  }
+}
+const comp2 = (s, a, b) => { const P = s.pos; const dx = P[a * 3] - P[b * 3], dy = P[a * 3 + 1] - P[b * 3 + 1], dz = P[a * 3 + 2] - P[b * 3 + 2]; return dx * dx + dy * dy + dz * dz; };
+
+// divide a aresta a-b no meio (as 2 faces que a usam viram 4)
+function dividirAresta(s, a, b, novosV) {
+  const faces = s.vf[a].filter(f => s.vf[b].includes(f));
+  crescer(s, s.nv + 1, s.nt + faces.length);
+  const m = s.nv++, P = s.pos;
+  for (let e = 0; e < 3; e++) P[m * 3 + e] = (P[a * 3 + e] + P[b * 3 + e]) / 2;
+  s.vf[m] = [];
+  gradeAdd(s, m);
+  novosV.push(m);
+  const I = s.idx;
+  for (const h of faces) {
+    // acha x->y (a aresta, na ordem da face) e z (o outro vértice)
+    let x, y, z;
+    for (let k = 0; k < 3; k++) {
+      const p = I[h * 3 + k], q = I[h * 3 + (k + 1) % 3];
+      if ((p === a && q === b) || (p === b && q === a)) { x = p; y = q; z = I[h * 3 + (k + 2) % 3]; }
+    }
+    const hn = s.nt++;
+    I[h * 3] = x; I[h * 3 + 1] = m; I[h * 3 + 2] = z;
+    I[hn * 3] = m; I[hn * 3 + 1] = y; I[hn * 3 + 2] = z;
+    if (s.cor) s.cor[hn] = s.cor[h];
+    s.pai[hn - s.nt0] = h;
+    const ly = s.vf[y]; ly[ly.indexOf(h)] = hn;
+    s.vf[z].push(hn);
+    s.vf[m].push(h, hn);
+  }
+}
+
+// distância do ponto c ao triângulo f
+function distTri(s, f, c) {
+  const P = s.pos, I = s.idx, A = I[f * 3] * 3, B = I[f * 3 + 1] * 3, C = I[f * 3 + 2] * 3;
+  const a = [P[A], P[A + 1], P[A + 2]], ab = [P[B] - a[0], P[B + 1] - a[1], P[B + 2] - a[2]], ac = [P[C] - a[0], P[C + 1] - a[1], P[C + 2] - a[2]], ap = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+  const dt = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+  const d1 = dt(ab, ap), d2 = dt(ac, ap), bp = [ap[0] - ab[0], ap[1] - ab[1], ap[2] - ab[2]], d3 = dt(ab, bp), d4 = dt(ac, bp);
+  const cp = [ap[0] - ac[0], ap[1] - ac[1], ap[2] - ac[2]], d5 = dt(ab, cp), d6 = dt(ac, cp);
+  let q;
+  if (d1 <= 0 && d2 <= 0) q = [0, 0];
+  else if (d3 >= 0 && d4 <= d3) q = [1, 0];
+  else if (d6 >= 0 && d5 <= d6) q = [0, 1];
+  else {
+    const vc = d1 * d4 - d3 * d2, vb = d5 * d2 - d1 * d6, va = d3 * d6 - d5 * d4;
+    if (vc <= 0 && d1 >= 0 && d3 <= 0) q = [d1 / (d1 - d3), 0];
+    else if (vb <= 0 && d2 >= 0 && d6 <= 0) q = [0, d2 / (d2 - d6)];
+    else if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) { const w = (d4 - d3) / ((d4 - d3) + (d5 - d6)); q = [1 - w, w]; }
+    else { const den = 1 / (va + vb + vc); q = [vb * den, vc * den]; }
+  }
+  const x = a[0] + ab[0] * q[0] + ac[0] * q[1] - c[0], y = a[1] + ab[1] * q[0] + ac[1] * q[1] - c[1], z = a[2] + ab[2] * q[0] + ac[2] * q[1] - c[2];
+  return Math.hypot(x, y, z);
+}
+
+// deixa as arestas debaixo do pincel com no máximo L (limite de divisões por toque)
+function detalhar(s, c, R, L, novosV, limite = 4000) {
+  const L2 = L * L, I = s.idx;
+  const fila = new Set();
+  for (const [v] of noRaio(s, c, R * 1.15)) for (const f of s.vf[v]) fila.add(f);
+  // triângulo grande (caixa, peça simples): os vértices ficam longe do
+  // pincel. Procura pelas faces que o pincel encosta.
+  if (fila.size < 8 && s.nt < 300000) for (let f = 0; f < s.nt; f++) if (distTri(s, f, c) <= R * 1.15) fila.add(f);
+  let feitas = 0;
+  const maior = f => {
+    const a = s.idx[f * 3], b = s.idx[f * 3 + 1], cc = s.idx[f * 3 + 2];
+    const ab = comp2(s, a, b), bc = comp2(s, b, cc), ca = comp2(s, cc, a);
+    return ab >= bc && ab >= ca ? [a, b, ab] : bc >= ca ? [b, cc, bc] : [cc, a, ca];
+  };
+  void I;
+  while (fila.size && feitas < limite) {
+    const f = fila.values().next().value; fila.delete(f);
+    const [a, b, d2] = maior(f);
+    if (d2 <= L2) continue;
+    const antes = s.nt;
+    const faces = s.vf[a].filter(x => s.vf[b].includes(x));
+    dividirAresta(s, a, b, novosV);
+    feitas++;
+    // só continua dividindo o que o pincel encosta (vizinhas longe ficam)
+    for (const h of faces) if (distTri(s, h, c) <= R * 1.15) fila.add(h);
+    for (let h = antes; h < s.nt; h++) if (distTri(s, h, c) <= R * 1.15) fila.add(h);
+  }
+  return feitas;
+}
+
+// um toque do pincel em c (referencial da peça).
+// opc: { tipo, raio, forca (0..1), simetria: 'x'|'y'|'z'|0|1|2|null,
+//        detalhe: aresta máxima em mm debaixo do pincel (0/nada = não divide) }
+// devolve os vértices mexidos (inclusive os novos)
 export function tocar(s, c, opc) {
   const pontos = [c];
-  if (opc.simetria === 'x') pontos.push([2 * s.centro[0] - c[0], c[1], c[2]]);
-  if (opc.simetria === 'y') pontos.push([c[0], 2 * s.centro[1] - c[1], c[2]]);
+  // simetria pelo meio da peça
+  const ax = typeof opc.simetria === 'number' ? opc.simetria : { x: 0, y: 1, z: 2 }[opc.simetria];
+  if (ax != null) { const q = c.slice(); q[ax] = 2 * s.centro[ax] - c[ax]; pontos.push(q); }
   const mex = new Set();
+  if (opc.detalhe > 0) {
+    const novos = [];
+    for (const q of pontos) detalhar(s, q, opc.raio, opc.detalhe, novos);
+    for (const v of novos) { mex.add(v); s.mexidos.add(v); }
+  }
   for (const q of pontos) for (const v of aplicar(s, q, opc)) mex.add(v);
   return mex;
 }
@@ -79,7 +185,7 @@ function aplicar(s, c, opc) {
   if (tipo === 'suavizar') {
     const novo = viz.map(([v]) => {
       const a = [0, 0, 0]; let n = 0;
-      for (let j = s.viz.inicio[v]; j < s.viz.inicio[v + 1]; j++) { const u = s.viz.lista[j]; a[0] += P[u * 3]; a[1] += P[u * 3 + 1]; a[2] += P[u * 3 + 2]; n++; }
+      for (const u of vizinhos(s, v)) { a[0] += P[u * 3]; a[1] += P[u * 3 + 1]; a[2] += P[u * 3 + 2]; n++; }
       return n ? a.map(x => x / n) : [P[v * 3], P[v * 3 + 1], P[v * 3 + 2]];
     });
     viz.forEach(([v], i) => { const k = w[i] * Math.min(1, f * 1.5); for (let e = 0; e < 3; e++) P[v * 3 + e] += (novo[i][e] - P[v * 3 + e]) * k; });
@@ -101,17 +207,25 @@ function aplicar(s, c, opc) {
   return out;
 }
 
+// malha atual da sessão (arrays do tamanho certo)
+export function malhaDaSessao(s) {
+  return criar(s.pos.slice(0, s.nv * 3), s.idx.slice(0, s.nt * 3), s.cor ? s.cor.slice(0, s.nt) : null);
+}
+
+// face original (antes do traço) de onde veio a face f
+const origem = (s, f) => { while (f >= s.nt0) f = s.pai[f - s.nt0]; return f; };
+
 // fim do traço: malha nova, ou erro se a peça passou a se cruzar ali
 export function concluir(s) {
-  const m = criar(s.pos, s.idx, s.malha.cor ? s.malha.cor : null);
   if (!s.mexidos.size) return { malha: s.malha, mudou: false };
+  const m = malhaDaSessao(s);
   // confere só a região mexida (+ vizinhança): cruzou -> não aceita
-  const faces = new Uint8Array(s.idx.length / 3);
-  for (const v of s.mexidos) for (let i = s.fv.inicio[v]; i < s.fv.inicio[v + 1]; i++) faces[s.fv.lista[i]] = 1;
-  const antes = autoInterseccoes(subMalha(s.malha, faces).malha, { max: 50 }).pares;
-  const depois = autoInterseccoes(subMalha(m, faces).malha, { max: 50 }).pares;
+  const facesNovas = new Uint8Array(s.nt), facesAntes = new Uint8Array(s.nt0);
+  for (const v of s.mexidos) for (const f of s.vf[v]) { facesNovas[f] = 1; facesAntes[origem(s, f)] = 1; }
+  const antes = autoInterseccoes(subMalha(s.malha, facesAntes).malha, { max: 50 }).pares;
+  const depois = autoInterseccoes(subMalha(m, facesNovas).malha, { max: 50 }).pares;
   if (depois > antes) return { malha: s.malha, mudou: false, erro: 'Esse traço fez a peça atravessar ela mesma (' + depois + ' cruzamento(s)). Desfiz o traço: use menos força ou um pincel maior.' };
-  return { malha: m, mudou: true };
+  return { malha: m, mudou: true, novosTriangulos: s.nt - s.nt0 };
 }
 
 // tamanho médio de aresta (pra saber se precisa refinar antes de esculpir)

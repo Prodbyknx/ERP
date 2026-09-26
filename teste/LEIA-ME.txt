@@ -17,6 +17,46 @@ COMO USAR
    de exemplo: Gabriel (admin) e Ana (vendedora).
 
 
+NOVIDADES DESTA VERSÃO (7) — PREPARAR PRA IMPRIMIR, CURVAS, TEXTO NA CURVA
+--------------------------------------------------------------------------
+
+PREPARAR PRA IMPRIMIR (botão na barra de cima, ou Início → Tarefas)
+Um clique confere a mesa inteira. Faz sozinho: conserta a malha (buracos,
+faces viradas, arestas soltas), tira sobras internas, encosta cada peça
+na mesa e afasta peças que se atravessam. Só AVISA (com botão pra
+resolver): maior que a mesa, muito pequena (unidade errada), parede
+fina, pouco contato com a mesa, área que vai precisar de suporte.
+Tudo o que ele arrumou volta com UM Ctrl+Z. No fim: Exportar 3MF.
+
+TEXTO E LOGO ENVOLVENDO SUPERFÍCIE CURVA (Texto → "Envolver a superfície
+curva", já vem marcado)
+Nome numa caneca, esfera, ovo, barriga de personagem: as letras seguem
+a curva sem achatar (a largura é medida AO LONGO da superfície) e a
+altura/profundidade é a mesma em todo lugar. Em parede, o texto fica
+em pé e na horizontal. Se o texto for maior que a volta da peça, o
+sistema recusa dizendo as medidas.
+
+DESENHAR: CURVA SUAVE
+Escolha "Curva suave": a linha passa pelos pontos como a curva de CAD.
+Shift+clique marca ponto de canto (fica pontudo). Arraste qualquer
+ponto pra ajustar depois de marcado. Tubo fechado no 1º ponto = anel.
+
+ESCULPIR: DETALHE AUTOMÁTICO
+O pincel cria triângulos debaixo dele durante o traço — dá pra esculpir
+até numa caixa simples, sem "Mais detalhe na malha" antes.
+
+AUDITORIA — CORRIGIDO
+- Escala: ao escalar (Escalar, Tamanho %, medida em mm), a escala vai
+  pra peça. Antes, pino, folga, parede de casca, arredondado, relevo e
+  pincel saíam multiplicados pela escala (peça a 50% = pino Ø2,5).
+- Desenho que se cruza (oito, estrela) era recusado; agora vira peça.
+- Tubo cujo caminho se cruza saía quebrado; agora sai inteiro.
+- Peça girada: Deformar e a simetria do pincel usam o eixo que você vê.
+- Pincel: a mira acompanha a superfície durante o traço.
+- Raio com direção "−0" atravessava a peça (afetava cliques e relevo).
+- A barra de várias peças mostrava a palavra "null".
+
+
 NOVIDADES DESTA VERSÃO (6) — ESCULPIR, DEFORMAR, DESENHAR
 ---------------------------------------------------------
 

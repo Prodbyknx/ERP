@@ -120,3 +120,23 @@ test('MÁSCARA do zero: forma base -> simetria -> deformar -> olhos e boca -> oc
   assert.ok(cc.avisos.some(a => /não cabe pino.*cole/.test(a)), cc.avisos.join(' | '));
   void puxarFace;
 });
+
+test('ESCULPIR com DETALHE AUTOMÁTICO: caixa de 12 triângulos ganha detalhe só debaixo do pincel; cor herdada; simetria', () => {
+  const m = mk(M => M.cube([30, 30, 30], true));
+  const cor = new Uint16Array(m.idx.length / 3).fill(1);
+  const s = criarSessao({ ...m, cor }, { raio: 6 });
+  for (let i = 0; i < 15; i++) tocar(s, [3 + i * 0.3, 0, 15], { tipo: 'puxar', raio: 6, forca: 0.7, detalhe: 1, simetria: 'x' });
+  const r = concluir(s);
+  assert.ok(r.mudou, r.erro);
+  const v = ok(r.malha, 'caixa esculpida');
+  assert.ok(r.novosTriangulos > 500 && r.malha.idx.length / 3 < 8000, 'detalhe local: ' + r.malha.idx.length / 3 + ' triângulos');
+  const c = caixa(r.malha);
+  assert.ok(c.max[2] > 17, 'puxou: ' + c.max[2]);
+  assert.ok(Math.abs(c.max[0] - 15) < 1e-9 && Math.abs(c.min[2] + 15) < 1e-9, 'resto da caixa igual');
+  assert.ok(v.volume > 27000);
+  assert.ok(r.malha.cor && r.malha.cor.length === r.malha.idx.length / 3 && r.malha.cor.every(x => x === 1), 'cor herdada nas faces novas');
+  // simetria X: os dois lados sobem igual (a triangulação pode ser diferente)
+  const P = r.malha.pos; let e = 0, d = 0;
+  for (let i = 0; i < P.length; i += 3) { if (P[i] > 1) d = Math.max(d, P[i + 2]); else if (P[i] < -1) e = Math.max(e, P[i + 2]); }
+  assert.ok(e > 16.5 && Math.abs(d - e) < 0.35, 'altura dos lados ' + e.toFixed(2) + ' / ' + d.toFixed(2));
+});

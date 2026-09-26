@@ -6,7 +6,7 @@
 import { detectarArestas } from './arestas.js';
 import { arredondar } from './arredondar.js';
 import { puxarFace, casca, espelhar, facePlana } from './modificar.js';
-import { caixa, centroidesFace, normaisFace } from './malha.js';
+import { caixa, centroidesFace, normaisFace, transformar } from './malha.js';
 
 const rel = (cx, p) => [0, 1, 2].map(i => cx.tam[i] > 1e-9 ? (p[i] - cx.min[i]) / cx.tam[i] : 0.5);
 const abs = (cx, r) => [0, 1, 2].map(i => cx.min[i] + r[i] * cx.tam[i]);
@@ -73,6 +73,7 @@ export function aplicarOperacao(parte, op) {
     const abrir = (op.abrir || []).map(d => acharFace(m, d)).filter(f => f >= 0);
     return casca(parte, op.valor, { abrir }).parte;
   }
+  if (op.tipo === 'esticar') return { ...parte, malha: transformar(m, op.m) };
   if (op.tipo === 'espelhar') {
     const cx = caixa(m);
     const pos = op.pos === 'min' ? cx.min[op.eixo] : op.pos === 'max' ? cx.max[op.eixo] : op.pos === 'centro' ? (cx.min[op.eixo] + cx.max[op.eixo]) / 2 : +op.pos;

@@ -121,6 +121,19 @@ html[data-tema=escuro] .e3d{ --e3d-fundo-a:#20242b; --e3d-fundo-b:#121418;
 .e3d-dica{ position:absolute; right:12px; top:62px; z-index:2; font:500 11.5px var(--sans); color:var(--ink-soft); pointer-events:none; padding:6px 10px; max-width:min(300px, 40%); text-align:right }
 
 /* prévia (confirmar/cancelar) */
+.e3d-bt.destaque{ color:var(--accent,#e54c00); font-weight:700 }
+.e3d-preparar{ position:absolute; right:12px; top:56px; z-index:7; width:min(380px, calc(100% - 24px)); max-height:calc(100% - 80px); overflow:auto; padding:12px 14px; display:flex; flex-direction:column; gap:8px }
+.e3d-preparar .tp{ display:flex; align-items:center; justify-content:space-between }
+.e3d-preparar .tp b{ font-size:15px }
+.e3d-preparar .lst{ display:flex; flex-direction:column; gap:6px }
+.e3d-preparar .it{ display:flex; gap:10px; align-items:flex-start; padding:8px; border-radius:10px; background:var(--bg-soft, rgba(127,127,127,.08)) }
+.e3d-preparar .it i{ flex:none; width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; color:#fff; font-style:normal; font-size:12px; font-weight:700; background:#8a8f98 }
+.e3d-preparar .it.bom i{ background:#1a7f37 } .e3d-preparar .it.atencao i{ background:#d97706 } .e3d-preparar .it.erro i{ background:#d1242f } .e3d-preparar .it.dica i{ background:#1f6feb }
+.e3d-preparar .it div{ display:flex; flex-direction:column; gap:2px; min-width:0 }
+.e3d-preparar .it b{ font-size:13px } .e3d-preparar .it span{ font-size:12px; color:var(--ink-soft) }
+.e3d-preparar .it .btn{ align-self:flex-start; margin-top:4px }
+.e3d-preparar .pe{ display:flex; flex-direction:column; gap:8px; margin-top:4px }
+.e3d-preparar .res{ font-weight:700; font-size:14px } .e3d-preparar .res.bom{ color:#1a7f37 } .e3d-preparar .res.atencao{ color:#b45309 }
 .e3d-previa{ position:absolute; left:50%; top:14px; transform:translateX(-50%); z-index:6; padding:10px 12px 10px 16px; display:flex; gap:12px; align-items:center;
   font:600 13px var(--sans); max-width:calc(100% - 300px); flex-wrap:wrap; animation:e3dentra .22s var(--ease) }
 .e3d-previa .leg{ display:flex; gap:10px; color:var(--ink-soft); font-size:12px; flex-wrap:wrap; font-weight:500 }

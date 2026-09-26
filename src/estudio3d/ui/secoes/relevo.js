@@ -29,6 +29,7 @@ export function montarRelevo(est) {
       <label class="fer-check"><input type="checkbox" data-a="inverterImg"> Inverter (troca desenho e fundo)</label>
       <input type="file" accept="image/*,.svg" data-a="arquivo" style="display:none">
     </div>
+    <label class="fer-check" title="Em superfície curva (caneca, esfera, corpo de personagem) o desenho acompanha a curva, sem achatar as letras, com altura igual em todo lugar"><input type="checkbox" data-a="envolver" checked> Envolver a superfície curva</label>
     <div class="field" style="margin-top:10px"><label>Como</label><select data-a="modo">${MODOS_RELEVO.map(m => '<option value="' + m.id + '">' + m.nome + '</option>').join('')}</select></div>
     <div class="e3d-l3">
       <div data-m="alto"><label>Altura</label><input type="text" data-a="altura" value="1"></div>
@@ -100,7 +101,8 @@ export function montarRelevo(est) {
       escala: lerNumero(q('largura').value, 40) / BASE,
       dx: lerNumero(q('dx').value, 0), dy: lerNumero(q('dy').value, 0), rotacao: lerNumero(q('rot').value, 0),
       cor: q('cor').value.toUpperCase(), folga: lerNumero(q('folga').value, 0),
-      ponto: ponto ? ponto.local : null, normal: ponto ? ponto.normal : null
+      ponto: ponto ? ponto.local : null, normal: ponto ? ponto.normal : null,
+      envolver: q('envolver').checked
     };
   }
 
@@ -109,7 +111,14 @@ export function montarRelevo(est) {
     const c = caixa(p.malha);
     if (lado === 'ponto') {
       if (!ponto) return null;
-      const F = M4.doPlano(ponto.local, ponto.normal, Math.abs(ponto.normal[2]) > 0.9 ? [1, 0, 0] : [0, 0, 1]);
+      // parede: o texto corre na horizontal e fica em pé (X = "pra cima" × normal);
+      // "pra cima" é o Z do mundo levado pra peça (ela pode estar girada)
+      const o = est.objetoAtual(), n = ponto.normal;
+      const up = o ? M4.aplicarDirecao(M4.inverter(o.transform), 0, 0, 1) : [0, 0, 1];
+      const lu = Math.hypot(up[0], up[1], up[2]) || 1, u = up.map(v => v / lu);
+      const deitada = Math.abs(n[0] * u[0] + n[1] * u[1] + n[2] * u[2]) > 0.9;
+      const dicaX = deitada ? [1, 0, 0] : [u[1] * n[2] - u[2] * n[1], u[2] * n[0] - u[0] * n[2], u[0] * n[1] - u[1] * n[0]];
+      const F = M4.doPlano(ponto.local, n, dicaX);
       return M4.multiplicar(F, M4.multiplicar(M4.translacao(pr.dx, pr.dy, 0), M4.rotacaoEuler(0, 0, pr.rotacao)));
     }
     return referencialSuperficie(lado, c, { dx: pr.dx, dy: pr.dy, rotacao: pr.rotacao });
@@ -157,7 +166,7 @@ export function montarRelevo(est) {
       titulo: 'Relevo — ' + (MODOS_RELEVO.find(m => m.id === pr.modo) || {}).nome,
       legenda: r.indiceNova >= 0 ? [['#0e9f2e', 'peça nova (' + pr.cor + ')']] : [],
       objetos: [{ transform: o.transform, partes: r.partes.map((x, i) => ({ malha: x.malha, cor: x.cor, paleta: x.paleta, papel: i === r.indiceNova ? 'novo' : 'normal' })) }],
-      notas: r.avisos,
+      notas: r.envolveu ? ['O desenho envolve a superfície curva (altura igual em todo lugar).', ...r.avisos] : r.avisos,
       confirmar: () => {
         est.cena.aplicar('Relevo na ' + (lado === 'verso' ? 'verso' : lado === 'frente' ? 'frente' : 'superfície'), () => {
           o.partes = r.partes.map((x, i) => i < o.partes.length ? novaParte({ ...o.partes[i], malha: x.malha, cor: x.cor, paleta: x.paleta, id: o.partes[i].id }) : novaParte({ nome: x.nome, malha: x.malha, cor: x.cor, paleta: x.paleta }));

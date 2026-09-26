@@ -9,7 +9,7 @@ import { autoInterseccoes } from './validador.js';
 
 const fmt = v => (Math.round(v * 100) / 100).toString().replace('.', ',');
 
-// opc: { tipo: 'torcer'|'afunilar'|'dobrar'|'inflar', valor, eixo: 0|1|2 }
+// opc: { tipo: 'torcer'|'afunilar'|'dobrar'|'inflar', valor, eixo: 0|1|2, sentido: 1|-1 }
 export function deformar(parte, opc) {
   const { tipo } = opc, valor = +opc.valor, eixo = opc.eixo == null ? 2 : +opc.eixo;
   if (!isFinite(valor) || valor === 0) throw new Error('Informe o valor.');
@@ -22,7 +22,8 @@ export function deformar(parte, opc) {
     const alvo = Math.max(Math.max(...cx.tam) / 80, 0.3);
     let M = M0.numTri() < 200000 ? ctx.guardar(M0.refineToLength(alvo)) : M0;
     const f = v => {
-      const t = (v[eixo] - a0) / L;                    // 0 embaixo, 1 em cima
+      // 0 embaixo, 1 em cima (sentido -1: a peça está de cabeça pra baixo no mundo)
+      const t = opc.sentido === -1 ? (a0 + L - v[eixo]) / L : (v[eixo] - a0) / L;
       if (tipo === 'torcer') {
         const ang = valor * Math.PI / 180 * t, co = Math.cos(ang), si = Math.sin(ang);
         const x = v[u] - c[u], y = v[w] - c[w];
@@ -38,7 +39,7 @@ export function deformar(parte, opc) {
         const th = t * ang, x = v[u] - c[u];
         const r = Rb - x;
         v[u] = c[u] + Rb - r * Math.cos(th);
-        v[eixo] = a0 + r * Math.sin(th);
+        v[eixo] = opc.sentido === -1 ? a0 + L - r * Math.sin(th) : a0 + r * Math.sin(th);
       }
     };
     if (tipo === 'inflar') {

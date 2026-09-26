@@ -409,16 +409,39 @@ CHECKLIST DA VERSÃO 6 — modelagem orgânica
                  4 cliques na mesa + fechar + espessura 3 = peça 30×20×3
                  com volume exato; desfazer tira
 
+CHECKLIST DA VERSÃO 7 — auditoria + preparar, curvas, texto na curva
+   ESCALA        200 matrizes (giro, escala, escala no mundo, espelho):
+                 rígida × esticar reconstrói igual; peça a 50% cortada
+                 com pino Ø5 folga 0,25: furo MEDIDO Ø5,50; desfazer
+                 volta; forma paramétrica guarda "Tamanho" e refaz igual
+   DESENHO       oito (400 mm³ exatos), estrela cheia, tubo que se
+                 cruza (1 peça, sem cruzamento), anel
+   CURVA SUAVE   passa pelos pontos; 8 pontos num círculo = 99,8% da
+                 área; canto pontudo; tubo curvo < 3 s; laço; vaso
+   ENVOLVER      caneca Ø40 + nome de 60 mm: volta de 60/20 rad exata,
+                 relevo 1 mm constante (volume 370 / teórico 369);
+                 gravação 0,6 mm (212,5 / 212,8); esfera alto e
+                 embutido; texto maior que a volta recusado com medidas;
+                 boneco de 121 mil triângulos (barriga e cabeça) limpo
+   PINCEL        caixa de 12 triângulos + detalhe: sobe 3,5 mm, malha
+                 fechada, detalhe só no lugar, cor herdada, simetria
+   DEFORMAR      peça de cabeça pra baixo: afunilar afina o topo do mundo
+   PELA TELA     escala 50% (malha 20×10×30, painel mostra 50%); pincel
+                 com detalhe numa caixa; curva suave em anel 33×33×3;
+                 "ABC" envolvendo a caneca (topo a 1 mm da parede);
+                 Preparar num STL furado e flutuando: consertado, na
+                 mesa, relatório, 1 Ctrl+Z volta tudo
+
 O QUE AINDA NÃO FAZ
   - Arredondar borda de forma livre (curva que não é reta nem círculo):
     recusa com aviso. Use Suavizar.
-  - Curvas: só polilinha (pontos retos) e tubo. Curva suave (Bézier)
-    e editar ponto depois de criar ainda não.
-  - Texto envolvendo superfície curva ainda não (relevo sai reto).
-  - Pincel de esculpir não muda a quantidade de triângulos durante o
-    traço (use "Mais detalhe na malha" antes). Sem pincel de "vincar".
-  - Botão único "Preparar para impressão" ainda não (hoje: Consertar +
-    Cortar + Exportar, cada um no seu painel).
+  - Curva suave é desenhada na mesa (plano). Curva 3D livre no espaço
+    ainda não. Editar os pontos só antes de criar a peça.
+  - Texto envolvendo: numa quina viva a letra dobra junto; em superfície
+    muito irregular (dobra de roupa funda) pode recusar.
+  - Pincel sem "vincar" e sem "máscara de pintura" ainda.
+  - Preparar pra imprimir não gira a peça sozinho (orientação é decisão
+    sua): ele mostra o problema e o botão "Deitar na maior face plana".
   - Não abre STEP (não existe biblioteca confiável que rode no
     navegador). Exporte STL ou 3MF do CAD.
   - Ímã é de grade (mm e graus). Ímã em vértice/borda/superfície ainda
