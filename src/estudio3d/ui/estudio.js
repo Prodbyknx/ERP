@@ -17,6 +17,8 @@ import { montarRelevo } from './secoes/relevo.js';
 import { montarExportar } from './secoes/exportar.js';
 import { montarFormas } from './secoes/formas.js';
 import { montarModificar } from './secoes/modificar.js';
+import { montarEsculpir } from './secoes/esculpir.js';
+import { montarDesenhar } from './secoes/desenhar.js';
 import { alinhar, duplicarEmSerie } from '../core/modelagem.js';
 import { icone } from './icones.js';
 import { calcularSugestoes } from './sugestoes.js';
@@ -29,6 +31,8 @@ const FERRAMENTAS = [
   { sec: 'inicio', ico: 'casa', rot: 'Início', titulo: 'O que você quer fazer?', desc: 'Escolha uma tarefa — o Estúdio guia o resto. As sugestões abaixo são do modelo aberto.' },
   { sec: 'formas', ico: 'formas', rot: 'Formas', titulo: 'Adicionar formas', desc: 'Caixa, cilindro, círculo, estrela, texto, furo de parafuso… Clique e a forma aparece na mesa. Medidas em mm, e dá pra juntar ou furar uma peça com a outra.' },
   { sec: 'mod', ico: 'modificar', rot: 'Modificar', titulo: 'Modificar a peça', desc: 'Arredondar e chanfrar bordas, puxar ou empurrar uma face, deixar oca com parede em mm e espelhar. Geometria de verdade, com prévia.' },
+  { sec: 'esc', ico: 'esculpir', rot: 'Esculpir', titulo: 'Esculpir e deformar', desc: 'Pincel pra puxar, empurrar, inflar, achatar e suavizar — com simetria ao vivo. Torcer, afunilar e dobrar a peça inteira.' },
+  { sec: 'des', ico: 'desenhar', rot: 'Desenhar', titulo: 'Desenhar e criar', desc: 'Desenhe um contorno na mesa e ele vira peça: com espessura, girado (vaso, puxador) ou tubo.' },
   { sec: 'diag', ico: 'escudo', rot: 'Consertar', titulo: 'Conferir e consertar', desc: 'Vê se o arquivo imprime e conserta buracos, faces viradas e sobras, sem perder detalhe.' },
   { sec: 'transf', ico: 'ajustar', rot: 'Ajustar', titulo: 'Posição, tamanho e cor', desc: 'Medidas em mm, girar, deitar pra imprimir sem suporte e a cor de cada peça.' },
   { sec: 'sel', ico: 'selecionar', rot: 'Selecionar', titulo: 'Selecionar uma parte', desc: 'Clique numa orelha, olho ou detalhe: a seleção para sozinha na dobra.' },
@@ -164,6 +168,8 @@ export class Estudio {
     this.painelCorpo.appendChild(this.inicioEl);
     this.secoes.formas = montarFormas(this);
     this.secoes.modificar = montarModificar(this);
+    this.secoes.esculpir = montarEsculpir(this);
+    this.secoes.desenhar = montarDesenhar(this);
     this.secoes.diagnostico = montarDiagnostico(this);
     this.secoes.transformar = montarTransformar(this);
     this.secoes.selecionar = montarSelecionar(this);
@@ -380,21 +386,23 @@ export class Estudio {
     cv.addEventListener('pointerup', ev => { if (soltarCorte(ev)) ev.stopImmediatePropagation(); }, true);
     cv.addEventListener('pointerdown', ev => {
       ini = { x: ev.clientX, y: ev.clientY, b: ev.button };
-      if (ev.button === 0 && this.ferramenta === 'pincel' && !this.previaAtiva) {
+      const pin = this.alvoPincel();
+      if (ev.button === 0 && pin && !this.previaAtiva) {
         const hit = this.visor.intersectar(ev);
         if (hit) {
           this.pintando = true;
           this.visor.controles.enabled = false;
           cv.setPointerCapture(ev.pointerId);
-          this.secoes.selecionar.pincel(hit, ev, true);
+          pin.pincel(hit, ev, true);
         }
       }
     });
     cv.addEventListener('pointermove', ev => {
-      if (this.ferramenta === 'pincel') {
+      const pin = this.alvoPincel();
+      if (pin) {
         const hit = this.visor.intersectar(ev);
-        this.secoes.selecionar.cursorPincel(hit);
-        if (this.pintando && hit) this.secoes.selecionar.pincel(hit, ev, false);
+        pin.cursorPincel(hit);
+        if (this.pintando && hit) pin.pincel(hit, ev, false);
       }
     });
     const fim = ev => {
@@ -402,7 +410,7 @@ export class Estudio {
         this.pintando = false;
         this.visor.controles.enabled = true;
         try { cv.releasePointerCapture(ev.pointerId); } catch (e) { /* ok */ }
-        this.secoes.selecionar.fimPincel();
+        const pin = this.alvoPincel(); if (pin) pin.fimPincel();
         ini = null;
         return;
       }
@@ -412,7 +420,7 @@ export class Estudio {
       ini = null;
     };
     cv.addEventListener('pointerup', fim);
-    cv.addEventListener('pointerleave', () => { if (this.ferramenta === 'pincel') this.secoes.selecionar.cursorPincel(null); });
+    cv.addEventListener('pointerleave', () => { const pin = this.alvoPincel(); if (pin) pin.cursorPincel(null); });
     cv.addEventListener('contextmenu', ev => ev.preventDefault());
     // arrastar arquivo
     const p = this.palco;
@@ -446,8 +454,12 @@ export class Estudio {
   visivel() { return !!this.raiz.offsetParent; }
 
   /* ------------------------------------------------------------ clique no 3D */
+  // quem recebe o arraste de pincel: seleção (pintar) ou esculpir
+  alvoPincel() { return this.ferramenta === 'pincel' ? this.secoes.selecionar : this.ferramenta === 'esculpir' ? this.secoes.esculpir : null; }
+
   clique(ev) {
     if (this.previaAtiva) return;
+    if (this.ferramenta === 'desenhar') { this.emitir('clique-mesa', { ponto: this.visor.pontoNaMesa(ev), ev }); return; }
     const hit = this.visor.intersectar(ev);
     if (this.ferramenta === 'navegar' || !hit) {
       if (hit) this.cena.selecionar(hit.objeto, hit.parte, ev.shiftKey);
@@ -461,13 +473,15 @@ export class Estudio {
   definirFerramenta(f) {
     this.ferramenta = f;
     if (f !== 'navegar') this.definirGizmoSilencioso('nenhum');
-    if (f !== 'pincel') this.visor.mostrarPincel(null);
+    if (f !== 'pincel' && f !== 'esculpir') this.visor.mostrarPincel(null);
     this.visor.renderer.domElement.style.cursor = f === 'navegar' ? '' : 'crosshair';
     this.dica.innerHTML = f === 'pincel' ? 'arraste sobre a peça pra pintar · começando fora da peça, gira a vista'
       : f === 'navegar' ? 'arrastar: girar · botão direito: mover · rodinha: zoom'
       : f === 'corte' ? 'clique na peça: o corte vai até ali · arraste a seta azul · ↑ ↓ ajustam'
       : f === 'deitar' ? 'clique na face que deve ficar na mesa · Esc volta'
       : f === 'modificar' ? 'clique na borda ou na face da peça · Esc volta'
+      : f === 'esculpir' ? 'arraste sobre a peça pra esculpir · começando fora dela, gira a vista'
+      : f === 'desenhar' ? 'clique na mesa pra marcar pontos · clique no 1º pra fechar'
       : 'clique na peça · Shift soma · Alt tira · Esc volta';
     this.emitir('ferramenta', f);
   }
@@ -812,7 +826,7 @@ export class Estudio {
       el('button', { class: 'btn', title: 'Fica só onde as peças se encostam', onclick: () => this.combinarSelecao('intersectar') }, 'Parte comum'),
       el('button', { class: 'btn', title: 'Várias peças num objeto só, cada uma com sua cor', onclick: () => this.agruparSelecao() }, 'Agrupar'),
       this.botaoAlinhar(),
-      temFuro ? el('button', { class: 'btn', title: 'Os furos passam a fazer parte da geometria', onclick: () => this.aplicarFurosAgora() }, 'Aplicar furos') : null);
+      ...(temFuro ? [el('button', { class: 'btn', title: 'Os furos passam a fazer parte da geometria', onclick: () => this.aplicarFurosAgora() }, 'Aplicar furos')] : []));
   }
   botaoAlinhar() {
     const w = el('div', { class: 'e3d-alinhar' });

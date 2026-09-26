@@ -37,6 +37,8 @@ const P = {
   furo: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5" stroke-dasharray="2 2"/>',
   ima: '<path d="M6 3.5v8a6 6 0 0 0 12 0v-8"/><path d="M6 7.5h4M14 7.5h4M10 3.5v8a2 2 0 0 0 4 0v-8"/>',
   modificar: '<path d="M4 20V9a5 5 0 0 1 5-5h11"/><path d="M4 14h6a4 4 0 0 0 4-4V4"/><circle cx="4" cy="20" r="1.4"/>',
+  esculpir: '<path d="M4 19c3-1 4-4 6-6s5-2 7-4 2-5 3-6"/><circle cx="18.5" cy="5.5" r="2"/><path d="M3 21h18"/>',
+  desenhar: '<path d="M4 20 7.5 8.5 16 4.5 20 12 12.5 19.5z"/><circle cx="4" cy="20" r="1.3"/><circle cx="7.5" cy="8.5" r="1.3"/><circle cx="16" cy="4.5" r="1.3"/>',
   faisca: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/>'
 };
 

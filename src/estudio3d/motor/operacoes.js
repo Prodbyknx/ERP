@@ -7,6 +7,8 @@ import { comContexto, manifold, temManifold } from '../core/solidos.js';
 import { cortarPorPlano } from '../core/corte.js';
 import { cortarLocal, sugerirSeparacao } from '../core/corteLocal.js';
 import { aplicarOperacao, reaplicar } from '../core/historico.js';
+import { deformar, suavizar } from '../core/deformar.js';
+import { criarDoDesenho } from '../core/desenho.js';
 import { separarDetalhe, separarPorCor, separarCascas } from '../core/separar.js';
 import { aplicarRelevo } from '../core/relevo.js';
 import { segmentar } from '../core/segmentacao.js';
@@ -147,6 +149,21 @@ export const OPERACOES = {
   // (op com bordas/faces por posição relativa: dá pra refazer depois)
   modificar({ parte, op }) { const p = aplicarOperacao(parte, op); return { parte: { ...p, nome: parte.nome } }; },
   reaplicar({ parte, operacoes }) { return reaplicar(parte, operacoes); },
+  // orgânico: torcer/afunilar/dobrar/inflar a peça inteira e suavizar de verdade
+  deformar({ parte, opc }) { return deformar(parte, opc || {}); },
+  suavizar({ parte, opc }) { return suavizar(parte, opc || {}); },
+  // desenho 2D -> peça (espessura, giro ou tubo)
+  desenho({ pts, tipo, opc }) { return criarDoDesenho(pts, tipo, opc || {}); },
+  // divide os triângulos (pro pincel de esculpir ter onde mexer)
+  refinar({ parte, aresta }) {
+    return comContexto(ctx => {
+      const M = ctx.solido(parte, parte.nome);
+      if (M.numTri() > 600000) throw new Error('A malha já tem muito detalhe (' + M.numTri() + ' triângulos).');
+      const r = ctx.guardar(M.refineToLength(Math.max(0.1, +aresta || 1)));
+      if (r.numTri() > 1500000) throw new Error('Ficaria com ' + r.numTri() + ' triângulos — use um pincel maior.');
+      return { parte: ctx.parte(r, parte.nome, parte.cor, false) };
+    });
+  },
   // prévia ao vivo dos furos num objeto
   furar({ alvo, furos }) { return aplicarFuros(alvo, furos); },
 

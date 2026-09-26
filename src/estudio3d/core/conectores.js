@@ -84,7 +84,11 @@ export function dimensionarConector(secao, cfg0, avisos = []) {
   const tam = cfg.tipo === 'quadrado' ? cfg.lado * Math.SQRT1_2 : cfg.tipo === 'hexagonal' ? cfg.diametro / 2 / Math.cos(Math.PI / 6) : cfg.diametro / 2;
   let r = cfg.auto ? Math.min(4, Math.max(rIn * 0.45, Math.min(1.5, rMax))) : tam;
   if (r > rMax) r = rMax;
-  if (r < 0.9) return cfg;                          // não cabe nem Ø2: gerarConectores avisa
+  if (r < 0.9) {
+    // não cabe nem Ø2 com parede: explica em vez de "precisa de X mm"
+    avisos.push('A seção do corte tem só ~' + (2 * rIn).toFixed(1).replace('.', ',') + ' mm de largura: não cabe pino (precisa de uns 5 mm). Saiu sem encaixe — cole as partes, ou deixe a parede mais grossa aí.');
+    return { ...cfg, naoCabe: true };
+  }
   const passo = v => Math.floor(v * 2) / 2;         // de 0,5 em 0,5 mm
   const antes = medidaTexto(cfg);
   if (cfg.tipo === 'quadrado') cfg.lado = Math.max(1.5, passo(r / Math.SQRT1_2));
@@ -158,6 +162,7 @@ export function gerarConectores(ctx, { solidoA, solidoB, frame, secao, cfg }) {
   const positivos = [], negativosA = [], negativosB = [], soltos = [];
   const relatorio = [];
 
+  if (cfg.naoCabe) return { positivos, negativosA, negativosB, soltos, relatorio, avisos };
   if (cfg.tipo === 'lingueta' || cfg.tipo === 'andorinha') {
     return gerarTrilho(ctx, { frame, secao, cfg, avisos });
   }

@@ -391,15 +391,34 @@ CHECKLIST DA VERSÃO 5 — corte, separação orgânica e modelagem
    Cada resultado: fechado, sem cruzamento, sem face degenerada, 3MF
    exportado e reaberto com a mesma medida e volume.
 
+CHECKLIST DA VERSÃO 6 — modelagem orgânica
+   ESCULPIR      puxar com simetria X (os 2 lados mexem igual), empurrar,
+                 inflar, achatar, suavizar; malha continua fechada;
+                 placa fina empurrada até atravessar -> traço desfeito
+   DEFORMAR      torcer 45°, afunilar 0,6, dobrar 45°, inflar 1 mm:
+                 sólido fechado sem cruzamento; torcer absurdo recusado
+   SUAVIZAR      cubo refinado alisado com medida mantida
+   DESENHAR      placa com cantos arredondados (volume da conta), vaso
+                 girado, tubo por caminho; pontos em linha recusados
+   MÁSCARA       elipsoide -> esculpir -> afunilar -> cortar metade ->
+                 oca 2 mm aberta -> furos olhos/boca -> cortar em 2 com
+                 pino automático: sem pino e com aviso "não cabe pino"
+   PELA TELA     esfera Ø40 + traço arrastado com simetria X (os 2 lados
+                 mudam, malha válida) + Ctrl+Z volta idêntico; caixa
+                 20×20×40 torcida 45° com prévia (altura 40 mantida);
+                 4 cliques na mesa + fechar + espessura 3 = peça 30×20×3
+                 com volume exato; desfazer tira
+
 O QUE AINDA NÃO FAZ
   - Arredondar borda de forma livre (curva que não é reta nem círculo):
     recusa com aviso. Use Suavizar.
-  - Deformar/esculpir (puxar região, inflar, torcer), desenhar perfil 2D
-    e revolucionar, curvas/tubos e texto envolvendo superfície curva:
-    próxima etapa (modelagem orgânica).
-  - Simetria "ao vivo" (mexe de um lado, o outro acompanha) vem junto
-    com as ferramentas de deformação; hoje: simetria na escolha de
-    bordas/faces e Espelhar + unir.
+  - Curvas: só polilinha (pontos retos) e tubo. Curva suave (Bézier)
+    e editar ponto depois de criar ainda não.
+  - Texto envolvendo superfície curva ainda não (relevo sai reto).
+  - Pincel de esculpir não muda a quantidade de triângulos durante o
+    traço (use "Mais detalhe na malha" antes). Sem pincel de "vincar".
+  - Botão único "Preparar para impressão" ainda não (hoje: Consertar +
+    Cortar + Exportar, cada um no seu painel).
   - Não abre STEP (não existe biblioteca confiável que rode no
     navegador). Exporte STL ou 3MF do CAD.
   - Ímã é de grade (mm e graus). Ímã em vértice/borda/superfície ainda

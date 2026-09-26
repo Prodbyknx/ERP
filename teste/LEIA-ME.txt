@@ -17,6 +17,44 @@ COMO USAR
    de exemplo: Gabriel (admin) e Ana (vendedora).
 
 
+NOVIDADES DESTA VERSÃO (6) — ESCULPIR, DEFORMAR, DESENHAR
+---------------------------------------------------------
+
+ESCULPIR (trilho da esquerda → Esculpir)
+Arraste sobre a peça: Puxar, Empurrar, Inflar, Achatar, Suavizar.
+Tamanho (raio em mm) e Força. SIMETRIA X ou Y: mexe de um lado, o
+outro acompanha na hora. Cada traço é uma etapa do Ctrl+Z. Se o traço
+fizer a peça atravessar ela mesma, ele é desfeito sozinho com aviso.
+Malha grossa (caixa, STL simples)? Clique "Mais detalhe na malha".
+Começando o arraste fora da peça, gira a vista normalmente.
+
+DEFORMAR A PEÇA INTEIRA (mesmo painel)
+Torcer (graus), Afunilar (escala no topo), Dobrar (graus), Inflar (mm),
+ao longo de X, Y ou Z — sempre com prévia. Valor que faria a peça se
+cruzar é recusado dizendo o motivo.
+
+SUAVIZAR DE VERDADE (mesmo painel)
+Alisa a malha exportada (o botão "Facetado" só muda a tela). "Manter as
+medidas" deixa a caixa da peça igual. Com seleção feita em Selecionar,
+alisa só a região escolhida.
+
+DESENHAR (trilho → Desenhar)
+Clique na mesa pra marcar pontos (ímã 0,5 mm), clique no 1º pra fechar:
+  Espessura  placa/base/logo, com cantos arredondados opcionais
+  Girar      vaso, puxador, botão — a linha da esquerda é o eixo
+  Tubo       caminho aberto vira tubo do diâmetro escolhido
+Sai peça fechada, apoiada na mesa, com a medida desenhada.
+
+MÁSCARA (fluxo testado de ponta a ponta)
+Esfera/elipsoide → esculpir com simetria → afunilar → cortar a metade
+de trás → Modificar → Oca 2 mm aberta atrás → furos de olhos e boca →
+cortar em 2. Se a parede for fina demais pra pino, o sistema avisa
+"não cabe pino… cole as partes" em vez de fazer pino quebrado.
+
+Forma esculpida/deformada deixa de ser "paramétrica": mudar o diâmetro
+em Formas apagaria o traço, então a peça vira malha livre (Ctrl+Z volta).
+
+
 NOVIDADES DESTA VERSÃO (5) — CORTAR PARTE, SEPARAR MÃO, MODELAR
 ---------------------------------------------------------------
 

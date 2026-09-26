@@ -5,6 +5,7 @@
 // 3) fluxo completo: abrir, analisar, selecionar com clique, separar com
 //    encaixe, desfazer/refazer, cortar com pinos, texto frente/verso,
 //    separar por cor, exportar 3MF/STL, reabrir o 3MF exportado
+// 10) orgânico: esculpir, torcer, desenhar (tests/e2e/organico.mjs)
 // 4) gerador de chaveiro: 3MF novo (cor que o Bambu lê) e "Abrir no Estúdio"
 import fs from 'node:fs';
 import path from 'node:path';
@@ -604,6 +605,10 @@ async function main() {
     await pg.waitForFunction(() => { const e = window.Estudio3D.estudio, c = e.cena.caixaExata(e.cena.objetos[1]); return Math.abs(c.max[2] - c.min[2] - 25) < 1e-6; }, null, { timeout: 30000 });
   });
   await pg.context().close();
+
+  console.log('10) orgânico: esculpir com simetria, torcer com prévia, desenhar e criar peça');
+  const { secaoOrganico } = await import('./organico.mjs');
+  await secaoOrganico({ b, teste, novaPagina, passo, abrirEstudio, abrirSecao, confirmarPrevia });
 
   console.log('7) laboratório fotos -> 3D (pacote de teste, file://)');
   const { cenaDeFotos } = await import('../util/fotos.mjs');

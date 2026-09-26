@@ -328,7 +328,7 @@ export function separarNoPlano(ctx, U, plano0, ponto, opc = {}, avisos = []) {
     soltos.push(...g.soltos);
     if (!relatorio.length) {
       for (let i = avisos.length - 1; i >= 0; i--) if (/estreito demais|pulado/.test(avisos[i])) avisos.splice(i, 1);
-      avisos.push('O encaixe não coube nessa seção (≈' + Math.sqrt(areaSecao / Math.PI * 4).toFixed(1) + ' mm). Separei sem encaixe; mova o corte pra uma parte mais grossa se quiser pino.');
+      if (!avisos.some(a => /não cabe pino/.test(a))) avisos.push('O encaixe não coube nessa seção (≈' + Math.sqrt(areaSecao / Math.PI * 4).toFixed(1) + ' mm). Separei sem encaixe; mova o corte pra uma parte mais grossa se quiser pino.');
     }
   }
   return { det, resto, frame, secao, areaSecao, relatorio, soltos };
