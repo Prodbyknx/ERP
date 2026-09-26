@@ -7,7 +7,7 @@
 import { criar, caixa, subMalha } from './malha.js';
 import { autoInterseccoes } from './validador.js';
 
-export const PINCEIS = ['puxar', 'empurrar', 'inflar', 'achatar', 'suavizar'];
+export const PINCEIS = ['puxar', 'empurrar', 'inflar', 'achatar', 'suavizar', 'vincar'];
 
 const chave = (x, y, z, cel) => Math.floor(x / cel) + ',' + Math.floor(y / cel) + ',' + Math.floor(z / cel);
 
@@ -189,6 +189,19 @@ function aplicar(s, c, opc) {
       return n ? a.map(x => x / n) : [P[v * 3], P[v * 3 + 1], P[v * 3 + 2]];
     });
     viz.forEach(([v], i) => { const k = w[i] * Math.min(1, f * 1.5); for (let e = 0; e < 3; e++) P[v * 3 + e] += (novo[i][e] - P[v * 3 + e]) * k; });
+  } else if (tipo === 'vincar') {
+    // VINCO: puxa a pele pro centro do pincel (no plano da superfície) e
+    // afunda o meio com queda bem mais fina — ao arrastar, vira um sulco
+    // estreito e fundo (dobra de roupa, ruga, costura, divisão de dedos)
+    viz.forEach(([v, d], i) => {
+      const x = [P[v * 3], P[v * 3 + 1], P[v * 3 + 2]];
+      let ac = [c[0] - x[0], c[1] - x[1], c[2] - x[2]];
+      const dn = ac[0] * nm[0] + ac[1] * nm[1] + ac[2] * nm[2];
+      ac = [ac[0] - nm[0] * dn, ac[1] - nm[1] * dn, ac[2] - nm[2] * dn];
+      const q = 1 - d / R, fino = q * q * q * q;       // queda estreita pro fundo
+      const belisca = w[i] * f * 0.04;
+      for (let e = 0; e < 3; e++) P[v * 3 + e] += ac[e] * belisca - nm[e] * passo * 0.6 * fino;
+    });
   } else if (tipo === 'achatar') {
     // plano: pelo centro dos vértices da região, normal média
     let o = [0, 0, 0], W = 0;

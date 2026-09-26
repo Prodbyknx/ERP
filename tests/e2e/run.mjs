@@ -1,5 +1,6 @@
 // Testes de ponta a ponta no Chromium (Playwright), no pacote de TESTE:
 //   node tests/e2e/run.mjs
+// 0) equivalência com o sistema original: mesmas contas, abas e dados (tests/e2e/equivalencia.mjs)
 // 1) regressão: todas as abas do ERP abrem sem erro de JavaScript + PDF
 // 2) Estúdio 3D aberto por file:// (dois cliques) e por http://
 // 3) fluxo completo: abrir, analisar, selecionar com clique, separar com
@@ -7,6 +8,7 @@
 //    separar por cor, exportar 3MF/STL, reabrir o 3MF exportado
 // 10) orgânico: esculpir, torcer, desenhar (tests/e2e/organico.mjs)
 // 11) v7: escala em mm, detalhe no pincel, curva, texto envolvendo, preparar (tests/e2e/v7.mjs)
+// 12) v8: curva 3D, editar desenho, em pé, sobre a peça, texto na quina, vincar (tests/e2e/v8.mjs)
 // 4) gerador de chaveiro: 3MF novo (cor que o Bambu lê) e "Abrir no Estúdio"
 import fs from 'node:fs';
 import path from 'node:path';
@@ -96,6 +98,19 @@ async function main() {
   const modelos = path.join(tmp, 'modelos'); fs.mkdirSync(modelos);
   await gerarModelos(modelos);
   const b = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader'] });
+
+  console.log('0) equivalência com o sistema original (calculadora, orçamento, relatórios, todas as abas, dados) — antes e depois de usar o Estúdio');
+  {
+    const { equivalencia } = await import('./equivalencia.mjs');
+    const pg0 = await novaPagina(b);
+    await passo(pg0, 'original × atual: 88 contas da calculadora, orçamento, DRE/ABC/canais/clientes, 15 abas e dados idênticos (e continuam idênticos depois de usar o Estúdio 3D)', async () => {
+      const r = await equivalencia({ b, tmp, teste, log: null });
+      const d = [...r.difAtual, ...r.difDepoisEstudio];
+      if (r.naoDeterminismo.length) throw new Error('comparação não determinística: ' + r.naoDeterminismo[0]);
+      if (d.length || r.erros.length) throw new Error(d.length + ' diferença(s): ' + d.slice(0, 3).join(' | ') + (r.erros.length ? ' | erro: ' + r.erros[0] : ''));
+    });
+    await pg0.context().close();
+  }
 
   console.log('1) regressão das abas (file://)');
   let pg = await novaPagina(b);
@@ -614,6 +629,10 @@ async function main() {
   console.log('11) v7: escala em mm, pincel com detalhe, curva suave, texto envolvendo, preparar pra imprimir');
   const { secaoV7 } = await import('./v7.mjs');
   await secaoV7({ b, teste, tmp, novaPagina, passo, abrirEstudio, abrirSecao, confirmarPrevia });
+
+  console.log('12) v8: tubo que sobe, editar desenho depois, desenho em pé, tubo sobre a peça, texto na quina, vincar');
+  const { secaoV8 } = await import('./v8.mjs');
+  await secaoV8({ b, teste, novaPagina, passo, abrirEstudio, abrirSecao, confirmarPrevia });
 
   console.log('7) laboratório fotos -> 3D (pacote de teste, file://)');
   const { cenaDeFotos } = await import('../util/fotos.mjs');

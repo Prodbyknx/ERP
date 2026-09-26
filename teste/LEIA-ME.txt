@@ -17,6 +17,47 @@ COMO USAR
    de exemplo: Gabriel (admin) e Ana (vendedora).
 
 
+NOVIDADES DESTA VERSÃO (8) — CURVA 3D, EDITAR DEPOIS, VINCAR, TEXTO NA QUINA
+------------------------------------------------------------------------------
+
+AUDITORIA DO SISTEMA INTEIRO (antes de mexer em qualquer coisa)
+O sistema original (como foi recebido) e o atual rodam lado a lado no
+navegador com as mesmas ações: 88 contas da calculadora, orçamento com
+desconto, DRE, curva ABC, canais, clientes, o texto das 15 abas e os
+dados gravados saem IDÊNTICOS — antes e depois de usar o Estúdio 3D.
+Esse teste agora roda sempre (npm run e2e, seção 0): se algum dia uma
+mudança no Estúdio afetar Financeiro, Orçamento, Calculadora ou
+Cadastro, o teste acusa.
+
+DESENHAR: ONDE (Na mesa · Em pé (frente) · Em pé (lado) · Sobre a peça)
+- Na mesa, modo Tubo: clique num ponto e digite a ALTURA (ou ▲▼). O tubo
+  sobe e desce: alça em arco, ponte, mola, suporte.
+- Em pé: o desenho fica num plano vertical que passa pelo meio da peça
+  escolhida. Perfil em pé + "Girar" = vaso de pé no lugar desenhado.
+- Sobre a peça: clique em cima de uma peça; o tubo corre por cima da
+  superfície (cipó, alça colada, cabo, costura).
+
+EDITAR DEPOIS DE CRIAR
+Escolha uma peça feita no Desenhar e abra o Desenhar: aparece "Editar
+o desenho". Mova pontos, mude altura, diâmetro, espessura → "Atualizar
+peça". Ctrl+Z volta. (Se a peça foi mudada depois por outra ferramenta,
+o sistema avisa antes.)
+
+PINCEL VINCAR (Esculpir)
+Arraste: faz um sulco estreito e fundo (dobra de roupa, ruga, costura,
+divisão de dedos). Cria detalhe sozinho debaixo do pincel.
+
+TEXTO QUE PASSA DA QUINA
+Texto clicado perto da borda de uma caixa continua na outra face,
+dobrado em meia-esquadria, com a mesma altura nas duas faces — como um
+adesivo grosso. Funciona em quina pra fora (borda da caixa) e pra dentro
+(degrau).
+
+CORRIGIDO
+- Mesa vazia: o cartão "Arraste seu modelo" tapava o meio da mesa no
+  Desenhar. Agora some enquanto você desenha.
+
+
 NOVIDADES DESTA VERSÃO (7) — PREPARAR PRA IMPRIMIR, CURVAS, TEXTO NA CURVA
 --------------------------------------------------------------------------
 

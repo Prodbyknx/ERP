@@ -432,14 +432,32 @@ CHECKLIST DA VERSÃO 7 — auditoria + preparar, curvas, texto na curva
                  Preparar num STL furado e flutuando: consertado, na
                  mesa, relatório, 1 Ctrl+Z volta tudo
 
+CHECKLIST DA VERSÃO 8 — auditoria geral + curva 3D, editar, vincar, quina
+   ERP INTACTO   versão original × atual no mesmo navegador: calculadora
+                 (88 combinações), orçamento, DRE/ABC/canais/clientes, 15
+                 abas e dados IDÊNTICOS, antes e depois de usar o Estúdio;
+                 o teste pega até 0,1% de diferença num preço (conferido
+                 plantando o erro de propósito). Arquivos de produção
+                 cloud.js, config.js e _headers iguais ao original; o
+                 Estúdio só carrega quando é aberto; CSS só no Estúdio
+   QUINA         texto da frente pro topo da caixa: volume 102 (teórico
+                 102), 1 mm nas duas faces; degrau (quina pra dentro):
+                 sem cruzamento, volume 90 (teórico 90); gravar na quina
+   VINCAR        sulco estreito (lado ~20% do fundo) sem se cruzar, com
+                 pincel de 2 e 5 mm, 1 a 3 passadas
+   CURVA 3D      alça em arco 44×24 mm exata, mola, anel inclinado,
+                 placa e vaso desenhados em pé, tubo sobre a esfera
+   PELA TELA     tubo com ponto a 20 mm -> editar pra 10 mm -> Ctrl+Z;
+                 vaso em pé; cipó na esfera; letra dobrando na quina da
+                 caixa; vincar arrastando
+
 O QUE AINDA NÃO FAZ
   - Arredondar borda de forma livre (curva que não é reta nem círculo):
     recusa com aviso. Use Suavizar.
-  - Curva suave é desenhada na mesa (plano). Curva 3D livre no espaço
-    ainda não. Editar os pontos só antes de criar a peça.
-  - Texto envolvendo: numa quina viva a letra dobra junto; em superfície
-    muito irregular (dobra de roupa funda) pode recusar.
-  - Pincel sem "vincar" e sem "máscara de pintura" ainda.
+  - Curva 3D: pelos planos (mesa com altura, em pé, sobre a peça). Não
+    há "desenhar no ar" com o mouse em qualquer direção.
+  - Texto na quina: quina curva (borda redonda de pote) fica aproximada.
+  - Pincel sem "máscara de pintura" ainda.
   - Preparar pra imprimir não gira a peça sozinho (orientação é decisão
     sua): ele mostra o problema e o botão "Deitar na maior face plana".
   - Não abre STEP (não existe biblioteca confiável que rode no

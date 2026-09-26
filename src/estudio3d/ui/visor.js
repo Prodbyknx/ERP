@@ -436,6 +436,13 @@ export class Visor {
     return new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
   }
   // ponto do mouse no plano da mesa (z = 0), no mundo
+  // ponto onde o raio do mouse cruza o plano n·p = d (desenho em pé)
+  pontoNoPlano(ev, n, d) {
+    this.raycaster.setFromCamera(this.pontoTela(ev), this.camera);
+    const p = new THREE.Vector3();
+    return this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(n[0], n[1], n[2]), -d), p) ? p : null;
+  }
+
   pontoNaMesa(ev) {
     this.raycaster.setFromCamera(this.pontoTela(ev), this.camera);
     const p = new THREE.Vector3();

@@ -106,3 +106,39 @@ test('verso: grava embaixo e lê certo quando a peça é virada', () => {
     assert.ok(Math.abs(val(r.partes[0].malha, {}).volume - (16000 + 120)) < 1e-6);
   });
 }
+
+// ---------------------------------------------------------------- QUINA VIVA
+{
+  const { comContexto: cc, manifold: mf } = await import('../src/estudio3d/core/solidos.js');
+  const { executar: ex } = await import('../src/estudio3d/motor/operacoes.js');
+  const { validar: val } = await import('../src/estudio3d/core/validador.js');
+  const mk = f => cc(ctx => ctx.parte(ctx.guardar(f(mf().Manifold)), 'x', '#999999').malha);
+  const barra = (w, h) => [[[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]]];
+  const limpo = (m, rot) => { const v = val(m, { completo: true }); assert.ok(v.fechada && !v.autoInterseccoes && !v.facesDegeneradas && v.componentes === 1, rot + ' ' + JSON.stringify({ f: v.fechada, ai: v.autoInterseccoes, c: v.componentes })); return v; };
+
+  test('QUINA CONVEXA: texto que passa da frente pro topo da caixa dobra junto (meia-esquadria), 1 mm nas duas faces, nada cortado', () => {
+    const cx = mk(M => M.cube([40, 40, 20], true).translate([0, 0, 10]));      // 12 triângulos
+    const r = ex('relevo', { partes: [{ nome: 'C', malha: cx, cor: '#333333' }], alvo: 0, forma: { aneis: barra(6, 16) }, opc: { modo: 'alto-cor', lado: 'ponto', ponto: [0, -20, 16], normal: [0, -1, 0], dicaX: [1, 0, 0], altura: 1, cor: '#FFFFFF' } });
+    assert.equal(r.envolveu, true); assert.deepEqual(r.avisos, []);
+    const p = r.partes[1].malha, v = limpo(p, 'letra dobrada');
+    // 12 mm na frente + 4 mm no topo + o canto da dobra (6×1×1)
+    assert.ok(Math.abs(v.volume - (6 * 12 + 6 * 4 + 6)) < 0.3, 'volume ' + v.volume);
+    let yMin = Infinity, zMax = -Infinity, yMaxTopo = -Infinity;
+    for (let i = 0; i < p.pos.length; i += 3) { yMin = Math.min(yMin, p.pos[i + 1]); zMax = Math.max(zMax, p.pos[i + 2]); if (p.pos[i + 2] > 20.5) yMaxTopo = Math.max(yMaxTopo, p.pos[i + 1]); }
+    // (os pedaços se sobrepõem 2 µm no corte: a ponta da dobra fica até 5 µm maior)
+    assert.ok(Math.abs(yMin + 21) < 0.005 && Math.abs(zMax - 21) < 0.005, 'altura 1 mm nas duas faces: ' + yMin + ' / ' + zMax);
+    assert.ok(Math.abs(yMaxTopo - (-16)) < 0.05, 'no topo vai 4 mm além da quina: ' + yMaxTopo);
+  });
+
+  test('QUINA CÔNCAVA: texto descendo da parede pro piso do degrau não se cruza; gravar na quina também', () => {
+    const L = mk(M => M.union([M.cube([40, 40, 10]), M.cube([40, 20, 30]).translate([0, 20, 0])]));
+    const r = ex('relevo', { partes: [{ nome: 'L', malha: L, cor: '#333333' }], alvo: 0, forma: { aneis: barra(6, 16) }, opc: { modo: 'alto-cor', lado: 'ponto', ponto: [20, 20, 13], normal: [0, -1, 0], dicaX: [1, 0, 0], altura: 1, cor: '#FFFFFF' } });
+    assert.equal(r.envolveu, true);
+    const v = limpo(r.partes[1].malha, 'letra no degrau');
+    assert.ok(Math.abs(v.volume - (6 * 16 - 6)) < 0.3, 'volume ' + v.volume);
+    const g = ex('relevo', { partes: [{ nome: 'L', malha: L, cor: '#333333' }], alvo: 0, forma: { aneis: barra(6, 16) }, opc: { modo: 'baixo', lado: 'ponto', ponto: [20, 20, 13], normal: [0, -1, 0], dicaX: [1, 0, 0], profundidade: 0.6 } });
+    limpo(g.partes[0].malha, 'degrau gravado');
+    const tirado = val(L, {}).volume - val(g.partes[0].malha, {}).volume;
+    assert.ok(Math.abs(tirado - (6 * 16 * 0.6 + 6 * 0.36)) < 0.3, 'gravado ' + tirado);
+  });
+}

@@ -502,6 +502,7 @@ export class Estudio {
       : f === 'esculpir' ? 'arraste sobre a peça pra esculpir · começando fora dela, gira a vista'
       : f === 'desenhar' ? 'clique na mesa pra marcar pontos · clique no 1º pra fechar · arraste um ponto pra mudar'
       : 'clique na peça · Shift soma · Alt tira · Esc volta';
+    this.vazio.style.display = this.cena.objetos.length || f === 'desenhar' ? 'none' : '';
     this.emitir('ferramenta', f);
   }
   definirGizmoSilencioso(m) {
@@ -514,7 +515,8 @@ export class Estudio {
     this.visor.sincronizar();
     this.renderCena();
     this.atualizarHud();
-    this.vazio.style.display = this.cena.objetos.length ? 'none' : '';
+    // desenhando na mesa vazia: o cartão "Arraste seu modelo" sai da frente
+    this.vazio.style.display = this.cena.objetos.length || this.ferramenta === 'desenhar' ? 'none' : '';
     this.objetosEl.style.display = this.cena.objetos.length ? '' : 'none';
     this.renderSaude();
     if (this.painel.classList.contains('inicio')) this.renderInicio();

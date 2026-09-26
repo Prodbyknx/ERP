@@ -140,3 +140,27 @@ test('ESCULPIR com DETALHE AUTOMÁTICO: caixa de 12 triângulos ganha detalhe s�
   for (let i = 0; i < P.length; i += 3) { if (P[i] > 1) d = Math.max(d, P[i + 2]); else if (P[i] < -1) e = Math.max(e, P[i + 2]); }
   assert.ok(e > 16.5 && Math.abs(d - e) < 0.35, 'altura dos lados ' + e.toFixed(2) + ' / ' + d.toFixed(2));
 });
+
+test('VINCAR: arrastar o pincel faz um sulco estreito (fundo no meio, raso a meio raio), malha fechada e sem se cruzar', () => {
+  const m = mk(M => M.sphere(20, 128));
+  const s = criarSessao(m, { raio: 5 });
+  // traço na frente da esfera, na horizontal (x de -8 a 8, em y = -20)
+  for (let k = 0; k < 3; k++) for (let x = -8; x <= 8; x += 0.5) {
+    const c = [x, -Math.sqrt(400 - x * x), 0];
+    tocar(s, c, { tipo: 'vincar', raio: 5, forca: 0.7, detalhe: 0.4 });
+  }
+  const r = concluir(s);
+  assert.ok(r.mudou, r.erro);
+  ok(r.malha, 'vincada');
+  // profundidade (quanto entrou em relação à esfera) no meio do traço x ~ 0
+  const P = r.malha.pos; let meio = 0, lado = 0;
+  for (let i = 0; i < P.length; i += 3) {
+    const x = P[i], y = P[i + 1], z = P[i + 2];
+    if (Math.abs(x) > 2 || y > -10) continue;
+    const prof = 20 - Math.hypot(x, y, z);
+    if (Math.abs(z) < 0.4) meio = Math.max(meio, prof);
+    if (Math.abs(Math.abs(z) - 2.5) < 0.4) lado = Math.max(lado, prof);
+  }
+  assert.ok(meio > 0.8, 'sulco fundo: ' + meio.toFixed(2));
+  assert.ok(lado < meio * 0.45, 'sulco estreito: meio ' + meio.toFixed(2) + ' / meio raio ' + lado.toFixed(2));
+});

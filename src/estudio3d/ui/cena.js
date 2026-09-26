@@ -61,6 +61,7 @@ export function novoObjeto(o) {
     papel: o.papel === 'furo' ? 'furo' : 'solido',     // furo tira material de quem ele atravessa
     forma: o.forma || null,                             // { id, params, texto? } quando veio da biblioteca
     esticado: o.esticado ? Float64Array.from(o.esticado) : undefined,   // escala que já foi pra malha (só pra mostrar %)
+    desenho: o.desenho || undefined,                    // peça feita no Desenhar: pontos pra editar depois
     operacoes: o.forma && o.operacoes ? o.operacoes : undefined   // Modificar feitos na forma (refeitos ao mudar medida)
   };
 }

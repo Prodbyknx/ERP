@@ -7,7 +7,7 @@ import { el, fmt, lerNumero, avisar } from '../util.js';
 import { criarSessao, tocar, concluir, arestaMedia } from '../../core/esculpir.js';
 import * as M4 from '../../core/mat4.js';
 
-const PINCEL = [['puxar', 'Puxar'], ['empurrar', 'Empurrar'], ['inflar', 'Inflar'], ['achatar', 'Achatar'], ['suavizar', 'Suavizar']];
+const PINCEL = [['puxar', 'Puxar'], ['empurrar', 'Empurrar'], ['inflar', 'Inflar'], ['achatar', 'Achatar'], ['suavizar', 'Suavizar'], ['vincar', 'Vincar']];
 const DEF = [['torcer', 'Torcer', 'graus', 45], ['afunilar', 'Afunilar', 'escala no topo (1 = igual)', 0.6], ['dobrar', 'Dobrar', 'graus', 45], ['inflar', 'Inflar', 'mm', 1]];
 
 export function montarEsculpir(est) {
@@ -87,7 +87,7 @@ export function montarEsculpir(est) {
   // eixo do MUNDO (o que o usuário vê) -> eixo da peça, mesmo se ela foi girada
   const dirLocal = (o, k) => { const d = M4.aplicarDirecao(M4.inverter(o.transform), k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0); const a = d.map(Math.abs), i = a.indexOf(Math.max(...a)); return { i, sentido: Math.sign(d[i]) || 1 }; };
   const eixoLocal = (o, k) => dirLocal(o, k).i;
-  function opcoes(o) { const sv = segVal('sim'), R = +q('raio').value; return { tipo: segVal('tipo'), raio: R, forca: +q('forca').value, simetria: sv ? eixoLocal(o, sv === 'x' ? 0 : 1) : null, detalhe: q('detalhe').checked ? Math.max(0.15, Math.min(4, R / 7)) : 0 }; }
+  function opcoes(o) { const sv = segVal('sim'), R = +q('raio').value; return { tipo: segVal('tipo'), raio: R, forca: +q('forca').value, simetria: sv ? eixoLocal(o, sv === 'x' ? 0 : 1) : null, detalhe: q('detalhe').checked ? Math.max(0.15, Math.min(4, R / (segVal('tipo') === 'vincar' ? 12 : 7))) : 0 }; }
 
   // chamado pelo Estúdio (pointerdown/move/up com a ferramenta 'esculpir')
   function pincel(hit, ev, inicio) {

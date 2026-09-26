@@ -308,7 +308,32 @@ function dist2Tri(px, py, pz, P, a, b, c) {
     }
   }
   const dx = px - qx, dy = py - qy, dz = pz - qz;
+  ULTIMO_Q[0] = qx; ULTIMO_Q[1] = qy; ULTIMO_Q[2] = qz;
   return dx * dx + dy * dy + dz * dz;
+}
+const ULTIMO_Q = new Float64Array(3);      // ponto mais perto da última dist2Tri
+
+// ponto da malha mais perto de p: { ponto, face, d }
+export function pontoMaisPerto(bvh, px, py, pz, teto = Infinity) {
+  const P = bvh.malha.pos, I = bvh.malha.idx, C = bvh.caixas;
+  let melhor = teto * teto, face = -1;
+  const q = [0, 0, 0];
+  const pilha = [0];
+  while (pilha.length) {
+    const no = pilha.pop(), o = no * 6;
+    const dx = Math.max(C[o] - px, 0, px - C[o + 3]), dy = Math.max(C[o + 1] - py, 0, py - C[o + 4]), dz = Math.max(C[o + 2] - pz, 0, pz - C[o + 5]);
+    if (dx * dx + dy * dy + dz * dz >= melhor) continue;
+    const c = bvh.cont[no];
+    if (c >= 0) {
+      const ini = bvh.filho[no];
+      for (let i = ini; i < ini + c; i++) {
+        const t = bvh.ordem[i];
+        const d = dist2Tri(px, py, pz, P, I[t * 3] * 3, I[t * 3 + 1] * 3, I[t * 3 + 2] * 3);
+        if (d < melhor) { melhor = d; face = t; q[0] = ULTIMO_Q[0]; q[1] = ULTIMO_Q[1]; q[2] = ULTIMO_Q[2]; }
+      }
+    } else { const e = bvh.filho[no]; pilha.push(e + 1, e); }
+  }
+  return face < 0 ? null : { ponto: q, face, d: Math.sqrt(melhor) };
 }
 
 // distância do ponto até a malha, no máximo 'teto' (poda pela caixa dos nós)

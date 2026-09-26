@@ -119,3 +119,25 @@ test('DEFORMAR em peça de cabeça pra baixo (sentido -1): afunilar afina o TOPO
   const d = deformar({ nome: 'p', malha: m, cor: '#999999' }, { tipo: 'dobrar', valor: 60, eixo: 2, sentido: -1 });
   limpo(d.parte.malha, 'dobrada de cabeça pra baixo');
 });
+
+test('CURVA 3D: alça em arco (ponto no alto), mola, anel inclinado, placa e vaso desenhados EM PÉ, tubo SOBRE a esfera', () => {
+  const alca = criarDoDesenho([[0, 0, 2], [20, 0, 22], [40, 0, 2]], 'tubo', { diametro: 4, suave: true, manterPosicao: true });
+  limpo(alca.malha, 'alça'); let c = caixa(alca.malha);
+  assert.ok(Math.abs(c.max[2] - 24) < 0.02 && Math.abs(c.min[2]) < 0.01 && Math.abs(c.tam[0] - 44) < 0.02, 'alça ' + c.min + ' / ' + c.max);
+  const mola = criarDoDesenho([...Array(25)].map((_, i) => [10 * Math.cos(i * 0.5), 10 * Math.sin(i * 0.5), 2 + i * 0.8]), 'tubo', { diametro: 2, suave: true, manterPosicao: true });
+  assert.equal(limpo(mola.malha, 'mola').componentes, 1);
+  const anel = criarDoDesenho([...Array(8)].map((_, i) => { const a = i * Math.PI / 4; return [15 * Math.cos(a), 15 * Math.sin(a), 20 + 8 * Math.cos(a)]; }), 'tubo', { diametro: 3, suave: true, fechado: true, manterPosicao: true });
+  assert.equal(limpo(anel.malha, 'anel inclinado').componentes, 1);
+  const placa = criarDoDesenho([[0, 5, 0], [30, 5, 0], [30, 5, 20], [0, 5, 20]], 'extrudar', { espessura: 3, plano: { o: [0, 5, 0], u: [1, 0, 0], v: [0, 0, 1] }, manterPosicao: true });
+  c = caixa(placa.malha);
+  assert.ok(Math.abs(placa.volume - 1800) < 1e-6 && Math.abs(c.tam[0] - 30) < 1e-9 && Math.abs(c.tam[1] - 3) < 1e-9 && Math.abs(c.tam[2] - 20) < 1e-9 && Math.abs(c.max[1] - 5) < 1e-9, 'placa em pé ' + c.min + ' / ' + c.max);
+  const vaso = criarDoDesenho([[10, 0, 0], [22, 0, 0], [22, 0, 30], [10, 0, 30]], 'revolucionar', { plano: { o: [0, 0, 0], u: [1, 0, 0], v: [0, 0, 1] }, manterPosicao: true });
+  c = caixa(vaso.malha); limpo(vaso.malha, 'vaso');
+  assert.ok(Math.abs((c.min[0] + c.max[0]) / 2 - 10) < 0.05 && Math.abs(c.tam[0] - 24) < 0.05 && Math.abs(c.tam[2] - 30) < 1e-6 && Math.abs(c.min[2]) < 1e-6, 'vaso em pé ' + c.min + ' / ' + c.max);
+  const esf = mk(M => M.sphere(20, 96).translate([0, 0, 20]));
+  const cipo = criarDoDesenho([[-20, 0, 20], [-14, -14, 22], [0, -20, 26], [14, -14, 30], [20, 0, 33]], 'tubo', { diametro: 3, suave: true, sobre: esf, manterPosicao: true });
+  limpo(cipo.malha, 'cipó');
+  const P = cipo.malha.pos; let dmin = Infinity, dmax = 0;
+  for (let i = 0; i < P.length; i += 3) { const d = Math.hypot(P[i], P[i + 1], P[i + 2] - 20); dmin = Math.min(dmin, d); dmax = Math.max(dmax, d); }
+  assert.ok(dmin > 19.5 - 0.5 && dmax < 20 + 3 + 0.1, 'segue a esfera: ' + dmin.toFixed(2) + '..' + dmax.toFixed(2));
+});

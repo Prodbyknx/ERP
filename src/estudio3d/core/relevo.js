@@ -12,6 +12,8 @@ import * as M4 from './mat4.js';
 import { dentro, caixa2D } from './geo2d.js';
 import { mapaDaSuperficie } from './envolver.js';
 
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
 export const MODOS_RELEVO = [
   { id: 'alto', nome: 'Alto-relevo (mesma cor)' },
   { id: 'alto-cor', nome: 'Alto-relevo colorido (peça separada)' },
@@ -83,15 +85,31 @@ export function aplicarRelevo(partes, alvo, forma, opc = {}) {
     // superfície curva: o desenho ENVOLVE (medida ao longo da superfície) e a
     // altura/profundidade acompanha a curva. z0/z1 passam a ser em relação à
     // superfície (não ao plano mais alto).
-    if (faixa > 0.05 && modo !== 'recorte' && opc.envolver !== false) {
+    // clicou na superfície e o desenho passa da face: pode continuar depois
+    // de uma quina (dobra como adesivo) — tenta envolver também
+    const passaQuina = lado === 'ponto' && sup.fora > 0;
+    if ((faixa > 0.05 || passaQuina) && modo !== 'recorte' && opc.envolver !== false) {
       const b = cs.bounds(), mg = 1 + (opc.folga || 0);
       const mapa = mapaDaSuperficie(pAlvo.malha, F, { x0: b.min[0] - mg, x1: b.max[0] + mg, y0: b.min[1] - mg, y1: b.max[1] + mg });
       if (mapa && mapa.f) {
         const L = Math.max(mapa.passo * 1.5, 0.25);
         prisma = (csx, z0, z1, rel) => {
           if (!rel) return prismaReto(csx, z0, z1);
-          const K = ctx.guardar(ctx.guardar(Manifold.extrude(csx, 1)).refineToLength(L));
-          return ctx.guardar(K.warp(v => { const r = mapa.f(v[0], v[1]), h = z0 + v[2] * (z1 - z0); v[0] = r.p[0] + r.n[0] * h; v[1] = r.p[1] + r.n[1] * h; v[2] = r.p[2] + r.n[2] * h; }));
+          const K0 = ctx.guardar(ctx.guardar(Manifold.extrude(csx, 1)).refineToLength(L));
+          const levantar = fm => ctx.guardar(K0.warp(v => { const r = fm(v[0], v[1]), h = z0 + v[2] * (z1 - z0); v[0] = r.p[0] + r.n[0] * h; v[1] = r.p[1] + r.n[1] * h; v[2] = r.p[2] + r.n[2] * h; }));
+          if (!mapa.porGrupo) return levantar(mapa.f);
+          // atravessa quina: cada face levanta o seu pedaço; cortados na
+          // bissetriz da quina, se encontram em meia-esquadria
+          const pedacos = mapa.porGrupo.map(G => {
+            let K = levantar(G.f);
+            // passa 2 µm do corte: os pedaços se sobrepõem em vez de encostar
+            // (face com face exata confunde a união)
+            for (const pl of G.planos) K = ctx.guardar(K.trimByPlane(pl.dir, dot3(pl.dir, pl.c) - 0.002));
+            return K;
+          }).filter(K => !K.isEmpty());
+          // o corte na bissetriz deixa lascas de área zero: limpa sem mudar a forma
+          const U = pedacos.length === 1 ? pedacos[0] : ctx.guardar(Manifold.union(pedacos));
+          return ctx.guardar(U.simplify(1e-6));
         };
         envolveu = true;
       } else if (mapa && mapa.falta === 'volta') {
