@@ -65,6 +65,39 @@ function prisma(cs, z0, z1, chanfro, meia) {
   return r;
 }
 
+// Tamanho do conector pra seção: cfg.auto escolhe (~45% da largura livre,
+// Ø2 a Ø8); tamanho pedido que não cabe é REDUZIDO (com aviso) em vez de pulado.
+export function dimensionarConector(secao, cfg0, avisos = []) {
+  const cfg = Object.assign({}, PADRAO_CONECTOR, cfg0 || {});
+  if (!['cilindrico', 'solto', 'quadrado', 'hexagonal'].includes(cfg.tipo) || !secao.length) return cfg;
+  const { CrossSection } = manifold();
+  const cs = CrossSection.ofPolygons(secao, 'EvenOdd');
+  let lo = 0, hi = Math.sqrt(Math.max(cs.area(), 0) / Math.PI) * 1.5 + 1;
+  for (let i = 0; i < 20; i++) {
+    const m = (lo + hi) / 2, o = cs.offset(-m, 'Round', 2, 24), ok = !o.isEmpty();
+    o.delete(); if (ok) lo = m; else hi = m;
+  }
+  cs.delete();
+  const rIn = lo;                                   // raio do maior círculo que cabe na seção
+  const parede = Math.min(cfg.parede, Math.max(0.8, rIn * 0.3));
+  const rMax = rIn - cfg.folga - parede;            // raio do conector que ainda deixa parede
+  const tam = cfg.tipo === 'quadrado' ? cfg.lado * Math.SQRT1_2 : cfg.tipo === 'hexagonal' ? cfg.diametro / 2 / Math.cos(Math.PI / 6) : cfg.diametro / 2;
+  let r = cfg.auto ? Math.min(4, Math.max(rIn * 0.45, Math.min(1.5, rMax))) : tam;
+  if (r > rMax) r = rMax;
+  if (r < 0.9) return cfg;                          // não cabe nem Ø2: gerarConectores avisa
+  const passo = v => Math.floor(v * 2) / 2;         // de 0,5 em 0,5 mm
+  const antes = medidaTexto(cfg);
+  if (cfg.tipo === 'quadrado') cfg.lado = Math.max(1.5, passo(r / Math.SQRT1_2));
+  else if (cfg.tipo === 'hexagonal') cfg.diametro = Math.max(2, passo(r * 2 * Math.cos(Math.PI / 6)));
+  else cfg.diametro = Math.max(2, passo(r * 2));
+  cfg.parede = parede;
+  if (cfg.auto) {
+    const d = cfg.tipo === 'quadrado' ? cfg.lado : cfg.diametro;
+    cfg.profundidade = Math.max(3, Math.min(10, Math.round(d * 1.4)));
+  } else if (medidaTexto(cfg) !== antes) avisos.push('O conector ' + antes + ' não cabia nessa seção: usei ' + medidaTexto(cfg) + '.');
+  return cfg;
+}
+
 // Onde cabem os conectores na seção do corte (em mm, no plano)
 export function posicionar(secao, cfg, forma) {
   const { CrossSection } = manifold();

@@ -3,15 +3,21 @@ import { el, fmt, lerNumero, avisar } from '../util.js';
 import { novaParte, novoObjeto } from '../cena.js';
 import { TIPOS_CONECTOR, medidaTexto } from '../../core/conectores.js';
 import { planoParaLocal } from '../../core/corte.js';
+import * as M4 from '../../core/mat4.js';
 
 export function montarCortar(est) {
   const d = el('details', { 'data-sec': 'corte' });
   d.innerHTML = `<summary><span class="n">5</span>Cortar a peça</summary><div class="e3d-sec">
+    <div class="field"><label>O que cortar</label>
+      <div class="seg" data-a="modo"><button type="button" data-v="plano" class="active">A peça inteira</button><button type="button" data-v="parte">Só uma parte</button></div>
+      <p class="u" data-a="modoDica" style="display:none;margin:6px 0 0">Clique na parte que quer soltar (mão, cabeça, orelha, chifre…). O corte vai sozinho pro ponto mais fino e só ela sai.</p></div>
+    <div data-a="soPlano">
     <div class="field"><label>Direção do corte</label>
       <div class="seg" data-a="eixo"><button type="button" data-v="z" class="active">Horizontal (Z)</button><button type="button" data-v="x">Vertical X</button><button type="button" data-v="y">Vertical Y</button><button type="button" data-v="livre">Inclinado</button></div></div>
     <div data-a="livre" style="display:none" class="e3d-l2">
       <div class="field"><label>Inclinação A (graus)</label><input type="text" data-a="ia" value="0"></div>
       <div class="field"><label>Inclinação B (graus)</label><input type="text" data-a="ib" value="0"></div>
+    </div>
     </div>
     <div class="field"><label>Posição do corte <span class="u" data-a="faixa"></span></label>
       <div class="e3d-slider"><input type="range" min="0" max="100" step="0.1" value="50" data-a="pos"><input type="text" data-a="posmm"></div>
@@ -28,12 +34,13 @@ export function montarCortar(est) {
       <div class="e3d-secao" data-a="secao"></div></div>
     <div class="field"><label>Conector</label><select data-a="tipo"><option value="nenhum">Sem conector</option>${TIPOS_CONECTOR.map(t => '<option value="' + t.id + '">' + t.nome + '</option>').join('')}</select></div>
     <div data-a="conOpc" style="display:none">
+      <label class="fer-check" style="margin-bottom:6px" title="O maior conector que cabe na seção deixando parede, e a profundidade que a peça aguenta"><input type="checkbox" data-a="auto" checked> Tamanho automático <span class="u">o maior que cabe</span></label>
       <div class="e3d-l3">
         <div data-c="diametro"><label>Diâmetro</label><input type="text" data-a="diametro" value="5"></div>
         <div data-c="lado"><label>Lado</label><input type="text" data-a="lado" value="5"></div>
         <div data-c="largura"><label>Largura</label><input type="text" data-a="largura" value="4"></div>
         <div data-c="comprimento"><label>Comprimento</label><input type="text" data-a="comprimento" value="8"></div>
-        <div><label>Profundidade</label><input type="text" data-a="profundidade" value="6"></div>
+        <div data-c="profundidade"><label>Profundidade</label><input type="text" data-a="profundidade" value="6"></div>
         <div><label>Folga/lado</label><input type="text" data-a="folga" value="0,2"></div>
         <div data-c="quantidade"><label>Quantidade</label><input type="text" data-a="quantidade" value="2"></div>
       </div>
@@ -45,7 +52,8 @@ export function montarCortar(est) {
     <div data-a="res"></div>
   </div>`;
   const q = s => d.querySelector('[data-a="' + s + '"]');
-  let eixo = 'z', ladoPino = 'A';
+  let eixo = 'z', ladoPino = 'A', modo = 'plano';
+  let sug = null;         // corte de uma parte: { objId, plano, centro, raio, ponto } no referencial da peça
   let faixa = null;       // {min, max} da projeção do objeto na normal
 
   function normal() {
@@ -77,8 +85,27 @@ export function montarCortar(est) {
     q('faixa').textContent = fmt(mn) + ' a ' + fmt(mx) + ' mm';
   }
   function posicaoMM() { return faixa ? faixa.min + (faixa.max - faixa.min) * (+q('pos').value / 100) : 0; }
+  // corte de uma parte: plano da sugestão (+ ajuste do slider), levado pro mundo
+  function planoDaParte(o) {
+    const off = (+q('pos').value - 50) / 50 * alcanceParte();
+    const n = sug.plano.n, c = sug.centro.map((v, i) => v + n[i] * off);
+    const T = o.transform, G = M4.inverter(T);
+    const cw = M4.aplicarPonto(T, c[0], c[1], c[2]);
+    let nw = [0, 1, 2].map(i => G[i * 4] * n[0] + G[i * 4 + 1] * n[1] + G[i * 4 + 2] * n[2]);
+    const L = Math.hypot(nw[0], nw[1], nw[2]) || 1; nw = nw.map(v => v / L);
+    return { local: { n, d: n[0] * c[0] + n[1] * c[1] + n[2] * c[2] }, mundo: { n: nw, d: nw[0] * cw[0] + nw[1] * cw[1] + nw[2] * cw[2] }, cw, off };
+  }
+  const alcanceParte = () => sug ? Math.max(4, 3 * sug.raio) : 5;
   function mostrarPlano() {
     const o = est.objetoAtual();
+    if (modo === 'parte') {
+      if (!o || !sug || sug.objId !== o.id || !d.open || est.previaAtiva) { est.visor.limparAjudas('corte'); return; }
+      const p = planoDaParte(o);
+      est.visor.mostrarPlanoCorte(o.id, p.mundo, Math.max(8, sug.raio * 5), { centro: p.cw, local: true });
+      q('faixa').textContent = '± ' + fmt(alcanceParte(), 1) + ' mm do ponto sugerido';
+      if (document.activeElement !== q('posmm')) q('posmm').value = fmt(p.off, 2).replace(/\./g, '');
+      return;
+    }
     if (!o || !faixa || !d.open || est.previaAtiva) { est.visor.limparAjudas('corte'); return; }
     const c = est.cena.caixaObjeto(o);
     const tam = c ? Math.hypot(c.tam[0], c.tam[1], c.tam[2]) * 1.15 : 100;
@@ -88,6 +115,13 @@ export function montarCortar(est) {
   function refazerTudo() { calcularFaixa(); mostrarPlano(); }
   // leva o corte pra uma posição em mm (limita à peça)
   function irPara(mm) {
+    if (modo === 'parte') {
+      if (!sug) return;
+      const R = alcanceParte(), v = Math.max(-R, Math.min(R, mm));
+      q('pos').value = 50 + 50 * v / R;
+      mostrarPlano();
+      return;
+    }
     if (!faixa) calcularFaixa();
     if (!faixa) return;
     const v = Math.max(faixa.min, Math.min(faixa.max, mm));
@@ -95,28 +129,35 @@ export function montarCortar(est) {
     mostrarPlano();
     if (document.activeElement !== q('posmm')) q('posmm').value = fmt(v, 2).replace(/\./g, '');
   }
-  q('menos').onclick = ev => irPara(posicaoMM() - (ev.shiftKey ? 0.1 : 1));
-  q('mais').onclick = ev => irPara(posicaoMM() + (ev.shiftKey ? 0.1 : 1));
-  q('meio').onclick = () => { if (!faixa) calcularFaixa(); if (faixa) irPara((faixa.min + faixa.max) / 2); };
+  const posAtual = () => modo === 'parte' ? (+q('pos').value - 50) / 50 * alcanceParte() : posicaoMM();
+  q('menos').onclick = ev => irPara(posAtual() - (ev.shiftKey ? 0.1 : 1));
+  q('mais').onclick = ev => irPara(posAtual() + (ev.shiftKey ? 0.1 : 1));
+  q('meio').onclick = () => { if (modo === 'parte') { irPara(0); return; } if (!faixa) calcularFaixa(); if (faixa) irPara((faixa.min + faixa.max) / 2); };
   est.visor.on('secao', m => {
+    if (modo === 'parte') { q('secao').innerHTML = sug ? 'Seção ≈ <b>Ø ' + fmt(2 * sug.raio, 1) + ' mm</b>' + (m ? ' (' + fmt(m.largura, 1) + ' × ' + fmt(m.altura, 1) + ')' : '') : ''; return; }
     q('secao').innerHTML = m ? 'Seção do corte: <b>' + fmt(m.largura, 1) + ' × ' + fmt(m.altura, 1) + ' mm</b>' : (d.open && faixa ? '<span class="aviso">O plano não passa pela peça.</span>' : '');
   });
   // clique na peça: o corte vai até o ponto clicado
   est.on('clique', ({ hit }) => {
     if (!d.open || est.ferramenta !== 'corte' || !hit) return;
+    if (modo === 'parte') { sugerir(hit); return; }
     const n = normal();
     irPara(hit.ponto.x * n[0] + hit.ponto.y * n[1] + hit.ponto.z * n[2]);
   });
   // seta do 3D arrastada
-  est.on('corte-arrasto', mm => { if (d.open && mm != null && isFinite(mm)) irPara(mm); });
+  est.on('corte-arrasto', mm => {
+    if (!d.open || mm == null || !isFinite(mm)) return;
+    if (modo === 'parte') { const o = est.objetoAtual(); if (o && sug) { const p = planoDaParte(o); irPara(p.off + (mm - p.mundo.d)); } return; }
+    irPara(mm);
+  });
   // teclado
   document.addEventListener('keydown', ev => {
     if (!d.open || est.ferramenta !== 'corte' || !est.visivel() || est.previaAtiva) return;
     const alvo = ev.target;
     if (alvo && (alvo.tagName === 'INPUT' || alvo.tagName === 'TEXTAREA' || alvo.tagName === 'SELECT')) return;
     const passo = ev.shiftKey ? 0.1 : 1;
-    if (ev.key === 'ArrowUp' || ev.key === 'PageUp') { ev.preventDefault(); irPara(posicaoMM() + passo); }
-    else if (ev.key === 'ArrowDown' || ev.key === 'PageDown') { ev.preventDefault(); irPara(posicaoMM() - passo); }
+    if (ev.key === 'ArrowUp' || ev.key === 'PageUp') { ev.preventDefault(); irPara(posAtual() + passo); }
+    else if (ev.key === 'ArrowDown' || ev.key === 'PageDown') { ev.preventDefault(); irPara(posAtual() - passo); }
   });
 
   q('eixo').addEventListener('click', ev => {
@@ -129,25 +170,62 @@ export function montarCortar(est) {
   ['ia', 'ib'].forEach(k => q(k).addEventListener('input', refazerTudo));
   q('pos').addEventListener('input', mostrarPlano);
   q('posmm').addEventListener('change', () => {
+    if (modo === 'parte') { irPara(lerNumero(q('posmm').value, 0)); return; }
     if (!faixa) return;
     const v = lerNumero(q('posmm').value, posicaoMM());
     q('pos').value = Math.max(0, Math.min(100, 100 * (v - faixa.min) / Math.max(1e-9, faixa.max - faixa.min)));
     mostrarPlano();
   });
+  q('modo').addEventListener('click', ev => {
+    const b = ev.target.closest('button'); if (!b) return;
+    modo = b.dataset.v;
+    q('modo').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+    q('soPlano').style.display = modo === 'parte' ? 'none' : '';
+    q('modoDica').style.display = modo === 'parte' ? '' : 'none';
+    d.querySelector('.e3d-dicacorte').style.display = modo === 'parte' ? 'none' : '';
+    const [bA, bB] = q('lado2').querySelectorAll('button');
+    bA.textContent = modo === 'parte' ? 'Na parte que sai' : 'Parte de cima / frente';
+    bB.textContent = modo === 'parte' ? 'No resto da peça' : 'Parte de baixo / trás';
+    q('pos').value = 50; sug = null; q('res').innerHTML = '';
+    if (modo === 'parte' && q('quantidade')) q('quantidade').value = '1';
+    refazerTudo();
+  });
+  q('auto').addEventListener('change', atualizarCon);
+  // pede ao motor o lugar do corte da parte clicada
+  async function sugerir(hit) {
+    const o = est.objetoAtual();
+    if (!o) return;
+    const G = M4.inverter(o.transform);
+    const ponto = M4.aplicarPonto(G, hit.ponto.x, hit.ponto.y, hit.ponto.z);
+    q('res').innerHTML = '<div class="e3d-nota">Procurando o ponto mais fino…</div>';
+    try {
+      const r = await est.rodar('sugerirSeparacao', { partes: o.partes.map(p => est.parteParaMotor(p)), ponto, opc: { encaixe: q('tipo').value !== 'nenhum' } }, 'Achar onde separar');
+      sug = { objId: o.id, plano: r.plano, centro: r.centro, raio: r.raio, ponto };
+      q('pos').value = 50;
+      q('res').innerHTML = '<div class="e3d-nota ok">Achei o ponto mais fino (≈ Ø ' + fmt(2 * r.raio, 1) + ' mm). Ajuste com a seta ou ↑ ↓ e clique em Cortar.' + (r.avisos.length ? '<br>' + r.avisos.join('<br>') : '') + '</div>';
+      mostrarPlano();
+    } catch (e) { sug = null; q('res').innerHTML = '<div class="e3d-nota erro">' + (e.message || e) + '</div>'; est.visor.limparAjudas('corte'); }
+  }
   q('lado2').addEventListener('click', ev => { const b = ev.target.closest('button'); if (!b) return; ladoPino = b.dataset.v; q('lado2').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b)); });
 
   function cfgConector() {
     const t = q('tipo').value;
     if (t === 'nenhum') return null;
     const n = k => lerNumero(q(k).value, 0);
-    return { tipo: t, diametro: n('diametro'), lado: n('lado'), largura: n('largura'), comprimento: n('comprimento'), profundidade: n('profundidade'), folga: n('folga'), quantidade: Math.max(1, Math.round(n('quantidade'))), ladoPino, folgaFundo: 0.3, chanfro: 0.4, parede: 1.2 };
+    const auto = q('auto').checked && ['cilindrico', 'quadrado', 'hexagonal', 'solto'].includes(t);
+    return { tipo: t, auto, diametro: n('diametro'), lado: n('lado'), largura: n('largura'), comprimento: n('comprimento'), profundidade: n('profundidade'), folga: n('folga'), quantidade: Math.max(1, Math.round(n('quantidade'))), ladoPino, folgaFundo: 0.3, chanfro: 0.4, parede: 1.2 };
   }
   function atualizarCon() {
     const t = q('tipo').value;
     q('conOpc').style.display = t === 'nenhum' ? 'none' : '';
     const mostra = { diametro: ['cilindrico', 'hexagonal', 'solto'], lado: ['quadrado'], largura: ['retangular', 'lingueta', 'andorinha'], comprimento: ['retangular'], quantidade: ['cilindrico', 'quadrado', 'retangular', 'hexagonal', 'solto'] };
-    d.querySelectorAll('[data-c]').forEach(x => { x.style.display = (mostra[x.dataset.c] || []).includes(t) ? '' : 'none'; });
+    const autoOk = ['cilindrico', 'quadrado', 'hexagonal', 'solto'].includes(t);
+    q('auto').closest('label').style.display = autoOk ? '' : 'none';
+    const auto = autoOk && q('auto').checked;
+    mostra.profundidade = ['cilindrico', 'quadrado', 'retangular', 'hexagonal', 'solto', 'lingueta', 'andorinha'];
+    d.querySelectorAll('[data-c]').forEach(x => { x.style.display = (mostra[x.dataset.c] || []).includes(t) && !(auto && x.dataset.c !== 'quantidade') ? '' : 'none'; });
     const c = cfgConector();
+    if (auto) { q('conInfo').textContent = 'O tamanho sai da seção do corte (o maior que cabe deixando parede). Folga ' + fmt(c.folga, 2) + ' mm por lado.'; return; }
     q('conInfo').textContent = !c ? '' : ['lingueta', 'andorinha'].includes(t)
       ? 'Ranhura com ' + fmt(c.folga, 2) + ' mm de folga por lado. ' + (t === 'andorinha' ? 'Encaixa deslizando de lado.' : '')
       : 'Positivo: ' + medidaTexto(c) + ' → negativo: ' + medidaTexto(c, c.folga) + (t === 'solto' ? ' (furos dos dois lados + pino separado)' : '') + '. Fundo do furo ' + fmt(c.folgaFundo, 1) + ' mm além da ponta.';
@@ -155,7 +233,46 @@ export function montarCortar(est) {
   ['tipo', 'diametro', 'lado', 'largura', 'comprimento', 'folga'].forEach(k => q(k).addEventListener('input', atualizarCon));
   atualizarCon();
 
+  async function cortarParte() {
+    const o = est.objetoAtual();
+    if (!o || !sug || sug.objId !== o.id) { avisar('Clique na parte que quer separar.', 'warn'); return; }
+    const p = planoDaParte(o);
+    q('ir').disabled = true;
+    q('res').innerHTML = '<div class="e3d-nota">Separando…</div>';
+    let r;
+    try { r = await est.rodar('cortarLocal', { partes: o.partes.map(x => est.parteParaMotor(x)), plano: p.local, ponto: sug.ponto, opc: { conector: cfgConector(), nomeParte: o.nome + ' – parte' } }, 'Separar parte'); }
+    catch (e) { q('res').innerHTML = '<div class="e3d-nota erro">' + (e.message || e) + '</div>'; return; }
+    finally { q('ir').disabled = false; }
+    est.visor.limparAjudas('corte');
+    const afasta = Math.max(6, sug.raio * 3), n = p.mundo.n;
+    const notas = r.avisos.slice();
+    if (r.relatorio.length) notas.push('Encaixe: pino ' + r.relatorio[0].pino + ' / furo ' + r.relatorio[0].furo + ', ' + fmt(r.relatorio[0].profundidade, 1) + ' mm');
+    est.mostrarPrevia({
+      titulo: 'Separar parte', legenda: [['#0659f2', 'face do corte / encaixe']], explodir: 1, notas, textoConfirmar: 'Confirmar',
+      objetos: [
+        { transform: o.transform, deslocar: n.map(v => v * afasta), partes: r.A.map(x => ({ malha: x.malha, cor: x.cor, paleta: x.paleta, papel: 'normal', origem: x.origem })) },
+        { transform: o.transform, deslocar: [0, 0, 0], partes: r.B.map(x => ({ malha: x.malha, cor: x.cor, paleta: x.paleta, papel: 'normal', origem: x.origem })) }
+      ],
+      confirmar: () => {
+        est.cena.aplicar('Separar parte de ' + o.nome, () => {
+          const idx = est.cena.objetos.indexOf(o);
+          const B = novoObjeto({ nome: o.nome, transform: o.transform, partes: r.B.map(x => ({ nome: x.nome, malha: x.malha, cor: x.cor, paleta: x.paleta })) });
+          const A = novoObjeto({ nome: o.nome + ' – parte', transform: o.transform, partes: r.A.map(x => ({ nome: x.nome, malha: x.malha, cor: x.cor, paleta: x.paleta })) });
+          const extras = r.extras.map(x => novoObjeto({ nome: x.nome, transform: o.transform, partes: [{ nome: x.nome, malha: x.malha, cor: x.cor }] }));
+          est.cena.objetos.splice(idx, 1, B, A, ...extras);
+          for (const x of extras) est.cena.colocarNaMesa(x);
+          est.cena.sel = { objeto: A.id, parte: A.partes.length === 1 ? A.partes[0].id : null };
+        });
+        sug = null;
+        q('res').innerHTML = '<div class="e3d-nota ok">Parte separada' + (r.relatorio.length ? ' com encaixe (' + r.relatorio.map(x => x.pino + '/' + x.furo).join(', ') + ')' : '') + '. Clique em outra parte pra continuar.</div>';
+        refazerTudo();
+      },
+      cancelar: () => { q('res').innerHTML = ''; mostrarPlano(); }
+    });
+  }
+
   async function cortar() {
+    if (modo === 'parte') return cortarParte();
     const o = est.objetoAtual();
     if (!o) { avisar('Escolha o objeto a cortar.', 'warn'); return; }
     if (!faixa) calcularFaixa();

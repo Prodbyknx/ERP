@@ -551,13 +551,16 @@ export class Visor {
   }
 
   // mostra/atualiza o plano (mundo: n·x = d) no objeto
-  mostrarPlanoCorte(objId, plano, tamanho) {
+  // opc.centro (mundo): onde desenhar o plano; opc.local: corte só de uma
+  // parte -> sem recortar a peça inteira e contorno só perto do centro
+  mostrarPlanoCorte(objId, plano, tamanho, opc = {}) {
     const c = this.montarCorte();
     const n = new THREE.Vector3(...plano.n).normalize();
     const o = this.cena.objeto(objId);
     const cx = o && this.cena.caixaExata(o);
-    const centroObj = cx ? new THREE.Vector3((cx.min[0] + cx.max[0]) / 2, (cx.min[1] + cx.max[1]) / 2, (cx.min[2] + cx.max[2]) / 2) : new THREE.Vector3();
+    const centroObj = opc.centro ? new THREE.Vector3(...opc.centro) : cx ? new THREE.Vector3((cx.min[0] + cx.max[0]) / 2, (cx.min[1] + cx.max[1]) / 2, (cx.min[2] + cx.max[2]) / 2) : new THREE.Vector3();
     const centro = centroObj.clone().addScaledVector(n, plano.d - n.dot(centroObj));
+    c.local = opc.local ? { centro: centro.clone(), raio: tamanho * 0.6 } : null;
     c.quad.position.copy(centro);
     c.quad.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
     c.quad.scale.set(tamanho, tamanho, 1);
@@ -567,7 +570,7 @@ export class Visor {
     c.centro = centro; c.n = n;
     this.clipA.set(n, -plano.d);                       // mostra o lado +n
     this.clipB.set(n.clone().negate(), plano.d);       // mostra o lado -n
-    if (c.objId !== objId) { c.objId = objId; this.aplicarRecorte(objId); }
+    if (c.objId !== objId || c.recorteLocal !== !!opc.local) { c.objId = objId; c.recorteLocal = !!opc.local; this.aplicarRecorte(opc.local ? null : objId); }
     c.plano = { n: plano.n, d: plano.d };
     c.raiz.visible = true;
     this.agendarSecao();
@@ -636,7 +639,16 @@ export class Visor {
     }
     if (!buf || buf.length < total) buf = c.buf = new Float32Array(Math.max(6 * 1024, total * 2));
     let k = 0;
-    for (const r of partes) { buf.set(r.saida.subarray(0, r.n), k); k += r.n; }
+    if (c.local) {
+      // corte de uma parte só: contorno só perto do centro (não o corpo todo)
+      const q = new THREE.Vector3(), q2 = new THREE.Vector3(), R2 = c.local.raio * c.local.raio;
+      for (const r of partes) for (let i = 0; i + 5 < r.n; i += 6) {
+        q.set(r.saida[i], r.saida[i + 1], r.saida[i + 2]).applyMatrix4(M);
+        q2.set(r.saida[i + 3], r.saida[i + 4], r.saida[i + 5]).applyMatrix4(M);
+        if (q.distanceToSquared(c.local.centro) > R2 && q2.distanceToSquared(c.local.centro) > R2) continue;
+        for (let j = 0; j < 6; j++) buf[k++] = r.saida[i + j];
+      }
+    } else for (const r of partes) { buf.set(r.saida.subarray(0, r.n), k); k += r.n; }
     const geo = c.secao.geometry;
     let attr = geo.getAttribute('position');
     if (!attr || attr.array !== buf) { attr = new THREE.BufferAttribute(buf, 3); attr.setUsage(THREE.DynamicDrawUsage); geo.setAttribute('position', attr); }

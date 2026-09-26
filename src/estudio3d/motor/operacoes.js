@@ -5,6 +5,7 @@ import { validar, espessuras, facesInternas } from '../core/validador.js';
 import { reparar as repararMalha } from '../core/reparo.js';
 import { comContexto, manifold, temManifold } from '../core/solidos.js';
 import { cortarPorPlano } from '../core/corte.js';
+import { cortarLocal, sugerirSeparacao } from '../core/corteLocal.js';
 import { separarDetalhe, separarPorCor, separarCascas } from '../core/separar.js';
 import { aplicarRelevo } from '../core/relevo.js';
 import { segmentar } from '../core/segmentacao.js';
@@ -20,7 +21,7 @@ import { BufferGeometry, BufferAttribute } from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 
 // operações cujo resultado não vai pra tela como peça
-export const SEM_RENDER = new Set(['analisar', 'bvh', 'exportar3MF', 'exportarSTL', 'medidas']);
+export const SEM_RENDER = new Set(['analisar', 'bvh', 'exportar3MF', 'exportarSTL', 'medidas', 'sugerirSeparacao']);
 
 function resumoValidacao(v) {
   const r = Object.assign({}, v);
@@ -81,6 +82,9 @@ export const OPERACOES = {
   },
 
   cortar({ partes, plano, opc }) { return cortarPorPlano(partes, plano, opc || {}); },
+  // só a parte clicada (mão, cabeça…): sugestão do lugar e o corte em si
+  sugerirSeparacao({ partes, ponto, opc }) { return sugerirSeparacao(partes, ponto, opc || {}); },
+  cortarLocal({ partes, plano, ponto, opc }) { return cortarLocal(partes, plano, ponto, opc || {}); },
   separarDetalhe({ parte, mascara, opc }) { return separarDetalhe(parte, mascara, opc || {}); },
   separarPorCor({ parte, opc }) { return separarPorCor(parte, opc || {}); },
   separarCascas({ parte }) { return { partes: separarCascas(parte) }; },

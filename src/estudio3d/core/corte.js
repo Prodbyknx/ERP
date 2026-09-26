@@ -2,7 +2,8 @@
 // fecha a face do corte com a seção exata) e conectores opcionais.
 // Tudo no referencial da peça (o objeto mantém sua posição/rotação/escala).
 import { comContexto, manifold } from './solidos.js';
-import { gerarConectores } from './conectores.js';
+import { gerarConectores, dimensionarConector } from './conectores.js';
+import { solidoPronto } from './preparo.js';
 import * as M4 from './mat4.js';
 import { caixa, transladar } from './malha.js';
 
@@ -45,7 +46,7 @@ export function cortarPorPlano(partes, plano0, opc = {}) {
   return comContexto(ctx => {
     const { Manifold } = manifold();
     const avisos = [];
-    const solidos = partes.map(p => ctx.solido(p, p.nome));
+    const solidos = partes.map(p => solidoPronto(ctx, p, avisos));
     const frame = referencialDoPlano(plano);
     const sec = secao(ctx, solidos, frame);
     if (!sec.poligonos.length || sec.area <= 1e-9) throw new Error('O plano não atravessa a peça.');
@@ -66,7 +67,8 @@ export function cortarPorPlano(partes, plano0, opc = {}) {
       const inverter = opc.conector.ladoPino === 'B';
       const fr = inverter ? M4.multiplicar(frame, M4.rotacaoEuler(180, 0, 0)) : frame;
       const secaoUsada = inverter ? sec.poligonos.map(a => a.map(p => [p[0], -p[1]])) : sec.poligonos;
-      const g = gerarConectores(ctx, { solidoA: inverter ? solB : solA, solidoB: inverter ? solA : solB, frame: fr, secao: secaoUsada, cfg: opc.conector });
+      const cfg = dimensionarConector(secaoUsada, opc.conector, avisos);
+      const g = gerarConectores(ctx, { solidoA: inverter ? solB : solA, solidoB: inverter ? solA : solB, frame: fr, secao: secaoUsada, cfg });
       avisos.push(...g.avisos);
       relatorio = g.relatorio;
       const ladoPos = inverter ? B : A, ladoNeg = inverter ? A : B;

@@ -36,6 +36,8 @@ async function gerarModelos(dir) {
   fs.writeFileSync(dir + '/personagem-cor.3mf', escrever3MF({ objetos: [{ nome: 'Personagem', transform: M4.translacao(128, 128, 0), partes: [{ nome: 'Corpo', malha: { ...cab, cor }, cor: '#1B1B1B', paleta: ['#1B1B1B', '#FFFFFF'] }] }] }).bytes);
   fs.writeFileSync(dir + '/chaveiro.stl', escreverSTL(caixaMalha(60, 30, 3), 'chaveiro'));
   fs.writeFileSync(dir + '/grande.stl', escreverSTL(esfera(40, 7, 0, 0, 40), 'grande'));
+  const { gerarBoneco } = await import('../util/boneco.mjs');
+  fs.writeFileSync(dir + '/boneco.stl', escreverSTL(gerarBoneco('sujo').malha, 'boneco'));
   fs.writeFileSync(dir + '/estrela.svg', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path fill="#222" d="M50 5 L61 38 L96 38 L68 59 L79 93 L50 72 L21 93 L32 59 L4 38 L39 38 Z"/></svg>');
 }
 
@@ -477,6 +479,42 @@ async function main() {
   await passo(pg, 'gerador: Abrir no Estúdio 3D', async () => {
     await pg.click('#fer_estudio');
     await pg.waitForFunction(() => window.Estudio3D && window.Estudio3D.estudio && window.Estudio3D.estudio.cena.objetos.length === 1, null, { timeout: 60000 });
+  });
+  await pg.context().close();
+
+  console.log('8) separar a mão do boneco (STL cru, com furos) pelo corte de uma parte');
+  pg = await novaPagina(b);
+  await abrirEstudio(pg, 'file://' + teste + '/index.html');
+  const { validar } = await import('../../src/estudio3d/core/validador.js');
+  const valida = async idx => {
+    const m = await pg.evaluate(i => { const o = window.Estudio3D.estudio.cena.objetos[i]; const p = o.partes[0].malha; return { pos: Array.from(p.pos), idx: Array.from(p.idx), nome: o.nome }; }, idx);
+    const v = validar({ pos: Float64Array.from(m.pos), idx: Uint32Array.from(m.idx) }, { completo: true });
+    if (!v.fechada || v.autoInterseccoes > 2 || !(v.volume > 0)) throw new Error(m.nome + ': ' + JSON.stringify({ f: v.fechada, ai: v.autoInterseccoes, vol: v.volume }));
+    return v.volume;
+  };
+  await passo(pg, 'clicar na mão -> corte vai pro pulso -> encaixe -> 2 sólidos válidos', async () => {
+    await pg.setInputFiles('.e3d input[type=file][multiple]', modelos + '/boneco.stl');
+    await pg.waitForFunction(() => window.Estudio3D.estudio.cena.objetos.length === 1, null, { timeout: 60000 });
+    await abrirSecao(pg, 'corte');
+    await pg.click('[data-sec=corte] [data-a=modo] button[data-v=parte]');
+    await pg.selectOption('[data-sec=corte] [data-a=tipo]', 'cilindrico');
+    // palma da mão direita (costas da mão, acima do polegar), no referencial da caixa do boneco
+    const s = await pg.evaluate(() => { const e = window.Estudio3D.estudio, c = e.cena.caixaExata(e.cena.objetos[0]); return e.visor.telaDe(c.min[0] + 49.9, c.min[1] + 7.7, c.min[2] + 34); });
+    await pg.mouse.click(s.x, s.y);
+    await pg.waitForFunction(() => /Achei o ponto mais fino|erro/.test(document.querySelector('[data-sec=corte] [data-a=res]').textContent), null, { timeout: 60000 });
+    const txt = await pg.textContent('[data-sec=corte] [data-a=res]');
+    if (!/Achei/.test(txt)) throw new Error(txt);
+    await pg.click('[data-sec=corte] [data-a=ir]'); await confirmarPrevia(pg);
+    await pg.waitForFunction(() => window.Estudio3D.estudio.cena.objetos.length >= 2, null, { timeout: 60000 });
+    const res = await pg.textContent('[data-sec=corte] [data-a=res]');
+    if (!/com encaixe/.test(res)) throw new Error('sem encaixe: ' + res);
+    const vResto = await valida(0), vMao = await valida(1);
+    if (!(vMao > 150 && vMao < 800)) throw new Error('a parte não é a mão: ' + vMao.toFixed(0) + ' mm³');
+    if (!(vResto > 38000)) throw new Error('resto ' + vResto);
+  });
+  await passo(pg, 'desfazer volta o boneco inteiro', async () => {
+    await pg.keyboard.press('Control+z');
+    await pg.waitForFunction(() => window.Estudio3D.estudio.cena.objetos.length === 1, null, { timeout: 20000 });
   });
   await pg.context().close();
 

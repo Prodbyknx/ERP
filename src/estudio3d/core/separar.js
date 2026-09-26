@@ -21,9 +21,10 @@ import { comContexto, manifold } from './solidos.js';
 import { prepararAdjacencia, limpar, regioes, expandir } from './selecao.js';
 import { criar, subMalha, areaFace, compactar, volume } from './malha.js';
 import { triangularLaco, refinarEAlisar } from './reparo.js';
-import { gerarConectores } from './conectores.js';
+import { gerarConectores, dimensionarConector } from './conectores.js';
 import { componentes } from './topologia.js';
 import { autoInterseccoes } from './validador.js';
+import { separarNoPlano } from './corteLocal.js';
 import * as M4 from './mat4.js';
 
 /* ---------------------------------------------------------- utilidades */
@@ -246,7 +247,7 @@ function extrairPorPlano(ctx, atual, R, adj, opc, avisos) {
     const sec = ctx.guardar(loc.slice(1e-3));
     const secao = sec.toPolygons();
     if (secao.length) {
-      const g = gerarConectores(ctx, { solidoA: det, solidoB: resto, frame: F, secao, cfg: opc.conector });
+      const g = gerarConectores(ctx, { solidoA: det, solidoB: resto, frame: F, secao, cfg: dimensionarConector(secao, opc.conector, avisos) });
       avisos.push(...g.avisos);
       relatorio = g.relatorio;
       if (g.positivos.length) det = ctx.guardar(det.add(g.positivos.length === 1 ? g.positivos[0] : ctx.guardar(Manifold.union(g.positivos))));
@@ -351,6 +352,83 @@ function extrairPorCamada(ctx, atual, R, adj, opc) {
   return { falhou: 'A camada de ' + t.toFixed(1) + ' mm se cruzaria (curva mais fechada ou parede mais fina que a espessura). Use uma espessura menor.' };
 }
 
+/* ---------------------------------------------------------- método plano local */
+
+// Plano da borda da seleção, mas só o pedaço ligado à seleção sai (mão perto
+// da coxa: o prisma do plano comum pegaria a coxa). Faces planas -> aceita encaixe.
+function extrairPorPlanoLocal(ctx, atual, R, adj, opc, avisos) {
+  const m = atual.malha, p = m.pos, I = m.idx;
+  const b = bordaDaSelecao(m, adj, R);
+  // plano pelo laço principal da borda (onde a parte encosta no corpo)
+  let lacoP = b.lacos[0] || [];
+  for (const l of b.lacos) if (l.length > lacoP.length) lacoP = l;
+  const pl = planoDaBorda(m, lacoP.length >= 3 ? lacoP : b.verts, R);
+  if (pl.linear) return { falhou: 'A borda da seleção é uma linha.' };
+  const n = pl.n, d0 = n[0] * pl.centro[0] + n[1] * pl.centro[1] + n[2] * pl.centro[2];
+  // ponto da seleção mais longe do plano (a "ponta" da parte) e o mais baixo
+  let ponto = null, dm = -Infinity, dMin = Infinity, aSel = 0;
+  for (let f = 0; f < R.length; f++) {
+    if (!R[f]) continue;
+    aSel += areaFace(m, f);
+    const c = [0, 1, 2].map(e => (p[I[f * 3] * 3 + e] + p[I[f * 3 + 1] * 3 + e] + p[I[f * 3 + 2] * 3 + e]) / 3);
+    const s = c[0] * n[0] + c[1] * n[1] + c[2] * n[2] - d0;
+    if (s > dm) { dm = s; ponto = c; }
+    for (let k = 0; k < 3; k++) { const v = I[f * 3 + k] * 3; dMin = Math.min(dMin, p[v] * n[0] + p[v + 1] * n[1] + p[v + 2] * n[2] - d0); }
+  }
+  if (!(dm > 0)) return { falhou: 'A seleção não sai do plano da borda.' };
+  let somaA = 0, nA = 0;
+  for (const laco of b.lacos) for (let i = 0; i < laco.length; i++) {
+    const u = laco[i] * 3, w = laco[(i + 1) % laco.length] * 3;
+    somaA += Math.hypot(p[u] - p[w], p[u + 1] - p[w + 1], p[u + 2] - p[w + 2]); nA++;
+  }
+  const aneis = Math.min(60, Math.ceil((pl.desvio + 0.5) / Math.max(1e-6, nA ? somaA / nA : 1)) + 2);
+  const faixa = expandir(R, adj, aneis), permitido = new Set(), daSel = new Set();
+  for (let f = 0; f < faixa.length; f++) if (atual.origem[f] >= 0) { if (faixa[f]) permitido.add(atual.origem[f]); if (R[f]) daSel.add(atual.origem[f]); }
+  const tentar = (d, folgaFora) => {
+    const av = [];
+    let r;
+    try { r = separarNoPlano(ctx, atual.man, { n, d }, ponto, { conector: opc.conector }, av); }
+    catch (e) { return { falhou: e.message }; }
+    // conferência: o pedaço cobre a seleção e não leva outra parte junto
+    const dp = ctx.parte(r.det, 'detalhe', atual.corDetalhe, true);
+    let cobre = 0, fora = 0;
+    for (let t = 0; t < dp.malha.idx.length / 3; t++) {
+      const o = dp.origem[t];
+      if (o < 0) continue;
+      const a = areaFace(dp.malha, t);
+      if (daSel.has(o)) cobre += a; else if (!permitido.has(o)) fora += a;
+    }
+    if (cobre < 0.8 * aSel) return { falhou: 'O plano da borda deixaria ' + Math.round(100 - 100 * cobre / aSel) + '% da seleção pra trás.' };
+    if (fora > folgaFora * aSel + 1) return { falhou: 'O corte pegaria outra parte do modelo junto (' + fora.toFixed(1) + ' mm²).' };
+    return { r, av, fora };
+  };
+  let t = tentar(d0, 0.05);
+  // borda torta (não plana): desce o plano até a seleção inteira ficar do lado
+  // de fora; aceita levar um pouco além da seleção (até 30% da área dela)
+  if (t.falhou && dMin < -0.05) {
+    const t2 = tentar(d0 + dMin - 0.05, 0.3);
+    if (!t2.falhou) { t = t2; if (t.fora > 0.5) t.av.push('Pra o corte ficar plano ele pegou ' + t.fora.toFixed(0) + ' mm² além da seleção.'); }
+  }
+  if (t.falhou) return t;
+  avisos.push(...t.av);
+  return { det: t.r.det, resto: t.r.resto, metodo: 'plano-local', relatorio: t.r.relatorio, plano: { n, d: d0, centro: pl.centro, desvioBorda: pl.desvio } };
+}
+
+// cruzamentos novos perto da tampa (o fechamento pela superfície pode furar
+// a própria peça quando a seleção encosta em outra parte)
+function cruzamentosPerto(malhaNova, origem, malhaAntes) {
+  const nt = malhaNova.idx.length / 3, P = malhaNova.pos;
+  const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+  for (let t = 0; t < nt; t++) if (origem[t] < 0) for (let k = 0; k < 3; k++) { const v = malhaNova.idx[t * 3 + k] * 3; for (let e = 0; e < 3; e++) { mn[e] = Math.min(mn[e], P[v + e]); mx[e] = Math.max(mx[e], P[v + e]); } }
+  if (!isFinite(mn[0])) return 0;
+  const conta = mm => {
+    const Q = mm.pos, J = mm.idx, sel = new Uint8Array(J.length / 3);
+    for (let t = 0; t < sel.length; t++) for (let k = 0; k < 3 && !sel[t]; k++) { const v = J[t * 3 + k] * 3; if ([0, 1, 2].every(e => Q[v + e] >= mn[e] - 0.5 && Q[v + e] <= mx[e] + 0.5)) sel[t] = 1; }
+    return autoInterseccoes(subMalha(mm, sel).malha, { max: 200 }).pares;
+  };
+  return conta(malhaNova) - conta(malhaAntes);
+}
+
 /* ---------------------------------------------------------- método superfície */
 
 function extrairPelaSuperficie(atual, R, adj, opc) {
@@ -411,12 +489,58 @@ function compactarComOrigem(m, origem) {
   return { malha: subMalha(m, todas).malha, origem: Int32Array.from(origem) };
 }
 
+function unirCascasComMascara(parte, mascara) {
+  const adj = prepararAdjacencia(parte.malha);
+  for (let h = 0; h < adj.viz.length; h++) if (adj.viz[h] < 0) return null;   // aberta: o erro claro vem depois
+  return comContexto(ctx => {
+    const { Manifold } = manifold();
+    let man;
+    try { man = ctx.solido(parte, parte.nome); } catch (e) { return null; }
+    const comps = man.decompose();
+    if (comps.length < 2) { for (const c of comps) c.delete(); return null; }
+    let soma = 0; for (const c of comps) soma += c.volume();
+    const u = ctx.guardar(Manifold.union(comps));
+    for (const c of comps) c.delete();
+    if (soma - u.volume() <= 1e-6 * Math.max(1, soma)) return null;
+    const pu = ctx.parte(u, parte.nome, parte.cor, true);
+    const m2 = new Uint8Array(pu.malha.idx.length / 3);
+    for (let f = 0; f < m2.length; f++) { const o = pu.origem[f]; if (o >= 0 && mascara[o]) m2[f] = 1; }
+    return { parte: { nome: parte.nome, malha: pu.malha, cor: pu.cor, paleta: pu.paleta }, mascara: m2, aviso: 'Juntei ' + comps.length + ' cascas que se atravessavam num sólido só.' };
+  });
+}
+
+function preencherBuracos(sel, adj, malha) {
+  const fora = Uint8Array.from(sel, x => x ? 0 : 1);
+  const r = regioes(fora, adj);
+  if (r.n < 2) return sel;
+  // por casca: dentro de cada casca que tem seleção, o maior pedaço NÃO
+  // selecionado é o "resto"; os outros menores são buracos esquecidos
+  const cas = componentes(malha), maiorDaCasca = new Map(), temSel = new Set();
+  for (let f = 0; f < sel.length; f++) {
+    const c = cas.rotulo[f];
+    if (sel[f]) { temSel.add(c); continue; }
+    const k = r.rotulo[f], m = maiorDaCasca.get(c);
+    if (m === undefined || r.tamanhos[k] > r.tamanhos[m]) maiorDaCasca.set(c, k);
+  }
+  const out = Uint8Array.from(sel);
+  for (let f = 0; f < out.length; f++) {
+    if (!fora[f] || !temSel.has(cas.rotulo[f])) continue;
+    const k = r.rotulo[f], m = maiorDaCasca.get(cas.rotulo[f]);
+    if (k !== m && r.tamanhos[k] < 0.5 * r.tamanhos[m]) out[f] = 1;
+  }
+  return out;
+}
+
 /* ---------------------------------------------------------- API */
 
 // parte: {nome, malha, cor, paleta}; mascara: Uint8Array(nT) da seleção
 // opc: { modo:'auto'|'plano'|'superficie', profundidade, folga, deslocamento, margem, conector, nomeDetalhe }
 export function separarDetalhe(parte, mascara, opc = {}) {
   const avisos = [];
+  // cascas que se atravessam (braço solto sobre o corpo) viram UM sólido antes
+  // de tudo; a seleção vai junto pelas faces de origem
+  const un = unirCascasComMascara(parte, mascara);
+  if (un) { parte = un.parte; mascara = un.mascara; avisos.push(un.aviso); }
   const nt0 = parte.malha.idx.length / 3;
   if (mascara.length !== nt0) throw new Error('Seleção não corresponde à peça.');
   const adj0 = prepararAdjacencia(parte.malha);
@@ -456,6 +580,9 @@ export function separarDetalhe(parte, mascara, opc = {}) {
       let nR = 0;
       for (let f = 0; f < R.length; f++) { const o = atual.origem[f]; if (o >= 0 && raiz[o]) { R[f] = 1; nR++; } }
       if (!nR) { avisos.push('Uma parte da seleção já tinha saído junto com outro detalhe.'); continue; }
+      // buraquinhos esquecidos no meio da seleção (ponta do polegar fora do
+      // pincel) viram seleção: só o "resto do modelo" fica de fora
+      if (opc.limparSelecao !== false) R.set(preencherBuracos(R, adj, atual.malha));
       // região = casca inteira? então só separa, sem cortar nada
       let borda = 0;
       for (let f = 0; f < R.length && !borda; f++) if (R[f]) for (let k = 0; k < 3; k++) { const o = adj.viz[f * 3 + k]; if (o >= 0 && !R[o]) { borda++; break; } }
@@ -479,8 +606,10 @@ export function separarDetalhe(parte, mascara, opc = {}) {
               avisos.push('A região é curva: o detalhe virou uma camada de ' + (+opc.profundidade).toFixed(1) + ' mm que acompanha a superfície.');
               res = c;
             } else {
-              avisos.push(res.falhou + ' Usei o fechamento que segue a superfície.');
-              res = null;
+              // antes do fechamento curvo: plano da borda soltando só a parte
+              const loc = extrairPorPlanoLocal(ctx, atual, R, adj, opc, avisos);
+              if (!loc.falhou) res = loc;
+              else { avisos.push(res.falhou + ' ' + loc.falhou + ' Usei o fechamento que segue a superfície.'); res = null; }
             }
           }
         } else if (opc.profundidade > 0) {
@@ -492,6 +621,9 @@ export function separarDetalhe(parte, mascara, opc = {}) {
           paletaDasTampas(atual, corDetalhe);
           res = extrairPelaSuperficie(atual, R, adj, opc);
           if (res.falhou) throw new Error(res.falhou);
+          if (cruzamentosPerto(res.restoMalha, res.restoOrigem, atual.malha) > 0 || cruzamentosPerto(res.detMalha, res.detOrigem, atual.malha) > 0) {
+            throw new Error('Essa seleção não dá pra fechar sem a tampa atravessar a peça (ela encosta em outra parte). Use Cortar → "Só uma parte" e clique nela, ou ajuste a seleção.');
+          }
         }
       }
       metodos.push(res.metodo);
