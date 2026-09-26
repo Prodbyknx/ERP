@@ -59,7 +59,8 @@ export function novoObjeto(o) {
     partes: (o.partes || []).map(novaParte),
     visivel: o.visivel !== false,
     papel: o.papel === 'furo' ? 'furo' : 'solido',     // furo tira material de quem ele atravessa
-    forma: o.forma || null                              // { id, params, texto? } quando veio da biblioteca
+    forma: o.forma || null,                             // { id, params, texto? } quando veio da biblioteca
+    operacoes: o.forma && o.operacoes ? o.operacoes : undefined   // Modificar feitos na forma (refeitos ao mudar medida)
   };
 }
 

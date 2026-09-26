@@ -1,7 +1,7 @@
 // MeshValidator — diagnóstico GEOMÉTRICO (independente do que aparece na tela).
 import { arestas, gemeas, estatisticaArestas, componentes, verticesNaoManifold, facesDoVertice, listasPorRotulo } from './topologia.js';
 import { caixa, volume, area, areaFace, subMalha, normaisFace } from './malha.js';
-import { construirBVH, paresProximos, lancarRaio, pontoDentro } from './bvh.js';
+import { construirBVH, paresProximos, lancarRaio, pontoDentro, dentroDeOutras } from './bvh.js';
 
 const EPS = 1e-12;
 
@@ -191,7 +191,7 @@ export function validar(m, opc = {}) {
     vertices: m.pos.length / 3, triangulos: nt,
     arestasAbertas: 0, arestasNaoManifold: 0, verticesNaoManifold: 0, orientacaoTrocada: 0,
     facesDegeneradas: 0, facesDuplicadas: 0, verticesDuplicados: 0, verticesSoltos: 0,
-    componentes: 0, componentesAbertos: 0, componentesInvertidos: 0, componentesInternos: 0,
+    componentes: 0, componentesAbertos: 0, componentesInvertidos: 0, componentesInternos: 0, cavidades: 0,
     autoInterseccoes: null, autoInterseccoesCompleto: true,
     volume: 0, area: 0, caixa: caixa(m),
     espessuraMinima: null, facesFinas: 0, regioesCriticas: 0, limiteEspessura: opc.limiteEspessura || 0.8,
@@ -229,7 +229,11 @@ export function validar(m, opc = {}) {
     const vol = volume(sm);
     const aberta = !!abertaPorComp[c];
     if (aberta) r.componentesAbertos++;
-    else if (vol < 0) r.componentesInvertidos++;
+    else if (vol < 0) {
+      // vazio fechado dentro de outra casca (peça oca) é cavidade, não defeito
+      const cav = comp.n <= 60 && dentroDeOutras(m, k => listas.lista.subarray(listas.inicio[k], listas.inicio[k + 1]), c, comp.n);
+      if (cav) r.cavidades++; else r.componentesInvertidos++;
+    }
     infoComp.push({ faces: faces.length, volume: vol, aberta, caixa: caixa(sm) });
   }
   r.infoComponentes = infoComp;
@@ -249,7 +253,8 @@ export function validar(m, opc = {}) {
         const a = m.idx[t * 3] * 3, b = m.idx[t * 3 + 1] * 3, cc = m.idx[t * 3 + 2] * 3;
         const x = (m.pos[a] + m.pos[b] + m.pos[cc]) / 3, y = (m.pos[a + 1] + m.pos[b + 1] + m.pos[cc + 1]) / 3, z = (m.pos[a + 2] + m.pos[b + 2] + m.pos[cc + 2]) / 3;
         // ponto de c dentro do resto (paridade conta c também: 1 cruzamento dele mesmo)
-        infoComp[c].interno = pontoDentroOutros(m, bvh, comp.rotulo, c, x, y, z);
+        // cavidade (vazio de peça oca, volume negativo) não é sobra interna
+        infoComp[c].interno = infoComp[c].volume > 0 && pontoDentroOutros(m, bvh, comp.rotulo, c, x, y, z);
         if (infoComp[c].interno) r.componentesInternos++;
       }
     }

@@ -16,6 +16,7 @@ import { montarCortar } from './secoes/cortar.js';
 import { montarRelevo } from './secoes/relevo.js';
 import { montarExportar } from './secoes/exportar.js';
 import { montarFormas } from './secoes/formas.js';
+import { montarModificar } from './secoes/modificar.js';
 import { alinhar, duplicarEmSerie } from '../core/modelagem.js';
 import { icone } from './icones.js';
 import { calcularSugestoes } from './sugestoes.js';
@@ -27,6 +28,7 @@ const ICONES = { olho: icone('olho', 15), olhoFechado: icone('olhoFechado', 15) 
 const FERRAMENTAS = [
   { sec: 'inicio', ico: 'casa', rot: 'Início', titulo: 'O que você quer fazer?', desc: 'Escolha uma tarefa — o Estúdio guia o resto. As sugestões abaixo são do modelo aberto.' },
   { sec: 'formas', ico: 'formas', rot: 'Formas', titulo: 'Adicionar formas', desc: 'Caixa, cilindro, círculo, estrela, texto, furo de parafuso… Clique e a forma aparece na mesa. Medidas em mm, e dá pra juntar ou furar uma peça com a outra.' },
+  { sec: 'mod', ico: 'modificar', rot: 'Modificar', titulo: 'Modificar a peça', desc: 'Arredondar e chanfrar bordas, puxar ou empurrar uma face, deixar oca com parede em mm e espelhar. Geometria de verdade, com prévia.' },
   { sec: 'diag', ico: 'escudo', rot: 'Consertar', titulo: 'Conferir e consertar', desc: 'Vê se o arquivo imprime e conserta buracos, faces viradas e sobras, sem perder detalhe.' },
   { sec: 'transf', ico: 'ajustar', rot: 'Ajustar', titulo: 'Posição, tamanho e cor', desc: 'Medidas em mm, girar, deitar pra imprimir sem suporte e a cor de cada peça.' },
   { sec: 'sel', ico: 'selecionar', rot: 'Selecionar', titulo: 'Selecionar uma parte', desc: 'Clique numa orelha, olho ou detalhe: a seleção para sozinha na dobra.' },
@@ -161,6 +163,7 @@ export class Estudio {
     this.inicioEl = el('div', { class: 'e3d-inicio' });
     this.painelCorpo.appendChild(this.inicioEl);
     this.secoes.formas = montarFormas(this);
+    this.secoes.modificar = montarModificar(this);
     this.secoes.diagnostico = montarDiagnostico(this);
     this.secoes.transformar = montarTransformar(this);
     this.secoes.selecionar = montarSelecionar(this);
@@ -464,6 +467,7 @@ export class Estudio {
       : f === 'navegar' ? 'arrastar: girar · botão direito: mover · rodinha: zoom'
       : f === 'corte' ? 'clique na peça: o corte vai até ali · arraste a seta azul · ↑ ↓ ajustam'
       : f === 'deitar' ? 'clique na face que deve ficar na mesa · Esc volta'
+      : f === 'modificar' ? 'clique na borda ou na face da peça · Esc volta'
       : 'clique na peça · Shift soma · Alt tira · Esc volta';
     this.emitir('ferramenta', f);
   }

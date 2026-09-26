@@ -5,7 +5,7 @@ import { arestas, componentes, listasPorRotulo, lacosDeBorda, facesDoVertice } f
 import { criar, caixa, soldar, compactar, subMalha, volume, area, semFaces } from './malha.js';
 import { facesDuplicadas, verticesCoincidentes } from './validador.js';
 import { triangularPoligono3D, normalNewell, baseDoPlano, lacoSeCruza } from './triangular.js';
-import { construirBVH, lancarRaio } from './bvh.js';
+import { construirBVH, lancarRaio, dentroDeOutras } from './bvh.js';
 
 /* ------------------------------------------------------------ passos */
 
@@ -353,7 +353,13 @@ export function orientarParaFora(m) {
   for (let c = 0; c < comp.n; c++) {
     const faces = listas.lista.subarray(listas.inicio[c], listas.inicio[c + 1]);
     let virar = false;
-    if (!aberto[c]) virar = volume(subMalha(m, faces).malha) < 0;
+    if (!aberto[c]) {
+      // casca fechada: cavidade (vazio dentro de outra) tem volume negativo de
+      // propósito; só vira se o sinal não bate com o aninhamento
+      const cav = comp.n > 1 && comp.n <= 60 ? dentroDeOutras(m, k => listas.lista.subarray(listas.inicio[k], listas.inicio[k + 1]), c, comp.n) : 0;
+      const vol = volume(subMalha(m, faces).malha);
+      virar = cav ? vol > 0 : vol < 0;
+    }
     else {
       // aberto: raio pra fora a partir de algumas faces; se bate em si mesmo
       // na maioria, a normal aponta pra dentro

@@ -190,6 +190,10 @@ html[data-tema=escuro] .e3d{ --e3d-fundo-a:#20242b; --e3d-fundo-b:#121418;
 .e3d-sec .btn.primary{ box-shadow:0 8px 18px -10px rgba(229,76,0,.8) }
 .e3d-botoes .btn.largo{ flex:1 1 100%; height:44px; font-size:14px; border-radius:12px }
 .e3d-sec .btn.mini{ padding:5px 10px; font-size:12px }
+.e3d-ops .e3d-op{ display:flex; align-items:center; gap:6px; padding:5px 0; border-bottom:1px solid var(--line-soft); font-size:13px }
+.e3d-ops .e3d-op > span:first-child{ flex:1 }
+.e3d-ops .e3d-op input{ width:64px }
+.e3d-ops .e3d-op.erro > span:first-child{ color:var(--danger, #c62828) }
 .e3d-sec .seg{ display:flex; flex-wrap:wrap; gap:2px; padding:3px; margin-bottom:10px; border-radius:12px; background:var(--bg-2); border:0 }
 .e3d-sec .seg button{ flex:1 1 auto; padding:7px 10px; font:600 12px var(--sans); border:0; border-radius:9px; background:none; color:var(--ink-soft); cursor:pointer }
 .e3d-sec .seg button:hover{ color:var(--ink) }

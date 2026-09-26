@@ -6,6 +6,7 @@ import { reparar as repararMalha } from '../core/reparo.js';
 import { comContexto, manifold, temManifold } from '../core/solidos.js';
 import { cortarPorPlano } from '../core/corte.js';
 import { cortarLocal, sugerirSeparacao } from '../core/corteLocal.js';
+import { aplicarOperacao, reaplicar } from '../core/historico.js';
 import { separarDetalhe, separarPorCor, separarCascas } from '../core/separar.js';
 import { aplicarRelevo } from '../core/relevo.js';
 import { segmentar } from '../core/segmentacao.js';
@@ -142,6 +143,10 @@ export const OPERACOES = {
     };
   },
   transformarParte({ parte, transform }) { return { parte: { ...parte, malha: transformar(parte.malha, transform) } }; },
+  // modelagem: arredondar, chanfrar, puxar/empurrar face, casca, espelhar
+  // (op com bordas/faces por posição relativa: dá pra refazer depois)
+  modificar({ parte, op }) { const p = aplicarOperacao(parte, op); return { parte: { ...p, nome: parte.nome } }; },
+  reaplicar({ parte, operacoes }) { return reaplicar(parte, operacoes); },
   // prévia ao vivo dos furos num objeto
   furar({ alvo, furos }) { return aplicarFuros(alvo, furos); },
 

@@ -535,6 +535,76 @@ async function main() {
   });
   await pg.context().close();
 
+  console.log('9) modelar: caixa -> arredondar todas as bordas -> deixar oca aberta em cima -> mudar a medida refaz tudo');
+  pg = await novaPagina(b);
+  await abrirEstudio(pg, 'file://' + teste + '/index.html');
+  const malhaDe = i => pg.evaluate(k => { const o = window.Estudio3D.estudio.cena.objetos[k]; const p = o.partes[0].malha; return { pos: Array.from(p.pos), idx: Array.from(p.idx), ops: (o.operacoes || []).length }; }, i);
+  const conferir = async (rot, tam) => {
+    const m = await malhaDe(0), M = { pos: Float64Array.from(m.pos), idx: Uint32Array.from(m.idx) };
+    const v = validar(M, { completo: true });
+    if (!v.fechada || v.autoInterseccoes || v.facesDegeneradas || !(v.volume > 0)) throw new Error(rot + ': ' + JSON.stringify({ f: v.fechada, ai: v.autoInterseccoes, deg: v.facesDegeneradas }));
+    const { caixa: cx } = await import('../../src/estudio3d/core/malha.js');
+    const t = cx(M).tam;
+    if (tam && t.some((x, i) => Math.abs(x - tam[i]) > 1e-3)) throw new Error(rot + ': medida ' + t.map(x => x.toFixed(3)).join('x'));
+    return { v, ops: m.ops };
+  };
+  await passo(pg, 'caixa 30×20×10 + arredondar todas as bordas 2 mm (prévia, aplicar): medidas mantidas, malha válida', async () => {
+    await abrirSecao(pg, 'formas');
+    await pg.click('[data-forma=caixa]');
+    await pg.waitForFunction(() => window.Estudio3D.estudio.cena.objetos.length === 1, null, { timeout: 30000 });
+    for (const [k, v] of [['largura', '30'], ['profundidade', '20'], ['altura', '10']]) { await pg.fill('[data-sec=formas] [data-p=' + k + ']', v); await pg.press('[data-sec=formas] [data-p=' + k + ']', 'Enter'); await pg.waitForTimeout(400); }
+    await pg.waitForFunction(() => { const e = window.Estudio3D.estudio, c = e.cena.caixaExata(e.cena.objetos[0]); return Math.abs(c.max[0] - c.min[0] - 30) < 1e-6 && Math.abs(c.max[2] - c.min[2] - 10) < 1e-6; }, null, { timeout: 30000 });
+    await abrirSecao(pg, 'mod');
+    await pg.click('[data-sec=mod] [data-a=ferr] button[data-v=arredondar]');
+    await pg.click('[data-sec=mod] [data-a=todas]');
+    await pg.fill('[data-sec=mod] [data-a=valor]', '2');
+    await pg.click('[data-sec=mod] [data-a=ir]'); await confirmarPrevia(pg);
+    await pg.waitForFunction(() => (window.Estudio3D.estudio.cena.objetos[0].operacoes || []).length === 1, null, { timeout: 60000 });
+    await conferir('arredondar', [30, 20, 10]);
+  });
+  await passo(pg, 'deixar oca (parede 2 mm) aberta na face de cima', async () => {
+    await pg.click('[data-sec=mod] [data-a=ferr] button[data-v=casca]');
+    const s = await pg.evaluate(() => { const e = window.Estudio3D.estudio, c = e.cena.caixaExata(e.cena.objetos[0]); return e.visor.telaDe((c.min[0] + c.max[0]) / 2, (c.min[1] + c.max[1]) / 2, c.max[2]); });
+    await pg.mouse.click(s.x, s.y);
+    await pg.waitForFunction(() => /1<\/b> face/.test(document.querySelector('[data-sec=mod] [data-a=info]').innerHTML), null, { timeout: 20000 });
+    await pg.fill('[data-sec=mod] [data-a=parede]', '2');
+    await pg.click('[data-sec=mod] [data-a=ir]'); await confirmarPrevia(pg);
+    await pg.waitForFunction(() => (window.Estudio3D.estudio.cena.objetos[0].operacoes || []).length === 2, null, { timeout: 90000 });
+    const r = await conferir('oca', [30, 20, 10]);
+    if (!(r.v.volume < 3000 && r.v.componentes === 1)) throw new Error('não ficou pote: ' + r.v.volume + ' / ' + r.v.componentes);
+  });
+  await passo(pg, 'mudar a largura pra 50 refaz o arredondado e a casca; desfazer volta', async () => {
+    await abrirSecao(pg, 'formas');
+    await pg.fill('[data-sec=formas] [data-p=largura]', '50'); await pg.press('[data-sec=formas] [data-p=largura]', 'Enter');
+    await pg.waitForFunction(() => { const e = window.Estudio3D.estudio, c = e.cena.caixaExata(e.cena.objetos[0]); return Math.abs(c.max[0] - c.min[0] - 50) < 1e-6; }, null, { timeout: 90000 });
+    const r = await conferir('refeita', [50, 20, 10]);
+    if (r.ops !== 2 || !(r.v.volume < 5000)) throw new Error('operações não refeitas: ' + r.ops + ' vol ' + r.v.volume);
+    if (await pg.locator('[data-sec=formas] .e3d-op').count() !== 2) throw new Error('lista de operações');
+    await pg.keyboard.press('Control+z');
+    await pg.waitForFunction(() => { const e = window.Estudio3D.estudio, c = e.cena.caixaExata(e.cena.objetos[0]); return Math.abs(c.max[0] - c.min[0] - 30) < 1e-6; }, null, { timeout: 20000 });
+  });
+  await passo(pg, 'caixa nova: medir borda (40 mm), simetria X pega as 2 verticais, puxar a face de cima +5', async () => {
+    await abrirSecao(pg, 'formas');
+    await pg.click('[data-forma=caixa]');
+    await pg.waitForFunction(() => window.Estudio3D.estudio.cena.objetos.length === 2, null, { timeout: 30000 });
+    const tela = (fx, fy, fz) => pg.evaluate(([a, b, c]) => { const e = window.Estudio3D.estudio, o = e.cena.objetos[1], x = e.cena.caixaExata(o); return e.visor.telaDe(x.min[0] + a * (x.max[0] - x.min[0]), x.min[1] + b * (x.max[1] - x.min[1]), x.min[2] + c * (x.max[2] - x.min[2])); }, [fx, fy, fz]);
+    await abrirSecao(pg, 'mod');
+    await pg.click('[data-sec=mod] [data-a=ferr] button[data-v=medir]');
+    let s = await tela(0.5, 0, 1); await pg.mouse.click(s.x, s.y);
+    await pg.waitForFunction(() => /40,00 mm/.test(document.querySelector('[data-sec=mod] [data-a=info]').textContent), null, { timeout: 10000 });
+    await pg.click('[data-sec=mod] [data-a=ferr] button[data-v=arredondar]');
+    await pg.check('[data-sec=mod] [data-a=simX]');
+    s = await tela(0, 0, 0.5); await pg.mouse.click(s.x, s.y);
+    await pg.waitForFunction(() => /<b>2<\/b> borda/.test(document.querySelector('[data-sec=mod] [data-a=info]').innerHTML), null, { timeout: 10000 });
+    await pg.uncheck('[data-sec=mod] [data-a=simX]');
+    await pg.click('[data-sec=mod] [data-a=ferr] button[data-v=puxar]');
+    s = await tela(0.5, 0.5, 1); await pg.mouse.click(s.x, s.y);
+    await pg.fill('[data-sec=mod] [data-a=dist]', '5');
+    await pg.click('[data-sec=mod] [data-a=ir]'); await confirmarPrevia(pg);
+    await pg.waitForFunction(() => { const e = window.Estudio3D.estudio, c = e.cena.caixaExata(e.cena.objetos[1]); return Math.abs(c.max[2] - c.min[2] - 25) < 1e-6; }, null, { timeout: 30000 });
+  });
+  await pg.context().close();
+
   console.log('7) laboratório fotos -> 3D (pacote de teste, file://)');
   const { cenaDeFotos } = await import('../util/fotos.mjs');
   const { escreverPNG } = await import('../util/png.mjs');

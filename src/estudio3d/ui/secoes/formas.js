@@ -5,6 +5,7 @@ import { el, fmt, lerNumero, avisar } from '../util.js';
 import { FORMAS, formaPorId, paramsPadrao } from '../../core/formas.js';
 import { formaDeTexto, FONTES } from '../formas2d.js';
 import * as M4 from '../../core/mat4.js';
+import { NOME_OP } from './modificar.js';
 
 const GRUPOS = [['3d', 'Formas 3D'], ['2d', 'Formas planas (com espessura)'], ['pronta', 'Peças prontas pra impressão']];
 
@@ -81,16 +82,28 @@ export function montarFormas(est) {
 
   // medidas da forma escolhida (refaz a geometria, mantém lugar e giro)
   let refazendo = 0;
-  async function refazer(o, forma) {
+  // (a lista de operações — arredondar, oca… — é refeita em cima da forma nova)
+  async function refazer(o, forma, ops = o.operacoes) {
     const def = formaPorId(forma.id);
     const eu = ++refazendo;
-    let r;
-    try { r = await est.rodar('forma', { id: forma.id, params: forma.params, opc: { ...extrasDe(forma.id, forma), cor: o.partes[0].cor } }, def.nome); } catch (e) { render(); return; }
+    let r, malha, status = null;
+    try {
+      r = await est.rodar('forma', { id: forma.id, params: forma.params, opc: { ...extrasDe(forma.id, forma), cor: o.partes[0].cor } }, def.nome);
+      malha = r.malha;
+      if (ops && ops.length) {
+        const rr = await est.rodar('reaplicar', { parte: { nome: o.nome, malha, cor: o.partes[0].cor }, operacoes: ops }, 'Refazer operações');
+        malha = rr.parte.malha; status = rr.status;
+      }
+    } catch (e) { render(); return; }
     if (eu !== refazendo || !est.cena.objeto(o.id)) return;
+    const falha = status && status.find(x => !x.ok);
+    if (falha) avisar('Uma operação não coube nas medidas novas: ' + falha.erro, 'warn');
     // mantém a base no mesmo lugar: a forma nova nasce apoiada em z=0 local
     est.cena.aplicar('Mudar medidas de ' + o.nome, () => {
       o.forma = { ...forma, params: r.params };
-      o.partes = [{ ...o.partes[0], malha: r.malha }];
+      o.operacoes = ops && ops.length ? ops : undefined;
+      o.statusOps = status;
+      o.partes = [{ ...o.partes[0], malha }];
     });
   }
   function render() {
@@ -125,6 +138,26 @@ export function montarFormas(est) {
         const fs = el('select', { 'data-p': 'fonte' }, FONTES.map(n => el('option', { value: n, selected: n === (o.forma.fonte || 'Arial Black') ? true : null }, n)));
         fs.addEventListener('change', () => refazer(o, { ...o.forma, fonte: fs.value }));
         cab.appendChild(el('div', { class: 'e3d-l2', style: 'margin-top:8px' }, el('div', null, el('label', null, 'Texto'), t), el('div', null, el('label', null, 'Fonte'), fs)));
+      }
+      // operações feitas em Modificar: valor editável, tirar da lista
+      if (o.operacoes && o.operacoes.length) {
+        const lista = el('div', { class: 'e3d-ops', 'data-a': 'ops' });
+        lista.appendChild(el('div', { class: 'e3d-titulo', style: 'margin-top:12px' }, 'Operações'));
+        o.operacoes.forEach((op, i) => {
+          const st = o.statusOps && o.statusOps[i];
+          const linha = el('div', { class: 'e3d-op' + (st && !st.ok ? ' erro' : ''), title: st && !st.ok ? st.erro : '' });
+          linha.appendChild(el('span', null, (i + 1) + '. ' + NOME_OP[op.tipo] + (op.tipo === 'espelhar' ? ' (' + 'XYZ'[op.eixo] + (op.unir ? ', unido' : '') + ')' : '')));
+          if (op.valor != null) {
+            const inp = el('input', { type: 'text', value: fmt(op.valor, 2).replace(/\./g, ''), 'data-op': i });
+            inp.addEventListener('change', () => { const v = lerNumero(inp.value, op.valor); refazer(o, o.forma, o.operacoes.map((x, k) => k === i ? { ...x, valor: v } : x)); });
+            inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); inp.blur(); } });
+            linha.appendChild(inp);
+            linha.appendChild(el('span', { class: 'u' }, 'mm'));
+          }
+          linha.appendChild(el('button', { type: 'button', class: 'btn mini', title: 'Tirar esta operação', 'data-tirar': i, onclick: () => refazer(o, o.forma, o.operacoes.filter((_, k) => k !== i)) }, '✕'));
+          lista.appendChild(linha);
+        });
+        cab.appendChild(lista);
       }
     } else cab.appendChild(el('p', { class: 'u', style: 'margin:4px 0 0' }, 'Peça aberta de arquivo: medidas e giro ficam em Ajustar.'));
     box.appendChild(cab);

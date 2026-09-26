@@ -198,6 +198,27 @@ export function contarCruzamentos(bvh, ox, oy, oz, dx, dy, dz) {
   return n;
 }
 
+// distâncias de todos os cruzamentos do raio (ordenadas, sem repetir aresta)
+export function cruzamentosRaio(bvh, ox, oy, oz, dx, dy, dz) {
+  const p = bvh.malha.pos, idx = bvh.malha.idx;
+  const ix = 1 / dx, iy = 1 / dy, iz = 1 / dz;
+  const ts = [];
+  const pilha = [0];
+  while (pilha.length) {
+    const no = pilha.pop();
+    if (!raioCaixa(bvh.caixas, no * 6, ox, oy, oz, ix, iy, iz, Infinity)) continue;
+    const c = bvh.cont[no];
+    if (c >= 0) {
+      const ini = bvh.filho[no];
+      for (let i = ini; i < ini + c; i++) { const d = raioTri(p, idx, bvh.ordem[i], ox, oy, oz, dx, dy, dz); if (d > 1e-9) ts.push(d); }
+    } else { const e = bvh.filho[no]; pilha.push(e + 1, e); }
+  }
+  ts.sort((a, b) => a - b);
+  const out = [];
+  for (const t of ts) if (!out.length || t - out[out.length - 1] > 1e-7) out.push(t);
+  return out;
+}
+
 // Ponto dentro do sólido? Voto de 3 raios em direções "tortas" (evita arestas)
 export function pontoDentro(bvh, x, y, z) {
   const dirs = [[0.5773, 0.5774, 0.5773], [-0.6123, 0.3536, 0.7071], [0.2673, -0.8018, -0.5345]];
@@ -240,3 +261,71 @@ export function paresProximos(bvh, cb) {
 }
 
 function volumeNo(c, n) { const o = n * 6; return (c[o + 3] - c[o]) * (c[o + 4] - c[o + 1]) * (c[o + 5] - c[o + 2]); }
+
+// Quantas outras cascas fechadas envolvem um ponto da casca c (paridade dos
+// cruzamentos só com as OUTRAS). Ímpar = c é uma cavidade (vazio por dentro).
+export function dentroDeOutras(m, facesDe, c, nComp) {
+  const outras = [];
+  for (let k = 0; k < nComp; k++) if (k !== c) for (const f of facesDe(k)) outras.push(f);
+  if (!outras.length) return 0;
+  const idx = new Uint32Array(outras.length * 3);
+  outras.forEach((f, i) => { idx[i * 3] = m.idx[f * 3]; idx[i * 3 + 1] = m.idx[f * 3 + 1]; idx[i * 3 + 2] = m.idx[f * 3 + 2]; });
+  const bvh = construirBVH({ pos: m.pos, idx });
+  const f0 = facesDe(c)[0], v = m.idx[f0 * 3] * 3;
+  const votos = [[0.5773, 0.5774, 0.5775], [-0.6123, 0.3121, 0.7265], [0.2413, -0.8814, 0.4061]].map(d => contarCruzamentos(bvh, m.pos[v], m.pos[v + 1], m.pos[v + 2], d[0], d[1], d[2]) % 2);
+  return votos.filter(x => x).length >= 2 ? 1 : 0;
+}
+
+// quadrado da distância ponto–triângulo (Ericson, Real-Time Collision Detection 5.1.5)
+function dist2Tri(px, py, pz, P, a, b, c) {
+  const ax = P[a], ay = P[a + 1], az = P[a + 2], bx = P[b], by = P[b + 1], bz = P[b + 2], cx = P[c], cy = P[c + 1], cz = P[c + 2];
+  const abx = bx - ax, aby = by - ay, abz = bz - az, acx = cx - ax, acy = cy - ay, acz = cz - az;
+  const apx = px - ax, apy = py - ay, apz = pz - az;
+  const d1 = abx * apx + aby * apy + abz * apz, d2 = acx * apx + acy * apy + acz * apz;
+  let qx, qy, qz;
+  if (d1 <= 0 && d2 <= 0) { qx = ax; qy = ay; qz = az; } else {
+    const bpx = px - bx, bpy = py - by, bpz = pz - bz;
+    const d3 = abx * bpx + aby * bpy + abz * bpz, d4 = acx * bpx + acy * bpy + acz * bpz;
+    if (d3 >= 0 && d4 <= d3) { qx = bx; qy = by; qz = bz; } else {
+      const vc = d1 * d4 - d3 * d2;
+      if (vc <= 0 && d1 >= 0 && d3 <= 0) { const v = d1 / (d1 - d3); qx = ax + v * abx; qy = ay + v * aby; qz = az + v * abz; } else {
+        const cpx = px - cx, cpy = py - cy, cpz = pz - cz;
+        const d5 = abx * cpx + aby * cpy + abz * cpz, d6 = acx * cpx + acy * cpy + acz * cpz;
+        if (d6 >= 0 && d5 <= d6) { qx = cx; qy = cy; qz = cz; } else {
+          const vb = d5 * d2 - d1 * d6;
+          if (vb <= 0 && d2 >= 0 && d6 <= 0) { const w = d2 / (d2 - d6); qx = ax + w * acx; qy = ay + w * acy; qz = az + w * acz; } else {
+            const va = d3 * d6 - d5 * d4;
+            if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0) { const w = (d4 - d3) / ((d4 - d3) + (d5 - d6)); qx = bx + w * (cx - bx); qy = by + w * (cy - by); qz = bz + w * (cz - bz); } else {
+              const den = 1 / (va + vb + vc), v = vb * den, w = vc * den;
+              qx = ax + abx * v + acx * w; qy = ay + aby * v + acy * w; qz = az + abz * v + acz * w;
+            }
+          }
+        }
+      }
+    }
+  }
+  const dx = px - qx, dy = py - qy, dz = pz - qz;
+  return dx * dx + dy * dy + dz * dz;
+}
+
+// distância do ponto até a malha, no máximo 'teto' (poda pela caixa dos nós)
+export function distanciaAte(bvh, px, py, pz, teto = Infinity) {
+  const P = bvh.malha.pos, I = bvh.malha.idx, C = bvh.caixas;
+  let melhor = teto * teto;
+  const pilha = [0];
+  while (pilha.length) {
+    const no = pilha.pop(), o = no * 6;
+    const dx = Math.max(C[o] - px, 0, px - C[o + 3]), dy = Math.max(C[o + 1] - py, 0, py - C[o + 4]), dz = Math.max(C[o + 2] - pz, 0, pz - C[o + 5]);
+    if (dx * dx + dy * dy + dz * dz >= melhor) continue;
+    const c = bvh.cont[no];
+    if (c >= 0) {
+      const ini = bvh.filho[no];
+      for (let i = ini; i < ini + c; i++) {
+        const t = bvh.ordem[i];
+        const d = dist2Tri(px, py, pz, P, I[t * 3] * 3, I[t * 3 + 1] * 3, I[t * 3 + 2] * 3);
+        if (d < melhor) melhor = d;
+      }
+    } else { const e = bvh.filho[no]; pilha.push(e + 1, e); }
+  }
+  return Math.sqrt(melhor);
+}
