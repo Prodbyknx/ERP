@@ -110,7 +110,9 @@ export async function secaoV8({ b, teste, novaPagina, passo, abrirEstudio, abrir
     await pg.click('[data-sec=relevo] [data-a=ir]'); await confirmarPrevia(pg);
     await pg.waitForFunction(k => window.Estudio3D.estudio.cena.objetos[k].partes.length === 2, n0, { timeout: 60000 });
     const p = await malha(n0, 1); limpo(p, 'letra na quina');
-    const cp = caixa(M(p));
+    // letra e caixa no MESMO referencial (o da peça)
+    const cp = caixa(M(p)), cl = caixa(M(await malha(n0, 0)));
+    c.min = cl.min; c.max = cl.max;
     if (!(cp.max[2] > c.max[2] + 0.9 && cp.max[1] > c.min[1] + 0.5)) throw new Error('não dobrou pro topo: letra ' + JSON.stringify(cp) + ' caixa ' + JSON.stringify(c));
   });
 
