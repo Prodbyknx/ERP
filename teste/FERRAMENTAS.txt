@@ -362,7 +362,44 @@ CHECKLIST DA AUDITORIA (versão 3) — cada item tem teste automático
                MEDIDO no arquivo
    Rodar de novo: npm test  e  npm run e2e
 
+CHECKLIST DA VERSÃO 5 — corte, separação orgânica e modelagem
+  Boneco de teste realista: 120 mm, mãos com dedos a ~7 mm da coxa, em
+  4 versões (limpo; "IA" denso com pele irregular; cascas sobrepostas;
+  STL cru sem solda e com buracos). Tudo com teste automático:
+   CORTAR PARTE   mão, cabeça, dedo e pé nas 4 versões: 2 sólidos
+                  fechados, nenhum cruzamento novo, volume conservado,
+                  o resto continua UMA peça (plano não corta o corpo)
+   ENCAIXE        mão com pino Ø3 (o corte anda até caber), furo = pino
+                  + 2×folga, pino e furo sem sobrepor, 3MF volta igual;
+                  corte na cintura com 2 pinos nas versões cascas/STL cru
+   SEPARAR        seleção por pincel na mão inteira -> plano com pino;
+                  seleção parcial torta -> recusa com orientação (nunca
+                  entrega peça quebrada); cascas sobrepostas unidas antes;
+                  clique "parte até o ponto fino" (mão/cabeça) + Separar
+   MODIFICAR      arredondar 4 e 12 bordas da caixa (volume da fórmula,
+                  medida 30×20×10 mantida), placa 100×50×3 (raio 1,6
+                  recusado: "máximo 1,49 mm"), aro de cilindro, canto de
+                  dentro do L (põe material), base de pino; chanfro no
+                  topo e escareado na boca do furo; puxar +5/empurrar −4
+                  (volume exato), empurrar demais recusado; oca 2 mm
+                  fechada, aberta (pote) e esfera; espelhar+unir com
+                  costura exata; operações refeitas ao mudar a medida
+   PELA TELA      mão do STL cru separada com encaixe e desfeita; cabeça
+                  num clique + Separar; caixa -> arredondar -> oca aberta
+                  -> largura 50 refaz tudo -> desfazer; medir 40,00 mm;
+                  simetria X; puxar +5
+   Cada resultado: fechado, sem cruzamento, sem face degenerada, 3MF
+   exportado e reaberto com a mesma medida e volume.
+
 O QUE AINDA NÃO FAZ
+  - Arredondar borda de forma livre (curva que não é reta nem círculo):
+    recusa com aviso. Use Suavizar.
+  - Deformar/esculpir (puxar região, inflar, torcer), desenhar perfil 2D
+    e revolucionar, curvas/tubos e texto envolvendo superfície curva:
+    próxima etapa (modelagem orgânica).
+  - Simetria "ao vivo" (mexe de um lado, o outro acompanha) vem junto
+    com as ferramentas de deformação; hoje: simetria na escolha de
+    bordas/faces e Espelhar + unir.
   - Não abre STEP (não existe biblioteca confiável que rode no
     navegador). Exporte STL ou 3MF do CAD.
   - Ímã é de grade (mm e graus). Ímã em vértice/borda/superfície ainda

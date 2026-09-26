@@ -17,7 +17,47 @@ COMO USAR
    de exemplo: Gabriel (admin) e Ana (vendedora).
 
 
-NOVIDADES DESTA VERSÃO (4) — FOTOS -> 3D (etapas 2 e 3, teste)
+NOVIDADES DESTA VERSÃO (5) — CORTAR PARTE, SEPARAR MÃO, MODELAR
+---------------------------------------------------------------
+
+CORTAR -> "SÓ UMA PARTE"  (mão, cabeça, orelha, chifre, pé…)
+Clique na parte: o corte vai sozinho pro ponto mais fino (pulso,
+pescoço, base) e SÓ ela sai — o plano não corta o resto do boneco.
+Ajuste com a seta ou ↑ ↓, escolha o encaixe (tamanho automático: o
+maior pino que cabe; se o ponto mais fino não comporta pino, o corte
+anda um pouco pro lado do corpo). As duas peças saem fechadas.
+Antes, cortar no pulso cortava quadril e pernas junto.
+
+CORTE MAIS ROBUSTO
+- STL cru (sem solda, com buraco): conserta sozinho antes de cortar.
+- Figura feita de cascas sobrepostas: junta tudo num sólido antes
+  (antes os pinos eram pulados sem aviso).
+- Pino que não cabe na seção é diminuído, não pulado.
+
+SELECIONAR -> "PARTE (ATÉ O PONTO FINO)"
+Um clique na mão/cabeça seleciona ela inteira até o pulso/pescoço
+(modelo orgânico não tem dobra pra seleção parar). Depois, Separar.
+Separar agora conserta STL aberto sozinho, fecha buraquinho esquecido
+na seleção e, se a tampa curva fosse atravessar a peça, recusa com
+explicação em vez de entregar peça quebrada.
+
+MODIFICAR (ferramenta nova, na barra da esquerda)
+- ARREDONDAR / CHANFRAR: clique nas bordas (ou "Todas as bordas"),
+  raio em mm. Bordas retas e circulares (topo de cilindro, boca de
+  furo = escareado, base de pino). Mostra o máximo possível e recusa
+  valor impossível dizendo o limite.
+- PUXAR / EMPURRAR: clique numa face plana, + sobe, − rebaixa.
+- DEIXAR OCA: parede em mm; clique nas faces que ficam abertas
+  (caixa vira pote). Funciona em peça reta, arredondada e orgânica.
+- ESPELHAR (+ unir): modele metade, espelhe e una — costura exata.
+- MEDIR: dois cliques = distância; clique numa borda = comprimento
+  ou diâmetro.
+- SIMETRIA X/Y: escolheu uma borda de um lado, a do outro vem junto.
+Em peça criada em Formas, cada operação entra em "Operações" (em
+Formas): dá pra mudar o valor ou a medida da caixa e tudo é refeito.
+
+
+NOVIDADES DA VERSÃO 4 — FOTOS -> 3D (etapas 2 e 3, teste)
 -------------------------------------------------------------
 
 LABORATÓRIO FOTOS -> 3D  (abra  laboratorio-fotos-3d.html  com dois cliques)
