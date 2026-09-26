@@ -106,7 +106,7 @@ export class Visor {
       if (mexeu || this.precisaRender) {
         this.precisaRender = false;
         // olhando de baixo (verso da peça), a placa da mesa não pode tapar a vista
-        if (this.placa) this.placa.visible = this.camera.position.z > 0;
+        if (this.placasMesh) { const v = this.camera.position.z > 0; for (const p of this.placasMesh) p.visible = v; }
         this.renderer.render(this.scene, this.camera);
       }
     };
@@ -127,31 +127,63 @@ export class Visor {
     this.pedirRender();
   }
 
+  // mesa: uma PLACA por placa da cena, na grade do Bambu Studio (o número
+  // fica no canto; a ativa tem borda laranja). Clique numa placa vazia ativa.
   montarMesa() {
-    if (this.mesa) { this.scene.remove(this.mesa); this.mesa.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+    if (this.mesa) { this.scene.remove(this.mesa); this.mesa.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material && o.material.map) o.material.map.dispose(); }); }
     const { x: W, y: H } = this.cena.mesa;
+    const n = this.cena.placas || 1, ativa = this.cena.placaAtiva || 0;
     const m = this.mesa = new THREE.Group();
-    const T = this.escuro ? { placa: '#2a2e35', grade: '#3b414b', borda: '#5d6571' } : { placa: '#dedbd6', grade: '#c6c1ba', borda: '#8b857d' };
-    const placa = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ color: T.placa, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
-    placa.position.set(W / 2, H / 2, -0.02);
-    placa.userData.mesa = true;
-    this.placa = placa;
-    m.add(placa);
+    const T = this.escuro ? { placa: '#2a2e35', grade: '#3b414b', borda: '#5d6571', ativa: '#f25a12', num: '#c9c4bd' } : { placa: '#dedbd6', grade: '#c6c1ba', borda: '#8b857d', ativa: '#e54c00', num: '#57534e' };
     const pts = [];
     for (let x = 0; x <= W + 1e-6; x += 10) pts.push(x, 0, 0, x, H, 0);
     for (let y = 0; y <= H + 1e-6; y += 10) pts.push(0, y, 0, W, y, 0);
     const gg = new THREE.BufferGeometry(); gg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-    const grade = new THREE.LineSegments(gg, new THREE.LineBasicMaterial({ color: T.grade }));
-    grade.position.z = 0.01;
-    m.add(grade);
-    const borda = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(W, H)), new THREE.LineBasicMaterial({ color: T.borda }));
-    borda.position.set(W / 2, H / 2, 0.02);
-    m.add(borda);
-    // eixos XYZ no canto da mesa
+    const matGrade = new THREE.LineBasicMaterial({ color: T.grade });
+    this.placasMesh = [];
+    for (let k = 0; k < n; k++) {
+      const o = this.cena.origemPlaca(k), g = new THREE.Group();
+      g.position.set(o[0], o[1], 0);
+      const placa = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ color: T.placa, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+      placa.position.set(W / 2, H / 2, -0.02);
+      placa.userData.mesa = true; placa.userData.placa = k;
+      this.placasMesh.push(placa);
+      g.add(placa);
+      const grade = new THREE.LineSegments(gg, matGrade); grade.position.z = 0.01; g.add(grade);
+      const borda = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(W, H)), new THREE.LineBasicMaterial({ color: k === ativa && n > 1 ? T.ativa : T.borda }));
+      borda.position.set(W / 2, H / 2, 0.02);
+      g.add(borda);
+      if (n > 1) {
+        // número da placa no canto de cima, fora da área de impressão
+        const cv = document.createElement('canvas'); cv.width = 128; cv.height = 128;
+        const c2 = cv.getContext('2d');
+        c2.fillStyle = k === ativa ? T.ativa : T.num; c2.beginPath(); c2.arc(64, 64, 58, 0, Math.PI * 2); c2.fill();
+        c2.fillStyle = '#ffffff'; c2.font = 'bold 72px sans-serif'; c2.textAlign = 'center'; c2.textBaseline = 'middle'; c2.fillText(String(k + 1), 64, 68);
+        const tex = new THREE.CanvasTexture(cv);
+        const num = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+        num.position.set(16, H + 20, 0.05);
+        g.add(num);
+      }
+      m.add(g);
+    }
+    this.placa = this.placasMesh[0];
+    // eixos XYZ no canto da placa 1
     const eixo = (x, y, z, cor) => { const b = new THREE.BufferGeometry(); b.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0.05, x, y, z + 0.05], 3)); return new THREE.Line(b, new THREE.LineBasicMaterial({ color: cor })); };
     m.add(eixo(30, 0, 0, '#d1242f'), eixo(0, 30, 0, '#2da44e'), eixo(0, 0, 30, '#1f6feb'));
+    this.chaveMesa = n + ':' + ativa + ':' + W + 'x' + H;
     this.scene.add(m);
     this.pedirRender();
+  }
+  // refaz a mesa só se o número de placas / a ativa mudou
+  atualizarMesa() { const { x: W, y: H } = this.cena.mesa; if (this.chaveMesa !== (this.cena.placas || 1) + ':' + (this.cena.placaAtiva || 0) + ':' + W + 'x' + H) this.montarMesa(); }
+  // qual placa está debaixo do mouse (ou -1)
+  placaNoPonto(ev) {
+    const p = this.pontoNaMesa(ev);
+    return p ? this.cena.placaDoPonto(p.x, p.y) : -1;
+  }
+  enquadrarPlaca(k) {
+    const o = this.cena.origemPlaca(k), { x: W, y: H } = this.cena.mesa;
+    this.enquadrar({ min: [o[0], o[1], 0], max: [o[0] + W, o[1] + H, 20], tam: [W, H, 20] });
   }
 
   definirTema(escuro) {
@@ -353,7 +385,7 @@ export class Visor {
   enquadrar(caixa) {
     const cx = caixa || this.cena.caixaCena();
     let centro, raio;
-    if (!cx) { centro = new THREE.Vector3(this.cena.mesa.x / 2, this.cena.mesa.y / 2, 0); raio = Math.max(this.cena.mesa.x, this.cena.mesa.y) * 0.6; }
+    if (!cx) { const cp = this.cena.centroPlaca ? this.cena.centroPlaca() : [this.cena.mesa.x / 2, this.cena.mesa.y / 2]; centro = new THREE.Vector3(cp[0], cp[1], 0); raio = Math.max(this.cena.mesa.x, this.cena.mesa.y) * 0.6; }
     else {
       centro = new THREE.Vector3((cx.min[0] + cx.max[0]) / 2, (cx.min[1] + cx.max[1]) / 2, (cx.min[2] + cx.max[2]) / 2);
       raio = Math.max(5, Math.hypot(cx.tam[0], cx.tam[1], cx.tam[2]) / 2);

@@ -116,6 +116,10 @@ html[data-tema=escuro] .e3d{ --e3d-fundo-a:#20242b; --e3d-fundo-b:#121418;
 .e3d-vistas label.chip input{ position:absolute; opacity:0; pointer-events:none }
 .e3d-vistas label.chip:has(input:checked){ background:var(--brand-soft); color:var(--brand) }
 
+.e3d-placas{ position:absolute; left:12px; bottom:98px; z-index:3; display:flex; align-items:center; gap:4px; padding:4px 6px }
+.e3d-placas .rot{ font:600 11px var(--sans); color:var(--ink-soft); margin:0 4px 0 2px }
+.e3d-placas .btn{ min-width:28px; height:26px; padding:0 8px; border-radius:8px; font-weight:700 }
+.e3d-placas .btn.ativa{ background:var(--brand); border-color:var(--brand); color:#fff }
 .e3d-hud{ position:absolute; left:12px; bottom:62px; z-index:2; font:600 11.5px var(--mono); color:var(--ink-soft);
   padding:6px 11px; pointer-events:none; white-space:nowrap; max-width:calc(100% - 24px); overflow:hidden; text-overflow:ellipsis }
 .e3d-dica{ position:absolute; right:12px; top:62px; z-index:2; font:500 11.5px var(--sans); color:var(--ink-soft); pointer-events:none; padding:6px 10px; max-width:min(300px, 40%); text-align:right }

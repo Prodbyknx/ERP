@@ -17,6 +17,39 @@ COMO USAR
    de exemplo: Gabriel (admin) e Ana (vendedora).
 
 
+NOVIDADES DESTA VERSÃO (9) — VÁRIAS PLACAS
+-------------------------------------------
+
+PLACAS (barra "Placa 1 2 3 +" no canto de baixo do 3D)
+- "+" cria uma placa nova (mesma grade do Bambu Studio: placas lado a
+  lado, na mesma distância). A placa ativa tem borda laranja: peça nova,
+  forma nova e arquivo aberto entram nela.
+- Clique numa placa (no número da barra ou num lugar vazio dela) pra
+  ativar. "✕" tira a placa ativa quando ela está vazia.
+- ORGANIZAR MESA: distribui tudo; o que não cabe vai pra próxima placa e
+  o sistema CRIA a placa sozinho. Peça maior que a mesa: vai sozinha numa
+  placa e o aviso diz pra cortar.
+- Levar uma peça pra outra placa: Ajustar → Placa → número (ou "+ nova").
+  Arrastar com a seta pra dentro de outra placa também vale.
+- Tudo volta com Ctrl+Z (inclusive criar/tirar placa).
+
+EXPORTAR COM PLACAS
+- "Todas as placas (um 3MF por placa)" — padrão quando há mais de uma:
+  cada arquivo ("nome - placa 2.3mf") abre no Bambu Studio já com as peças
+  na mesa, prontas pra fatiar.
+- "Só a placa X" e "Tudo num arquivo só" (esse, quando aberto de novo
+  aqui, volta com as mesmas placas).
+- Por que um arquivo por placa: o Bambu Studio só monta várias placas a
+  partir de um 3MF de projeto dele (com impressora e filamentos). Montar
+  isso de fora trocaria as configurações da sua impressora sem aviso —
+  então não fazemos. Conferido no código-fonte do Bambu Studio.
+
+PREPARAR PRA IMPRIMIR
+Confere cada placa: peça passando da borda da placa volta pra dentro;
+peça no vão entre placas vai pra placa ativa; mostra quantas peças tem
+em cada placa.
+
+
 NOVIDADES DESTA VERSÃO (8) — CURVA 3D, EDITAR DEPOIS, VINCAR, TEXTO NA QUINA
 ------------------------------------------------------------------------------
 

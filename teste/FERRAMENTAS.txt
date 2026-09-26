@@ -451,6 +451,21 @@ CHECKLIST DA VERSÃO 8 — auditoria geral + curva 3D, editar, vincar, quina
                  vaso em pé; cipó na esfera; letra dobrando na quina da
                  caixa; vincar arrastando
 
+CHECKLIST DA VERSÃO 9 — várias placas
+   GRADE         colunas e posição das placas iguais às do Bambu Studio
+                 (⌈√n⌉ colunas, passo 1,2 × mesa; PartPlate.cpp/.hpp)
+   ORGANIZAR     11 caixas de 100×100: 3 placas criadas sozinhas (4+4+3),
+                 cada caixa dentro da sua placa, nenhuma sobreposta;
+                 Ctrl+Z volta pra 1 placa
+   GRADE MUDA    4 -> 5 placas (2 -> 3 colunas): a peça vai junto com a
+                 placa, no mesmo lugar dentro dela; tirar placa só vazia
+   EXPORTAR      placa 2 sai na posição da placa 1 (abre direto na mesa)
+   PELA TELA     organizar cria a placa 2; "+" cria a 3 e a esfera nova
+                 entra nela; clique na placa ativa; Ajustar → Placa 3;
+                 "Todas as placas" = 3 arquivos, peças dentro de 0–256 mm;
+                 "tudo num arquivo" reaberto volta com 3 placas (3+2+2);
+                 Preparar traz pra dentro a caixa que passava da borda
+
 O QUE AINDA NÃO FAZ
   - Arredondar borda de forma livre (curva que não é reta nem círculo):
     recusa com aviso. Use Suavizar.
@@ -458,6 +473,9 @@ O QUE AINDA NÃO FAZ
     há "desenhar no ar" com o mouse em qualquer direção.
   - Texto na quina: quina curva (borda redonda de pote) fica aproximada.
   - Pincel sem "máscara de pintura" ainda.
+  - Placas: o Bambu Studio abre um arquivo por placa (não um projeto com
+    todas as placas juntas) — ver o motivo no LEIA-ME.
+  - Tamanho da mesa fixo em 256 × 256 mm (A1/P1/X1). A1 mini ainda não.
   - Preparar pra imprimir não gira a peça sozinho (orientação é decisão
     sua): ele mostra o problema e o botão "Deitar na maior face plana".
   - Não abre STEP (não existe biblioteca confiável que rode no

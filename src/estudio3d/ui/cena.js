@@ -76,6 +76,72 @@ export class Cena {
     this.multi = [];                           // seleção múltipla (Shift+clique); a principal é sel.objeto
     this.mesa = { x: 256, y: 256 };            // Bambu A1 / P1 / X1
     this.limite = 40;
+    // PLACAS: mesma grade do Bambu Studio (colunas = ⌈√n⌉, passo = 1,2 × a
+    // mesa, linhas descendo em −Y). A peça é da placa onde está o centro dela.
+    this.placas = 1;
+    this.placaAtiva = 0;
+  }
+
+  /* ------------------------------------------------------------ placas */
+  static colunas(n) { const v = Math.sqrt(n), r = Math.round(v); return v > r ? r + 1 : r; }
+  origemPlaca(k, n = this.placas) {
+    const c = Cena.colunas(n), lin = Math.floor(k / c), col = k % c;
+    return [col * this.mesa.x * 1.2, -lin * this.mesa.y * 1.2];
+  }
+  centroPlaca(k = this.placaAtiva) { const o = this.origemPlaca(k); return [o[0] + this.mesa.x / 2, o[1] + this.mesa.y / 2]; }
+  placaDoPonto(x, y, n = this.placas) {
+    for (let k = 0; k < n; k++) {
+      const o = this.origemPlaca(k, n);
+      if (x >= o[0] - 1e-6 && x <= o[0] + this.mesa.x + 1e-6 && y >= o[1] - 1e-6 && y <= o[1] + this.mesa.y + 1e-6) return k;
+    }
+    return -1;
+  }
+  placaDe(o, n = this.placas) {
+    const c = this.caixaExata(o);
+    return c ? this.placaDoPonto((c.min[0] + c.max[0]) / 2, (c.min[1] + c.max[1]) / 2, n) : -1;
+  }
+  objetosDaPlaca(k) { return this.objetos.filter(o => this.placaDe(o) === k); }
+  // muda o número de placas; a grade pode mudar de colunas: cada peça vai
+  // junto com a sua placa (mesmo lugar dentro dela)
+  definirPlacas(n) {
+    n = Math.max(1, Math.round(n));
+    const antes = this.placas;
+    if (n === antes) return;
+    const onde = this.objetos.map(o => this.placaDe(o, antes));
+    this.objetos.forEach((o, i) => {
+      const k = onde[i];
+      if (k < 0 || k >= n) return;
+      const a = this.origemPlaca(k, antes), b = this.origemPlaca(k, n);
+      if (a[0] !== b[0] || a[1] !== b[1]) o.transform = M4.multiplicar(M4.translacao(b[0] - a[0], b[1] - a[1], 0), o.transform);
+    });
+    this.placas = n;
+    this.placaAtiva = Math.min(this.placaAtiva, n - 1);
+  }
+  adicionarPlaca() { this.definirPlacas(this.placas + 1); this.placaAtiva = this.placas - 1; }
+  // tira a placa k (só vazia); as de depois andam uma casa
+  removerPlaca(k) {
+    if (this.placas <= 1 || this.objetosDaPlaca(k).length) return false;
+    const n = this.placas, onde = this.objetos.map(o => this.placaDe(o, n));
+    this.objetos.forEach((o, i) => {
+      const j = onde[i];
+      if (j < 0) return;
+      const nj = j > k ? j - 1 : j, a = this.origemPlaca(j, n), b = this.origemPlaca(nj, n - 1);
+      if (a[0] !== b[0] || a[1] !== b[1]) o.transform = M4.multiplicar(M4.translacao(b[0] - a[0], b[1] - a[1], 0), o.transform);
+    });
+    this.placas = n - 1;
+    this.placaAtiva = Math.min(this.placaAtiva > k ? this.placaAtiva - 1 : this.placaAtiva, this.placas - 1);
+    return true;
+  }
+  // leva a peça pra placa k, no mesmo lugar dentro dela
+  moverParaPlaca(o, k) {
+    const j = this.placaDe(o);
+    if (k >= this.placas) this.definirPlacas(k + 1);
+    const c = this.caixaExata(o);
+    if (!c) return;
+    const b = this.origemPlaca(k);
+    if (j < 0) { const cc = this.centroPlaca(k); o.transform = M4.multiplicar(M4.translacao(cc[0] - (c.min[0] + c.max[0]) / 2, cc[1] - (c.min[1] + c.max[1]) / 2, 0), o.transform); return; }
+    const a = this.origemPlaca(j);
+    o.transform = M4.multiplicar(M4.translacao(b[0] - a[0], b[1] - a[1], 0), o.transform);
   }
   on(ev, fn) { if (!this.ouvintes.has(ev)) this.ouvintes.set(ev, new Set()); this.ouvintes.get(ev).add(fn); }
   emitir(ev, dado) { (this.ouvintes.get(ev) || []).forEach(fn => { try { fn(dado); } catch (e) { console.error(e); } }); }
@@ -87,9 +153,10 @@ export class Cena {
   aplicar(rotulo, fn) {
     const antes = this.instantaneo();
     const selAntes = { ...this.sel, multi: this.multi.slice() };
+    const placasAntes = { n: this.placas, ativa: this.placaAtiva };
     const r = fn();
     this.fixarEsticar();
-    this.pilhaDesfazer.push({ rotulo, estado: antes, sel: selAntes });
+    this.pilhaDesfazer.push({ rotulo, estado: antes, sel: selAntes, placas: placasAntes });
     if (this.pilhaDesfazer.length > this.limite) this.pilhaDesfazer.shift();
     this.pilhaRefazer = [];
     this.conferirSelecao();
@@ -124,8 +191,9 @@ export class Cena {
   desfazer() {
     const u = this.pilhaDesfazer.pop();
     if (!u) return null;
-    this.pilhaRefazer.push({ rotulo: u.rotulo, estado: this.instantaneo(), sel: { ...this.sel, multi: this.multi.slice() } });
+    this.pilhaRefazer.push({ rotulo: u.rotulo, estado: this.instantaneo(), sel: { ...this.sel, multi: this.multi.slice() }, placas: { n: this.placas, ativa: this.placaAtiva } });
     this.objetos = u.estado; this.restaurarSel(u.sel);
+    if (u.placas) { this.placas = u.placas.n; this.placaAtiva = u.placas.ativa; }
     this.conferirSelecao();
     this.emitir('mudou', { rotulo: u.rotulo, desfeito: true });
     return u.rotulo;
@@ -133,8 +201,9 @@ export class Cena {
   refazer() {
     const r = this.pilhaRefazer.pop();
     if (!r) return null;
-    this.pilhaDesfazer.push({ rotulo: r.rotulo, estado: this.instantaneo(), sel: { ...this.sel, multi: this.multi.slice() } });
+    this.pilhaDesfazer.push({ rotulo: r.rotulo, estado: this.instantaneo(), sel: { ...this.sel, multi: this.multi.slice() }, placas: { n: this.placas, ativa: this.placaAtiva } });
     this.objetos = r.estado; this.restaurarSel(r.sel);
+    if (r.placas) { this.placas = r.placas.n; this.placaAtiva = r.placas.ativa; }
     this.conferirSelecao();
     this.emitir('mudou', { rotulo: r.rotulo, refeito: true });
     return r.rotulo;
@@ -227,25 +296,46 @@ export class Cena {
   centralizar(o) {
     const c = this.caixaExata(o);
     if (!c) return;
-    const dx = this.mesa.x / 2 - (c.min[0] + c.max[0]) / 2, dy = this.mesa.y / 2 - (c.min[1] + c.max[1]) / 2;
+    const cp = this.centroPlaca();
+    const dx = cp[0] - (c.min[0] + c.max[0]) / 2, dy = cp[1] - (c.min[1] + c.max[1]) / 2;
     o.transform = M4.multiplicar(M4.translacao(dx, dy, -c.min[2]), o.transform);
   }
-  // Organiza os objetos lado a lado na mesa (prateleiras), sem sobrepor.
-  organizarMesa(espaco = 6) {
-    const itens = this.objetos.filter(o => o.visivel).map(o => {
-      this.colocarNaMesa(o);
-      const c = this.caixaExata(o);
-      return { o, c, w: c.tam[0], h: c.tam[1] };
-    }).sort((a, b) => b.h - a.h);
-    let x = espaco, y = espaco, alturaLinha = 0;
+  // ORGANIZAR: peças lado a lado (prateleiras), sem sobrepor. Não coube na
+  // placa? Vai pra próxima — e cria placa nova sozinho. soPlaca: só as peças
+  // daquela placa (as que não couberem vão pra placas novas no fim).
+  // Devolve { coube (toda peça cabe numa placa), placas, grandes: [nomes] }
+  organizarMesa(espaco = 6, soPlaca = null) {
+    const W = this.mesa.x, D = this.mesa.y;
+    const alvo = this.objetos.filter(o => o.visivel && (soPlaca == null || this.placaDe(o) === soPlaca));
+    const itens = alvo.map(o => { this.colocarNaMesa(o); const c = this.caixaExata(o); return { o, c, w: c.tam[0], h: c.tam[1] }; }).sort((a, b) => b.h - a.h);
+    // placas disponíveis, na ordem: a escolhida (ou todas do começo), depois novas
+    const n0 = this.placas;
+    const fila = soPlaca == null ? [...Array(n0).keys()] : [soPlaca];
+    let pi = 0, x = espaco, y = espaco, alturaLinha = 0, novas = 0;
+    const lugar = [], grandes = [];
+    const placaAtual = () => pi < fila.length ? fila[pi] : n0 + (pi - fila.length);
     for (const it of itens) {
-      if (x + it.w > this.mesa.x - espaco && x > espaco) { x = espaco; y += alturaLinha + espaco; alturaLinha = 0; }
-      const dx = x - it.c.min[0], dy = y - it.c.min[1];
-      it.o.transform = M4.multiplicar(M4.translacao(dx, dy, 0), it.o.transform);
+      if (it.w > W - 2 * espaco || it.h > D - 2 * espaco) {
+        // maior que a mesa: vai sozinha numa placa (e o aviso diz)
+        grandes.push(it.o.nome);
+        if (x > espaco || y > espaco) { pi++; x = espaco; y = espaco; alturaLinha = 0; }
+        lugar.push({ it, p: placaAtual(), x: (W - it.w) / 2, y: (D - it.h) / 2 });
+        pi++; x = espaco; y = espaco; alturaLinha = 0;
+        continue;
+      }
+      if (x + it.w > W - espaco && x > espaco) { x = espaco; y += alturaLinha + espaco; alturaLinha = 0; }
+      if (y + it.h > D - espaco && (x > espaco || y > espaco)) { pi++; x = espaco; y = espaco; alturaLinha = 0; }
+      lugar.push({ it, p: placaAtual(), x, y });
       x += it.w + espaco;
       alturaLinha = Math.max(alturaLinha, it.h);
     }
-    return y + alturaLinha <= this.mesa.y;
+    const maior = lugar.reduce((m, l) => Math.max(m, l.p), -1);
+    if (maior >= n0) { novas = maior + 1 - n0; this.definirPlacas(maior + 1); }
+    for (const l of lugar) {
+      const o = this.origemPlaca(l.p), c = this.caixaExata(l.it.o);
+      l.it.o.transform = M4.multiplicar(M4.translacao(o[0] + l.x - c.min[0], o[1] + l.y - c.min[1], 0), l.it.o.transform);
+    }
+    return { coube: !grandes.length, placas: this.placas, novas, grandes };
   }
 
   proximaCor() {

@@ -1,6 +1,7 @@
 // Painel 7 — exportar 3MF (Bambu Studio) e STL
 import { el, baixar, avisar, nomeArquivo } from '../util.js';
 import { nomeDaCor } from '../../core/cores.js';
+import * as M4 from '../../core/mat4.js';
 
 export function montarExportar(est) {
   const d = el('details', { 'data-sec': 'exp' });
@@ -20,16 +21,40 @@ export function montarExportar(est) {
     <div data-a="res"></div>
   </div>`;
   const q = s => d.querySelector('[data-a="' + s + '"]');
-  let escopo = 'tudo', stlModo = 'obj';
+  let escopo = 'tudo', stlModo = 'obj', nPlacasVisto = 1;
   const seg = (k, fn) => q(k).addEventListener('click', ev => { const b = ev.target.closest('button'); if (!b) return; q(k).querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b)); fn(b.dataset.v); render(); });
   seg('escopo', v => { escopo = v; });
   seg('stlModo', v => { stlModo = v; });
-
-  function objetos() {
-    const lista = escopo === 'sel' ? [est.objetoAtual()].filter(Boolean) : est.cena.objetos.filter(o => o.visivel);
-    return lista.map(o => ({ ...est.paraMotor(o), partes: o.partes.filter(p => p.visivel !== false).map(p => est.parteParaMotor(p)) })).filter(o => o.partes.length);
+  // com várias placas: um 3MF por placa (cada um abre no Bambu já na placa)
+  function montarEscopo() {
+    const n = est.cena.placas;
+    if (n === nPlacasVisto && q('escopo').children.length) return;
+    const ops = n > 1
+      ? [['todas', 'Todas as placas (um 3MF por placa)'], ['placa', 'Só a placa ' + (est.cena.placaAtiva + 1)], ['tudo', 'Tudo num arquivo só'], ['sel', 'Só o objeto escolhido']]
+      : [['tudo', 'Tudo na mesa'], ['sel', 'Só o objeto escolhido']];
+    if (!ops.some(o => o[0] === escopo) || (n > 1 && nPlacasVisto === 1)) escopo = ops[0][0];
+    nPlacasVisto = n;
+    q('escopo').innerHTML = ops.map(o => '<button type="button" data-v="' + o[0] + '"' + (o[0] === escopo ? ' class="active"' : '') + '>' + o[1] + '</button>').join('');
   }
+  const paraExportar = (lista, k) => {
+    const off = k == null ? null : est.cena.origemPlaca(k);
+    return lista.map(o => {
+      const m = { ...est.paraMotor(o), partes: o.partes.filter(p => p.visivel !== false).map(p => est.parteParaMotor(p)) };
+      // placa k vai pra posição da placa 1 (no Bambu abre certinho na mesa)
+      if (off) m.transform = M4.multiplicar(M4.translacao(-off[0], -off[1], 0), o.transform);
+      return m;
+    }).filter(o => o.partes.length);
+  };
+  function objetos() {
+    const vis = est.cena.objetos.filter(o => o.visivel);
+    if (escopo === 'sel') return paraExportar([est.objetoAtual()].filter(Boolean));
+    if (escopo === 'placa') return paraExportar(vis.filter(o => est.cena.placaDe(o) === est.cena.placaAtiva), est.cena.placaAtiva);
+    return paraExportar(vis);
+  }
+  // [{ k, objs }] das placas que têm peça
+  const porPlaca = () => [...Array(est.cena.placas).keys()].map(k => ({ k, objs: paraExportar(est.cena.objetos.filter(o => o.visivel && est.cena.placaDe(o) === k), k) })).filter(x => x.objs.length);
   function render() {
+    montarEscopo();
     const objs = objetos();
     const cores = new Map();
     for (const o of objs) for (const p of o.partes) { cores.set(p.cor, (cores.get(p.cor) || 0) + 1); if (p.paleta) p.paleta.forEach(h => cores.set(h, cores.get(h) || 0)); }
@@ -39,6 +64,7 @@ export function montarExportar(est) {
     if (!q('nome').value && objs[0]) q('nome').placeholder = nomeArquivo(objs[0].nome);
   }
   async function exp3mf() {
+    if (escopo === 'todas' && est.cena.placas > 1) return expPlacas();
     const objs = objetos();
     if (!objs.length) { avisar('Nada pra exportar.', 'warn'); return; }
     const fora = objs.filter(o => { const c = est.cena.caixaExata(est.cena.objetos.find(x => x.nome === o.nome) || o); return c && c.min[2] < -0.01; });
@@ -47,8 +73,26 @@ export function montarExportar(est) {
     try {
       const miniatura = await est.visor.miniatura(256).catch(() => null);
       const r = await est.rodar('exportar3MF', { cena: { objetos: objs }, opc: { titulo: q('nome').value || objs[0].nome, miniatura } }, 'Exportar 3MF');
-      baixar(r.bytes, nome + '.3mf', 'model/3mf');
+      baixar(r.bytes, nome + (escopo === 'placa' ? ' - placa ' + (est.cena.placaAtiva + 1) : '') + '.3mf', 'model/3mf');
       q('res').innerHTML = '<div class="e3d-nota ok">3MF gerado: ' + r.cores.length + ' filamento(s) na ordem ' + r.cores.map((h, i) => (i + 1) + '=' + h).join(', ') + '.' + (r.avisos.length ? '<br>' + r.avisos.join('<br>') : '') + (fora.length ? '<br>Atenção: tem objeto abaixo da mesa (Z negativo) — o Bambu vai subir ele.' : '') + '</div>';
+    } finally { q('3mf').disabled = false; }
+  }
+  // TODAS AS PLACAS: um 3MF por placa, cada um com as peças na placa 1
+  async function expPlacas() {
+    const grupos = porPlaca();
+    if (!grupos.length) { avisar('Nada pra exportar.', 'warn'); return; }
+    const nome = nomeArquivo(q('nome').value || grupos[0].objs[0].nome);
+    q('3mf').disabled = true;
+    const feitos = [];
+    try {
+      for (const g of grupos) {
+        const r = await est.rodar('exportar3MF', { cena: { objetos: g.objs }, opc: { titulo: (q('nome').value || g.objs[0].nome) + ' - placa ' + (g.k + 1) } }, 'Exportar placa ' + (g.k + 1));
+        baixar(r.bytes, nome + ' - placa ' + (g.k + 1) + '.3mf', 'model/3mf');
+        feitos.push({ k: g.k, n: g.objs.length, cores: r.cores.length });
+        await new Promise(res => setTimeout(res, 350));      // o navegador aceita vários downloads seguidos
+      }
+      q('res').innerHTML = '<div class="e3d-nota ok">' + feitos.length + ' arquivo(s): ' + feitos.map(f => '<b>placa ' + (f.k + 1) + '</b> (' + f.n + ' objeto(s), ' + f.cores + ' cor(es))').join(' · ') +
+        '<br>Cada arquivo abre no Bambu Studio com as peças na placa, prontas pra fatiar.' + (est.cena.placas > feitos.length ? '<br>Placas vazias ficaram de fora.' : '') + '</div>';
     } finally { q('3mf').disabled = false; }
   }
   async function expStl() {

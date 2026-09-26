@@ -67,13 +67,15 @@ export function montarFormas(est) {
     try { r = await est.rodar('forma', { id, params, opc: { ...extrasDe(id, forma), cor: def.papel === 'furo' ? '#e5484d' : est.cena.proximaCor() } }, def.nome); } catch (e) { return; }
     // na mesa: ao lado da peça escolhida, ou no centro
     const sel = est.cena.objetoSel();
-    let T = M4.translacao(est.cena.mesa.x / 2, est.cena.mesa.y / 2, 0);
+    const cp = est.cena.centroPlaca();
+    let T = M4.translacao(cp[0], cp[1], 0);
     if (sel) { const c = est.cena.caixaExata(sel); if (c) T = M4.translacao(c.max[0] + 5 + (r.malha ? 0 : 0), (c.min[1] + c.max[1]) / 2, 0); }
     const [novo] = est.adicionarObjetos([{ nome: def.nome, transform: T, papel: def.papel || 'solido', forma, partes: [{ nome: def.nome, malha: r.malha, cor: def.papel === 'furo' ? '#e5484d' : r.cor }] }], { rotulo: 'Adicionar ' + def.nome, centralizar: false, naMesa: true, enquadrar: false });
     if (sel) {
       // se passou da mesa, volta pro centro
       const c = est.cena.caixaExata(novo);
-      if (c && c.max[0] > est.cena.mesa.x) est.cena.aplicar('Ajustar posição', () => est.cena.centralizar(novo));
+      const k = c ? est.cena.placaDoPonto((c.min[0] + c.max[0]) / 2, (c.min[1] + c.max[1]) / 2) : -1, po = k >= 0 ? est.cena.origemPlaca(k) : null;
+      if (c && (k < 0 || c.max[0] > po[0] + est.cena.mesa.x)) est.cena.aplicar('Ajustar posição', () => est.cena.centralizar(novo));
     }
     est.definirGizmo('mover');
     avisar(def.nome + ' adicionado — ajuste as medidas aqui, arraste as setas ou digite a posição em Ajustar.');

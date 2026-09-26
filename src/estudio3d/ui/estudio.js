@@ -164,7 +164,8 @@ export class Estudio {
     this.previaEl = el('div', { class: 'e3d-previa e3d-vidro', style: 'display:none' });
     this.multiEl = el('div', { class: 'e3d-multi e3d-vidro', style: 'display:none' });
     this.palco.append(this.multiEl);
-    this.palco.append(this.vazio, this.objetosEl, this.saudeEl, this.vistasEl, this.hud, this.dica, this.ocupadoEl, this.previaEl);
+    this.placasEl = el('div', { class: 'e3d-placas e3d-vidro' });
+    this.palco.append(this.vazio, this.objetosEl, this.saudeEl, this.vistasEl, this.hud, this.dica, this.ocupadoEl, this.previaEl, this.placasEl);
 
     // início (tarefas + sugestões) e os quadros das ferramentas
     this.inicioEl = el('div', { class: 'e3d-inicio' });
@@ -482,7 +483,12 @@ export class Estudio {
     const hit = this.visor.intersectar(ev);
     if (this.ferramenta === 'navegar' || !hit) {
       if (hit) this.cena.selecionar(hit.objeto, hit.parte, ev.shiftKey);
-      else if (this.ferramenta === 'navegar' && !ev.shiftKey) this.cena.selecionar(null, null);
+      else if (this.ferramenta === 'navegar' && !ev.shiftKey) {
+        this.cena.selecionar(null, null);
+        // clique numa placa: ela vira a ativa (peça nova entra nela)
+        const k = this.visor.placaNoPonto(ev);
+        if (k >= 0 && k !== this.cena.placaAtiva) this.ativarPlaca(k, false);
+      }
       return;
     }
     if (hit.objeto !== this.cena.sel.objeto || hit.parte !== this.cena.sel.parte) this.cena.selecionar(hit.objeto, hit.parte);
@@ -512,6 +518,8 @@ export class Estudio {
 
   /* ------------------------------------------------------------ estado */
   aoMudar() {
+    this.visor.atualizarMesa();
+    this.renderPlacas();
     this.visor.sincronizar();
     this.renderCena();
     this.atualizarHud();
@@ -553,7 +561,8 @@ export class Estudio {
     const o = this.cena.objetoSel();
     if (!o) {
       const n = this.cena.objetos.length;
-      this.hud.textContent = n ? n + ' objeto(s) · clique numa peça' : 'mesa ' + this.cena.mesa.x + ' × ' + this.cena.mesa.y + ' mm';
+      const pl = this.cena.placas > 1 ? 'placa ' + (this.cena.placaAtiva + 1) + ' de ' + this.cena.placas + ' · ' : '';
+      this.hud.textContent = pl + (n ? n + ' objeto(s) · clique numa peça' : 'mesa ' + this.cena.mesa.x + ' × ' + this.cena.mesa.y + ' mm');
       return;
     }
     const c = this.visor.gizmo.dragging ? this.caixaAoVivo(o) : this.cena.caixaExata(o);
@@ -663,10 +672,28 @@ export class Estudio {
   adicionarObjetos(objs, opc = {}) {
     const novos = objs.map(o => novoObjeto(o));
     this.cena.aplicar(opc.rotulo || 'Adicionar', () => {
+      // arquivo com várias placas (projeto do Bambu, ou nosso "tudo num
+      // arquivo"): cada peça continua na sua placa, com as placas criadas
+      let nArq = 0;
+      if (novos.length > 1 && opc.centralizar === undefined) {
+        for (let n = 2; n <= 36; n++) { const ks = novos.map(o => this.cena.placaDe(o, n)); if (ks.every(k => k >= 0)) { if (ks.some(k => k > 0)) nArq = n; break; } }
+      }
+      if (nArq) {
+        const nFinal = Math.max(this.cena.placas, nArq);
+        for (const o of novos) {
+          const k = this.cena.placaDe(o, nArq), a = this.cena.origemPlaca(k, nArq), b = this.cena.origemPlaca(k, nFinal);
+          if (a[0] !== b[0] || a[1] !== b[1]) o.transform = M4.multiplicar(M4.translacao(b[0] - a[0], b[1] - a[1], 0), o.transform);
+        }
+        this.cena.definirPlacas(nFinal);
+      }
       for (const o of novos) {
         const c = this.cena.caixaExata(o);
-        const fora = !c || c.min[0] < -1 || c.min[1] < -1 || c.max[0] > this.cena.mesa.x + 1 || c.max[1] > this.cena.mesa.y + 1;
-        if (opc.centralizar || (fora && opc.centralizar !== false)) this.cena.centralizar(o);
+        // fora de todas as placas: vai pro meio da placa ativa
+        const k = c ? this.cena.placaDoPonto((c.min[0] + c.max[0]) / 2, (c.min[1] + c.max[1]) / 2) : -1;
+        const po = k >= 0 ? this.cena.origemPlaca(k) : null;
+        const fora = !c || k < 0 || c.min[0] < po[0] - 1 || c.min[1] < po[1] - 1 || c.max[0] > po[0] + this.cena.mesa.x + 1 || c.max[1] > po[1] + this.cena.mesa.y + 1;
+        if (nArq) { if (opc.naMesa !== false) this.cena.colocarNaMesa(o); }
+        else if (opc.centralizar || (fora && opc.centralizar !== false)) this.cena.centralizar(o);
         else if (opc.naMesa !== false) this.cena.colocarNaMesa(o);
         this.cena.objetos.push(o);
       }
@@ -727,12 +754,44 @@ export class Estudio {
     if (!window.confirm('Tirar todos os objetos da mesa? (dá pra desfazer)')) return;
     this.cena.aplicar('Limpar mesa', () => { this.cena.objetos = []; this.cena.sel = { objeto: null, parte: null }; });
   }
-  organizarMesa() {
+  // ORGANIZAR: tudo lado a lado; não coube, vai pra próxima placa (cria
+  // placa nova sozinho). soPlaca: só as peças daquela placa.
+  organizarMesa(soPlaca = null) {
     if (!this.cena.objetos.length) return;
-    let coube = true;
-    this.cena.aplicar('Organizar mesa', () => { coube = this.cena.organizarMesa(); });
-    if (!coube) avisar('Nem tudo coube numa mesa de ' + this.cena.mesa.x + ' mm. O Bambu Studio pode distribuir em mais placas.', 'warn');
+    let r;
+    this.cena.aplicar(soPlaca == null ? 'Organizar mesa' : 'Organizar placa ' + (soPlaca + 1), () => { r = this.cena.organizarMesa(6, soPlaca); });
+    if (r.novas) avisar('Não coube tudo numa placa: ' + (r.novas === 1 ? 'criei a placa ' + r.placas : 'criei ' + r.novas + ' placas novas (agora são ' + r.placas + ')') + '. Ctrl+Z desfaz.');
+    if (r.grandes.length) avisar(r.grandes.join(', ') + (r.grandes.length > 1 ? ' são maiores' : ' é maior') + ' que a mesa: corte em partes (Cortar) ou reduza.', 'warn');
     this.enquadrar();
+  }
+
+  /* ------------------------------------------------------------ placas */
+  renderPlacas() {
+    const n = this.cena.placas, a = this.cena.placaAtiva, b = this.placasEl;
+    b.innerHTML = '';
+    b.append(el('span', { class: 'rot' }, 'Placa'));
+    for (let k = 0; k < n; k++) {
+      const cnt = this.cena.objetosDaPlaca(k).length;
+      b.append(el('button', { type: 'button', class: 'btn mini' + (k === a ? ' ativa' : ''), 'data-placa': String(k), title: 'Placa ' + (k + 1) + ' — ' + cnt + ' peça(s)' + (k === a ? ' (peça nova entra aqui)' : ''), onclick: () => this.ativarPlaca(k, true) }, String(k + 1)));
+    }
+    b.append(el('button', { type: 'button', class: 'btn mini', 'data-b': 'maisPlaca', title: 'Adicionar placa', onclick: () => this.novaPlaca() }, '+'));
+    if (n > 1 && !this.cena.objetosDaPlaca(a).length) b.append(el('button', { type: 'button', class: 'btn mini', 'data-b': 'tirarPlaca', title: 'Tirar a placa ' + (a + 1) + ' (está vazia)', onclick: () => this.tirarPlaca(a) }, '✕'));
+  }
+  ativarPlaca(k, enquadrar) {
+    if (k < 0 || k >= this.cena.placas) return;
+    this.cena.placaAtiva = k;
+    this.visor.atualizarMesa();
+    this.renderPlacas(); this.atualizarHud();
+    if (enquadrar) this.visor.enquadrarPlaca(k);
+  }
+  novaPlaca() {
+    this.cena.aplicar('Nova placa', () => this.cena.adicionarPlaca());
+    this.visor.enquadrarPlaca(this.cena.placaAtiva);
+    avisar('Placa ' + this.cena.placas + ' criada — peça nova entra nela. Pra levar uma peça: Ajustar → Placa.');
+  }
+  tirarPlaca(k) {
+    if (this.cena.objetosDaPlaca(k).length) { avisar('Tire as peças da placa ' + (k + 1) + ' antes.', 'warn'); return; }
+    this.cena.aplicar('Tirar placa ' + (k + 1), () => this.cena.removerPlaca(k));
   }
   // troca uma peça por outra malha (mesmo id: a seleção de faces é limpa)
   trocarParte(objId, parteId, nova, rotulo) {

@@ -81,16 +81,37 @@ export async function prepararParaImpressao(est) {
     let foiMesa = 0, organizou = false, coube = true;
     const cruzadas = () => { const cx = objs.map(o => est.cena.caixaExata(o)); for (let i = 0; i < cx.length; i++) for (let j = i + 1; j < cx.length; j++) if (cx[i] && cx[j] && caixasSeCruzam(cx[i], cx[j])) return true; return false; };
     const foraDaMesa = objs.filter(o => { const c = est.cena.caixaExata(o); return c && Math.abs(c.min[2]) > 0.02; }).length;
-    if (trocas.length || foraDaMesa || (objs.length > 1 && cruzadas())) {
+    // peça fora de toda placa, ou passando da borda da sua placa
+    const W = est.cena.mesa.x, D = est.cena.mesa.y;
+    const foraDaPlaca = o => {
+      const c = est.cena.caixaExata(o); if (!c) return false;
+      const k = est.cena.placaDoPonto((c.min[0] + c.max[0]) / 2, (c.min[1] + c.max[1]) / 2);
+      if (k < 0) return true;
+      const p = est.cena.origemPlaca(k);
+      return c.tam[0] <= W && c.tam[1] <= D && (c.min[0] < p[0] - 0.01 || c.min[1] < p[1] - 0.01 || c.max[0] > p[0] + W + 0.01 || c.max[1] > p[1] + D + 0.01);
+    };
+    let puxadas = 0;
+    if (trocas.length || foraDaMesa || objs.some(foraDaPlaca) || (objs.length > 1 && cruzadas())) {
       est.cena.aplicar('Preparar pra imprimir', () => {
         for (const t of trocas) { t.p.malha = t.parte.malha; if (t.parte.cor) t.p.cor = t.parte.cor; if (t.parte.paleta) t.p.paleta = t.parte.paleta; }
         for (const o of objs) { const c = est.cena.caixaExata(o); if (c && Math.abs(c.min[2]) > 0.02) { est.cena.colocarNaMesa(o); foiMesa++; } }
-        if (objs.length > 1 && cruzadas()) { coube = est.cena.organizarMesa(); organizou = true; }
+        // passou da borda da placa: empurra pra dentro dela (fora de toda placa: vai pra ativa)
+        for (const o of objs) if (foraDaPlaca(o)) {
+          const c = est.cena.caixaExata(o), k = est.cena.placaDoPonto((c.min[0] + c.max[0]) / 2, (c.min[1] + c.max[1]) / 2);
+          if (k < 0) { est.cena.centralizar(o); puxadas++; continue; }
+          const p = est.cena.origemPlaca(k);
+          const dx = c.min[0] < p[0] ? p[0] + 2 - c.min[0] : c.max[0] > p[0] + W ? p[0] + W - 2 - c.max[0] : 0;
+          const dy = c.min[1] < p[1] ? p[1] + 2 - c.min[1] : c.max[1] > p[1] + D ? p[1] + D - 2 - c.max[1] : 0;
+          o.transform = M4.multiplicar(M4.translacao(dx, dy, 0), o.transform); puxadas++;
+        }
+        if (objs.length > 1 && cruzadas()) { const r = est.cena.organizarMesa(); coube = r.coube; organizou = true; }
       });
     }
     linha('mesa', 'Mesa');
-    painel.fim('mesa', coube ? 'bom' : 'atencao', organizou ? (coube ? 'Peças afastadas (uma atravessava a outra)' : 'Nem tudo coube numa mesa') : 'Todas apoiadas na mesa',
-      foiMesa ? fmtInt(foiMesa) + ' peça(s) encostada(s) na mesa' : '');
+    const n = est.cena.placas;
+    const porPlaca = n > 1 ? [...Array(n).keys()].map(k => 'placa ' + (k + 1) + ': ' + est.cena.objetosDaPlaca(k).length).join(' · ') : '';
+    painel.fim('mesa', coube ? 'bom' : 'atencao', organizou ? (coube ? 'Peças afastadas (uma atravessava a outra)' : 'Tem peça maior que a mesa') : (n > 1 ? n + ' placas, tudo apoiado' : 'Todas apoiadas na mesa'),
+      [foiMesa ? fmtInt(foiMesa) + ' peça(s) encostada(s) na mesa' : '', puxadas ? fmtInt(puxadas) + ' peça(s) trazida(s) pra dentro da placa' : '', porPlaca].filter(Boolean).join(' · '));
 
     // 3) tamanho
     linha('tam', 'Tamanho');

@@ -9,6 +9,7 @@
 // 10) orgânico: esculpir, torcer, desenhar (tests/e2e/organico.mjs)
 // 11) v7: escala em mm, detalhe no pincel, curva, texto envolvendo, preparar (tests/e2e/v7.mjs)
 // 12) v8: curva 3D, editar desenho, em pé, sobre a peça, texto na quina, vincar (tests/e2e/v8.mjs)
+// 13) placas: várias placas na grade do Bambu, organizar, 3MF por placa (tests/e2e/placas.mjs)
 // 4) gerador de chaveiro: 3MF novo (cor que o Bambu lê) e "Abrir no Estúdio"
 import fs from 'node:fs';
 import path from 'node:path';
@@ -633,6 +634,10 @@ async function main() {
   console.log('12) v8: tubo que sobe, editar desenho depois, desenho em pé, tubo sobre a peça, texto na quina, vincar');
   const { secaoV8 } = await import('./v8.mjs');
   await secaoV8({ b, teste, novaPagina, passo, abrirEstudio, abrirSecao, confirmarPrevia });
+
+  console.log('13) placas: organizar cria placas, +, placa ativa, levar pra outra placa, 3MF por placa, abrir de novo, preparar');
+  const { secaoPlacas } = await import('./placas.mjs');
+  await secaoPlacas({ b, teste, tmp, novaPagina, passo, abrirEstudio, abrirSecao });
 
   console.log('7) laboratório fotos -> 3D (pacote de teste, file://)');
   const { cenaDeFotos } = await import('../util/fotos.mjs');

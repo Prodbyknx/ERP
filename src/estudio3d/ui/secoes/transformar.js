@@ -27,6 +27,8 @@ export function montarTransformar(est) {
       <button class="btn" data-a="deitarClique" title="Clique numa face da peça: ela vai pra mesa">Deitar na face que eu clicar</button>
     </div>
     <div style="margin-top:14px;border-top:1px solid var(--line-soft);padding-top:10px">
+      <div data-a="blocoPlaca" style="display:none;margin-bottom:10px"><div class="e3d-titulo">Placa</div>
+        <div class="seg" data-a="placa"></div></div>
       <div class="e3d-titulo">Tipo</div>
       <div class="seg" data-a="papel"><button type="button" data-v="solido" class="active">Sólido</button><button type="button" data-v="furo">Furo</button></div>
       <p class="u" style="margin:-4px 0 0">Furo tira material de todas as peças que ele atravessa — na tela e no arquivo exportado.</p>
@@ -65,6 +67,15 @@ export function montarTransformar(est) {
     inputs.forEach(i => { i.disabled = !o; });
     q('[data-a=alvo]').textContent = o ? 'Objeto: ' + o.nome : 'Escolha um objeto.';
     q('[data-a=papel]').querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === (o && o.papel === 'furo' ? 'furo' : 'solido')));
+    // placa da peça (levar pra outra placa, ou pra uma nova)
+    const bp = q('[data-a=blocoPlaca]');
+    bp.style.display = o && est.cena.placas > 1 ? '' : 'none';
+    if (o && est.cena.placas > 1) {
+      const atual = est.cena.placaDe(o), sp = q('[data-a=placa]');
+      sp.innerHTML = '';
+      for (let k = 0; k < est.cena.placas; k++) sp.appendChild(el('button', { type: 'button', 'data-v': String(k), class: k === atual ? 'active' : null }, String(k + 1)));
+      sp.appendChild(el('button', { type: 'button', 'data-v': 'nova', title: 'Levar pra uma placa nova' }, '+ nova'));
+    }
     if (o) {
       const dc = estado(o);
       const c = est.cena.caixaExata(o);
@@ -134,6 +145,14 @@ export function montarTransformar(est) {
     const c = est.cena.caixaExata(o), cx = (c.min[0] + c.max[0]) / 2;
     est.cena.aplicar('Espelhar', () => { o.transform = M4.multiplicar(M4.multiplicar(M4.translacao(cx, 0, 0), M4.multiplicar(M4.escala(-1, 1, 1), M4.translacao(-cx, 0, 0))), o.transform); });
   };
+  q('[data-a=placa]').addEventListener('click', ev => {
+    const b = ev.target.closest('button'), o = est.objetoAtual();
+    if (!b || !o) return;
+    const k = b.dataset.v === 'nova' ? est.cena.placas : +b.dataset.v;
+    if (k === est.cena.placaDe(o)) return;
+    est.cena.aplicar('Levar pra placa ' + (k + 1), () => { est.cena.moverParaPlaca(o, k); est.cena.placaAtiva = k; });
+    est.visor.enquadrarPlaca(k);
+  });
   q('[data-a=papel]').addEventListener('click', ev => { const b = ev.target.closest('button'); const o = est.objetoAtual(); if (b && o) est.definirPapel(o, b.dataset.v); });
   q('[data-a=serie]').onclick = () => {
     const o = est.objetoAtual(); if (!o) { avisar('Escolha a peça.', 'warn'); return; }
