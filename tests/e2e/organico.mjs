@@ -40,7 +40,8 @@ export async function secaoOrganico({ b, teste, novaPagina, passo, abrirEstudio,
     await pg.mouse.up();
     await pg.waitForFunction(() => /Traço aplicado/.test(document.querySelector('[data-sec=esc] [data-a=info]').textContent), null, { timeout: 30000 });
     const depois = await malha(0);
-    if (depois.pos.length !== antes.pos.length) throw new Error('vértices mudaram de número');
+    // detalhe automático acrescenta vértices no fim; os originais mantêm o número
+    if (depois.pos.length < antes.pos.length) throw new Error('perdeu vértices');
     const { cx } = valida(depois, 'esculpida'), meio = (cx.min[0] + cx.max[0]) / 2;
     let dir = 0, esq = 0, maior = 0;
     for (let v = 0; v < antes.pos.length / 3; v++) {
