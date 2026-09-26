@@ -2,7 +2,6 @@
 import { Estudio } from './estudio.js';
 import { Motor } from '../motor/cliente.js';
 import { criar } from '../core/malha.js';
-import { abrirNoBambu, explicar } from './bambu.js';
 import * as M4 from '../core/mat4.js';
 import { baixar, nomeArquivo } from './util.js';
 
@@ -64,13 +63,6 @@ window.Estudio3D = {
     const r = await motor().rodar('exportar3MF', { cena: { objetos: [{ nome: nome || 'peca', transform: M4.translacao(0, 0, 0), partes }] }, opc: { titulo: nome } });
     baixar(r.bytes, nomeArquivo(nome, 'peca') + '.3mf', 'model/3mf');
     return r;
-  },
-  // gerador de chaveiro -> abre direto no Bambu Studio (ou baixa, sem nuvem)
-  async abrirNoBambuGerador(pecas, nome, t0) {
-    const partes = await this.pecasDoGerador(pecas);
-    const x = await motor().rodar('exportar3MF', { cena: { objetos: [{ nome: nome || 'peca', transform: M4.translacao(0, 0, 0), partes }] }, opc: { titulo: nome } });
-    const r = await abrirNoBambu(x.bytes, nomeArquivo(nome, 'peca'), t0);
-    return { r, texto: explicar(r) };
   },
   async exportarSTLGerador(pecas, nome, separado) {
     const partes = await this.pecasDoGerador(pecas);

@@ -17,34 +17,6 @@ COMO USAR
    de exemplo: Gabriel (admin) e Ana (vendedora).
 
 
-NOVIDADES DESTA VERSÃO (10) — ABRIR NO BAMBU STUDIO
----------------------------------------------------
-
-BOTÃO "ABRIR NO BAMBU STUDIO"
-Está no fim do "Preparar pra imprimir", no painel Exportar e no gerador
-de chaveiro. Um clique: o sistema gera o 3MF e abre no Bambu Studio.
-- Na nuvem (site publicado, logado): o arquivo sobe pra uma pasta
-  PARTICULAR sua no Supabase e o Bambu Studio baixa e abre sozinho. Na
-  primeira vez o navegador pergunta se pode abrir o Bambu Studio (marque
-  "sempre permitir") e o Bambu pergunta se o arquivo é de site confiável
-  (clique Sim — é o seu arquivo).
-- Precisa, UMA VEZ, criar essa pasta no Supabase: Dashboard → SQL Editor
-  → cole o arquivo estudio3d-bambu.sql (veio junto) → Run. Sem isso, o
-  botão baixa o arquivo e avisa.
-- Neste pacote de teste não há nuvem: o botão baixa o 3MF. Dica que vale
-  sempre: na barra de downloads do Chrome/Edge, clique na setinha do
-  arquivo → "Sempre abrir arquivos deste tipo". Daí em diante todo .3mf
-  baixado abre direto no Bambu Studio.
-- Com várias placas: abre a placa ativa (o Bambu abre um arquivo por vez).
-
-E "MANDAR DIRETO PRA IMPRESSORA"?
-Não dá, de forma segura, a partir do navegador: a impressora só aceita
-arquivo já FATIADO (G-code, feito pelo Bambu Studio), e a conversa com
-ela (rede local ou nuvem da Bambu) usa canais que página de internet não
-acessa. O caminho mais curto é: Abrir no Bambu Studio → "Fatiar placa" →
-"Imprimir placa" (o próprio Bambu manda pra impressora).
-
-
 NOVIDADES DESTA VERSÃO (9) — VÁRIAS PLACAS
 -------------------------------------------
 

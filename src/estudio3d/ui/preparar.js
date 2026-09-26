@@ -145,9 +145,7 @@ export async function prepararParaImpressao(est) {
 
     const tudo = painel.contar();
     painel.concluir(tudo.atencao ? tudo.atencao + ' ponto(s) pra olhar antes de imprimir' : 'Pronto pra imprimir', !tudo.atencao,
-      [est.cena.placas > 1 ? 'Abrir a placa ' + (est.cena.placaAtiva + 1) + ' no Bambu Studio' : 'Abrir no Bambu Studio', () => {
-        est.secoes.exportar.abrirBambu(Date.now(), painel.resultado());
-      }, ['Só baixar o 3MF', () => { painel.fechar(); est.abrirFerramenta('exp'); }]]);
+      ['Exportar 3MF pro Bambu', () => { painel.fechar(); est.abrirFerramenta('exp'); }]);
     itens.push(...painel.itens);
     return { itens, trocas: trocas.length };
   } catch (e) {
@@ -184,12 +182,9 @@ function abrirPainel(est) {
     concluir(titulo, ok, botao) {
       pe.innerHTML = '';
       pe.append(el('div', { class: 'res ' + (ok ? 'bom' : 'atencao') }, titulo), el('button', { class: 'btn primary', 'data-a': 'exportar', onclick: botao[1] }, botao[0]));
-      if (botao[2]) pe.append(el('button', { class: 'btn', 'data-a': 'baixar', onclick: botao[2][1] }, botao[2][0]));
-      pe.append(el('div', { 'data-a': 'resultado' }));
       if (!ok) pe.appendChild(el('p', { class: 'u' }, 'O que foi consertado sozinho volta com um Ctrl+Z.'));
     },
     erro(msg) { pe.innerHTML = ''; pe.appendChild(el('div', { class: 'e3d-nota erro' }, msg)); },
-    resultado() { return pe.querySelector('[data-a=resultado]') || pe; },
     fechar() { p.remove(); }
   };
 }

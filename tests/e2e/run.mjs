@@ -10,7 +10,6 @@
 // 11) v7: escala em mm, detalhe no pincel, curva, texto envolvendo, preparar (tests/e2e/v7.mjs)
 // 12) v8: curva 3D, editar desenho, em pé, sobre a peça, texto na quina, vincar (tests/e2e/v8.mjs)
 // 13) placas: várias placas na grade do Bambu, organizar, 3MF por placa (tests/e2e/placas.mjs)
-// 14) abrir no Bambu Studio (tests/e2e/bambu.mjs)
 // 4) gerador de chaveiro: 3MF novo (cor que o Bambu lê) e "Abrir no Estúdio"
 import fs from 'node:fs';
 import path from 'node:path';
@@ -639,10 +638,6 @@ async function main() {
   console.log('13) placas: organizar cria placas, +, placa ativa, levar pra outra placa, 3MF por placa, abrir de novo, preparar');
   const { secaoPlacas } = await import('./placas.mjs');
   await secaoPlacas({ b, teste, tmp, novaPagina, passo, abrirEstudio, abrirSecao });
-
-  console.log('14) abrir no Bambu Studio: sem nuvem baixa; com nuvem sobe e abre bambustudio://; preparar; envio demorado; gerador');
-  const { secaoBambu } = await import('./bambu.mjs');
-  await secaoBambu({ b, teste, tmp, novaPagina, passo, abrirEstudio, abrirSecao });
 
   console.log('7) laboratório fotos -> 3D (pacote de teste, file://)');
   const { cenaDeFotos } = await import('../util/fotos.mjs');

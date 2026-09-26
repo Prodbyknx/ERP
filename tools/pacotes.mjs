@@ -58,8 +58,6 @@ export function gerarPacotes() {
   fs.writeFileSync(path.join(teste, 'index.html'),
     indexDeTeste(fs.readFileSync(path.join(site, 'index.html'), 'utf8')));
   for (const d of DOCS_TESTE) fs.copyFileSync(path.join(raiz, 'teste', d), path.join(teste, d));
-  // SQL do "Abrir no Bambu Studio" (roda uma vez no Supabase; não vai pro site)
-  fs.copyFileSync(path.join(raiz, 'supabase', 'estudio3d-bambu.sql'), path.join(teste, 'estudio3d-bambu.sql'));
   // amostras geradas pelos testes (fotos sintéticas, 3MFs, benchmark), se existirem
   const amostras = path.join(teste, 'amostras');
   if (fs.existsSync(path.join(dist, 'ia-demo'))) { fs.mkdirSync(path.join(amostras, 'fotos-para-3d'), { recursive: true }); copiarPasta(path.join(dist, 'ia-demo'), path.join(amostras, 'fotos-para-3d')); }
