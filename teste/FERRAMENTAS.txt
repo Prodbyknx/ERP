@@ -566,6 +566,21 @@ MATRIZ DE MATURIDADE (evidência = teste que roda, não impressão)
                                                                           3,3 s
    Nenhuma ferramenta QUEBRADA conhecida. INCOMPLETAS: ver "O que ainda não faz".
 
+MCP DO 144 LAB (Claude usando as ferramentas no seu computador)
+   Pacote separado: dist/144lab-mcp.zip (NÃO sobe pro Cloudflare).
+   144lab-3d.mcpb = extensão do Claude Desktop (dois cliques pra instalar);
+   144lab-mcp.mjs = servidor num arquivo só (Claude Code / config manual).
+   Ferramentas: gerar_chaveiro (texto, imagem ou forma — o MESMO gerador do
+   site, com argola, tag NFC e cores), analisar_peca, consertar_peca,
+   suavizar_peca, cortar_peca (pinos), separar_por_cor, converter_peca,
+   pastas_do_mcp. Devolve a prévia da peça pro Claude ver.
+   Segurança: grava só na pasta de trabalho (sem "../", sem sobrescrever
+   sem pedir); lê só da pasta do usuário e das pastas liberadas; só STL,
+   3MF, OBJ, PNG e JPG, com limite de tamanho; parâmetros com faixa
+   (tamanho 5–300 mm etc.). Sem internet, sem dados do negócio.
+   Testado pelo protocolo MCP de verdade (11 testes), inclusive o pacote
+   pronto rodando fora do projeto. Instalação: LEIA-ME dentro do zip.
+
 O QUE AINDA NÃO FAZ
   - Arredondar borda de forma livre (curva que não é reta nem círculo):
     recusa com aviso. Use Suavizar.

@@ -1,7 +1,7 @@
 // Entrada do bundle site/estudio3d.js. Expõe window.Estudio3D pro app.js.
 import { Estudio } from './estudio.js';
 import { Motor } from '../motor/cliente.js';
-import { criar, juntar } from '../core/malha.js';
+import { pecasDoGerador } from '../core/pecasGerador.js';
 import * as M4 from '../core/mat4.js';
 import { baixar, nomeArquivo } from './util.js';
 
@@ -33,30 +33,7 @@ window.Estudio3D = {
   // peças do gerador (triângulos soltos por peça) -> sólidos unidos no motor
   async pecasDoGerador(pecas) {
     const m = motor();
-    const saida = [];
-    for (const p of pecas) {
-      if (p.fatias && p.fatias.length > 1) {
-        // fatias soltas (sem soldar uma na outra): a união do Manifold junta
-        // as faces que se encostam e mantém o bolso / o vão da tag NFC
-        try {
-          const junta = juntar(p.fatias.map(f => criar(f.pos, f.idx)));
-          const u = await m.rodar('unirSobrepostos', { parte: { nome: p.nome, malha: junta, cor: p.cor } });
-          saida.push({ nome: p.nome, malha: u.parte.malha, cor: p.cor });
-          continue;
-        } catch (e) { console.warn('fatias do gerador sem união:', e); }
-      }
-      const malha = criar(p.malha.pos, p.malha.idx);
-      let parte = { nome: p.nome, malha, cor: p.cor };
-      try {
-        const r = await m.rodar('reparar', { parte, opc: { completo: false, taparBuracos: true } });
-        parte = { nome: p.nome, malha: r.parte.malha, cor: p.cor };
-        // fatias empilhadas (bolso da tag) viram um sólido só
-        const u = await m.rodar('unirSobrepostos', { parte });
-        parte = { nome: p.nome, malha: u.parte.malha, cor: p.cor };
-      } catch (e) { console.warn('peça do gerador sem união:', e); }
-      saida.push(parte);
-    }
-    return saida;
+    return pecasDoGerador(pecas, (op, a) => m.rodar(op, a), msg => console.warn(msg));
   },
 
   async abrirDoGerador(pecas, nome) {
