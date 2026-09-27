@@ -14,6 +14,7 @@ import { validar } from '../../src/estudio3d/core/validador.js';
 import { volume, criar } from '../../src/estudio3d/core/malha.js';
 import { construirBVH, pontoMaisPerto } from '../../src/estudio3d/core/bvh.js';
 import { executar } from '../../src/estudio3d/motor/operacoes.js';
+import { cabecaIA, carocoCabeca } from '../util/cabeca-ia.mjs';
 
 export async function secaoSuavizar({ b, teste, tmp, novaPagina, passo, abrirEstudio, abrirSecao, confirmarPrevia }) {
   await carregarManifold();
@@ -21,6 +22,7 @@ export async function secaoSuavizar({ b, teste, tmp, novaPagina, passo, abrirEst
   const arqIA = path.join(tmp, 'boneco-ia.stl'); fs.writeFileSync(arqIA, Buffer.from(escreverSTL(ia, 'boneco')));
   const baixa = comContexto(ctx => ctx.parte(ctx.guardar(manifold().Manifold.sphere(20, 12)), 'x', '#999').malha);
   const arqBaixa = path.join(tmp, 'bola-facetada.stl'); fs.writeFileSync(arqBaixa, Buffer.from(escreverSTL(baixa, 'bola')));
+  const cab = cabecaIA(), arqCab = path.join(tmp, 'cabeca-ia.stl'); fs.writeFileSync(arqCab, Buffer.from(escreverSTL(cab, 'cabeca')));
   const bvh = construirBVH(limpo);
   const erro = m => { let s = 0; for (let v = 0; v < m.pos.length / 3; v++) s += pontoMaisPerto(bvh, m.pos[v * 3], m.pos[v * 3 + 1], m.pos[v * 3 + 2]).d; return s / (m.pos.length / 3); };
 
@@ -30,14 +32,15 @@ export async function secaoSuavizar({ b, teste, tmp, novaPagina, passo, abrirEst
   // malha no mundo (a peça importada é centralizada na mesa)
   const mundo = x => { const P = new Float64Array(x.pos.length), t = x.t; for (let i = 0; i < P.length; i += 3) { const [a, b2, c] = [x.pos[i], x.pos[i + 1], x.pos[i + 2]]; P[i] = t[0] * a + t[4] * b2 + t[8] * c + t[12]; P[i + 1] = t[1] * a + t[5] * b2 + t[9] * c + t[13]; P[i + 2] = t[2] * a + t[6] * b2 + t[10] * c + t[14]; } return criar(P, Uint32Array.from(x.idx)); };
   let antes = null, depois = null;
-  await passo(pg, 'boneco de IA (120 mil triângulos, pele ondulada): Suavizar Média (padrão) -> prévia com relatório -> Aplicar: mais perto do limpo, volume igual, fechado, sem se cruzar', async () => {
+  await passo(pg, 'boneco de IA (120 mil triângulos, pele ondulada fina): padrão é Média; Suavizar LEVE -> prévia com relatório -> Aplicar: mais perto do limpo, volume igual, fechado, sem se cruzar', async () => {
     await pg.setInputFiles('.e3d input[type=file][multiple]', arqIA);
     await pg.waitForFunction(() => window.Estudio3D.estudio.cena.objetos.length === 1, null, { timeout: 60000 });
     await pg.evaluate(() => { const e = window.Estudio3D.estudio, o = e.cena.objetos[0]; e.cena.selecionar(o.id, o.partes[0].id); });
     await abrirSecao(pg, 'esc');
-    if (!(await pg.isVisible('[data-sec=esc] [data-a=nivel] button.active[data-v="55"]'))) throw new Error('padrão não é Média');
+    if (!(await pg.isVisible('[data-sec=esc] [data-a=nivel] button.active[data-v="60"]'))) throw new Error('padrão não é Média');
     if (!/caroço de até/.test(await pg.textContent('[data-sec=esc] [data-a=alcance]'))) throw new Error('não diz o alcance em mm');
     if (await pg.isVisible('[data-sec=esc] [data-a=blocoFacetas]')) throw new Error('boneco denso não é facetado');
+    await pg.click('[data-sec=esc] [data-a=nivel] button[data-v="25"]');
     antes = await malha();
     await pg.click('[data-sec=esc] [data-a=aplSuave]');
     await pg.waitForSelector('.e3d-previa', { state: 'visible', timeout: 120000 });
@@ -98,7 +101,7 @@ export async function secaoSuavizar({ b, teste, tmp, novaPagina, passo, abrirEst
   });
   await passo(pg, 'caixa de cálculo mostra a etapa e o % (barra); Cancelar não mexe na peça e o motor continua', async () => {
     const x0 = await malha();
-    await pg.click('[data-sec=esc] [data-a=nivel] button[data-v="85"]');
+    await pg.click('[data-sec=esc] [data-a=nivel] button[data-v="90"]');
     await pg.click('[data-sec=esc] [data-a=aplSuave]');
     await pg.waitForFunction(() => /%/.test(document.querySelector('.e3d-ocupado [data-o=tempo]').textContent) && document.querySelector('.e3d-ocupado [data-o=barra]').style.display !== 'none', null, { timeout: 20000 });
     await pg.waitForSelector('.e3d-ocupado [data-o=cancelar]:visible', { timeout: 20000 });
@@ -108,9 +111,35 @@ export async function secaoSuavizar({ b, teste, tmp, novaPagina, passo, abrirEst
     const x1 = await malha();
     if (x1.pos.some((p, i) => p !== x0.pos[i])) throw new Error('cancelar mexeu na peça');
     // o motor sobe de novo: suavizar Leve funciona
-    await pg.click('[data-sec=esc] [data-a=nivel] button[data-v="30"]');
+    await pg.click('[data-sec=esc] [data-a=nivel] button[data-v="25"]');
     await pg.click('[data-sec=esc] [data-a=aplSuave]');
     await confirmarPrevia(pg);
+  });
+  await pg.context().close();
+
+  pg = await novaPagina(b);
+  await abrirEstudio(pg, 'file://' + teste + '/index.html');
+  await passo(pg, 'cabeça de IA com CAROÇO (onda de 4,5 mm) e orelhas: Suavizar no PADRÃO (Média, sem mexer em nada) tira 3/4 do caroço, orelha fica, fechada, sem se cruzar', async () => {
+    await pg.setInputFiles('.e3d input[type=file][multiple]', arqCab);
+    await pg.waitForFunction(() => window.Estudio3D.estudio.cena.objetos.length === 1, null, { timeout: 60000 });
+    await pg.evaluate(() => { const e = window.Estudio3D.estudio, o = e.cena.objetos[0]; e.cena.selecionar(o.id, o.partes[0].id); });
+    await abrirSecao(pg, 'esc');
+    const x0 = await malha();
+    await pg.click('[data-sec=esc] [data-a=aplSuave]');
+    await confirmarPrevia(pg);
+    await pg.waitForFunction(n => window.Estudio3D.estudio.cena.objetos[0].partes[0].malha.pos[0] !== n, x0.pos[0], { timeout: 120000 });
+    const A = mundo(x0), D = mundo(await malha());
+    // centro da cabeça no mundo: a peça foi só deslocada (centro da caixa)
+    const meio = P => [0, 1, 2].map(e => { let lo = Infinity, hi = -Infinity; for (let i = e; i < P.length; i += 3) { lo = Math.min(lo, P[i]); hi = Math.max(hi, P[i]); } return (lo + hi) / 2; });
+    const ma = meio(A.pos), mc = meio(cab.pos), c = [0, 1, 2].map(e => ma[e] - mc[e]);
+    const r0 = carocoCabeca(A, c), r1 = carocoCabeca(D, c);
+    if (!(r0 > 0.08)) throw new Error('cabeça de teste sem caroço ' + r0);
+    if (!(r1 < 0.25 * r0)) throw new Error('caroço ficou: ' + r0.toFixed(3) + ' -> ' + r1.toFixed(3) + ' mm (' + (100 * r1 / r0).toFixed(0) + '%)');
+    let topo0 = -Infinity, topo1 = -Infinity;
+    for (let i = 2; i < A.pos.length; i += 3) { topo0 = Math.max(topo0, A.pos[i]); topo1 = Math.max(topo1, D.pos[i]); }
+    if (Math.abs(topo1 - topo0) > 1.5) throw new Error('orelha mudou ' + (topo1 - topo0).toFixed(2) + ' mm');
+    const v = validar(D, { completo: true });
+    if (!v.fechada || v.autoInterseccoes > validar(A, { completo: true }).autoInterseccoes) throw new Error('malha: ' + JSON.stringify({ f: v.fechada, ai: v.autoInterseccoes }));
   });
   await pg.context().close();
 

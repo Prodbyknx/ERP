@@ -29,8 +29,8 @@ export function montarEsculpir(est) {
     <div class="e3d-botoes"><button class="btn primary" data-a="aplDef">Deformar (com prévia)</button></div>
     <div class="e3d-titulo" style="margin-top:16px">Suavizar</div>
     <p class="u" style="margin:0 0 6px">Tira grão e caroço da superfície de verdade (vai pro arquivo) sem encolher a peça. Com faces selecionadas, só a seleção, com transição suave. (O <b>Facetado</b> lá embaixo muda só o sombreado da tela.)</p>
-    <div class="seg" data-a="nivel"><button type="button" data-v="30">Leve</button><button type="button" data-v="55" class="active">Média</button><button type="button" data-v="85">Forte</button></div>
-    <div class="field"><label>Intensidade <span class="u" data-a="alcance"></span></label><div class="e3d-slider"><input type="range" min="5" max="100" step="5" value="55" data-a="inten"><b data-a="intenv">55%</b></div></div>
+    <div class="seg" data-a="nivel"><button type="button" data-v="25">Leve</button><button type="button" data-v="60" class="active">Média</button><button type="button" data-v="90">Forte</button></div>
+    <div class="field"><label>Intensidade <span class="u" data-a="alcance"></span></label><div class="e3d-slider"><input type="range" min="5" max="100" step="5" value="60" data-a="inten"><b data-a="intenv">60%</b></div></div>
     <label class="fer-check" title="Quina viva, olho, vinco e encaixe ficam como estão"><input type="checkbox" data-a="preservar" checked> Preservar quinas e detalhes</label>
     <label class="fer-check" data-a="blocoFacetas" style="display:none" title="Malha com poucos triângulos: mexer nos pontos não tira a faceta. Divide os triângulos numa superfície lisa (quina acima de 60° fica viva)."><input type="checkbox" data-a="facetas"> Arredondar as facetas <span class="u" data-a="facetasInfo"></span></label>
     <div class="e3d-botoes"><button class="btn primary" data-a="aplSuave">Suavizar (com prévia)</button></div>
@@ -182,8 +182,9 @@ export function montarEsculpir(est) {
   const relSuave = r => {
     const i = r.info || {}, sinal = x => (x > 0 ? '+' : '') + fmt(x, 2);
     return (i.facetas ? 'Facetas arredondadas: ' + fmt(i.facetas.antes, 0) + ' → ' + fmt(i.facetas.depois, 0) + ' triângulos. ' : '') +
-      'Volume ' + sinal(i.volume || 0) + '% · mexeu até ' + fmt(i.deslocamentoMax || 0, 2) + ' mm (média ' + fmt(i.deslocamentoMedio || 0, 2) + ') · ' + fmt((i.ms || 0) / 1000, 1) + ' s' +
+      (i.volume == null ? 'Volume: peça aberta, não dá pra medir' : 'Volume ' + sinal(i.volume) + '%') + ' · mexeu até ' + fmt(i.deslocamentoMax || 0, 2) + ' mm (média ' + fmt(i.deslocamentoMedio || 0, 2) + ') · ' + fmt((i.ms || 0) / 1000, 1) + ' s' +
       (i.cruzamentos && i.cruzamentos.revertidos ? '<br>' + fmt(i.cruzamentos.revertidos, 0) + ' ponto(s) em parte fina ficaram como estavam (senão a peça se cruzaria ali).' : '') +
+      (i.cruzamentos && i.cruzamentos.completo === false ? '<br>A conferência de cruzamento não terminou (peça muito grande): confira em Analisar antes de imprimir.' : '') +
       '<br>Confira na prévia e clique em Aplicar (Ctrl+Z desfaz).';
   };
 

@@ -467,14 +467,20 @@ CHECKLIST DA VERSÃO 9 — várias placas
                  Preparar traz pra dentro a caixa que passava da borda
 
 FASE DE REFINAMENTO — o que foi medido (não "parece que funciona")
-   SUAVIZAR      algoritmo trocado: filtro de normais guiado + difusão
-                 implícita + reconstrução pelas normais (não encolhe).
-                 Leve / Média / Forte ou %, "Preservar quinas", "Só a
-                 seleção" (fora dela nada mexe, 0 mm), "Facetada" (malha
-                 de poucos triângulos vira superfície lisa). Mede erro de
-                 normal contra a peça lisa de verdade: fandisk 3,5° (antes
-                 11,4°), volume +0,15% (antes +9%). Barra de progresso,
-                 Cancelar, Ctrl+Z. 100 mil triângulos ~1 s; 1 milhão ~20 s.
+   SUAVIZAR      filtro de normais guiado + difusão implícita +
+                 reconstrução pela normal (não encolhe). Leve ~1% da peça
+                 (grão) · MÉDIA (padrão) ~5% (caroço de modelo de IA) ·
+                 Forte ~10% (liso; arredonda detalhe menor que isso).
+                 Cabeça de IA com caroço de 0,10 mm: a Média deixa 18%
+                 (antes 74%), a Forte 11% (antes 52%); orelha fica, junção
+                 orelha-cabeça limpa, nada vira nem cruza.
+                 Malha de IA / decimada (cheia de triângulo fino): não
+                 amassa mais ("papel amassado" na tela) — dobras novas no
+                 rosto Max Planck 3.123 -> 1.080; malha de teste 14‰ -> 7‰.
+                 "Preservar quinas", "Só a seleção" (fora dela 0 mm),
+                 "Facetada". Volume só em peça fechada (aberta não mostra
+                 % falso). Barra, Cancelar, Ctrl+Z. Conta em multigrade
+                 (V-ciclo): 1 milhão de triângulos na Média 26 s.
    CORTE+PINOS   189 cortes auditados (8 modelos reais × 3 alturas × 7
                  encaixes): 0 furo vazando pro lado, 0 furo sem 0,8 mm de
                  parede, 0 cruzamento novo. Cada pedaço cortado (2 pernas
@@ -514,7 +520,10 @@ DESEMPENHO (boneco orgânico refinado; máquina do teste; tempo do motor)
    Combinar (tirar)         278 ms   827 ms    1,9 s    3,4 s    6,8 s   (16,0 s)
    Separar detalhe          577 ms    1,1 s    2,5 s    4,3 s    8,7 s   (9,1 s)
    Separar por cor           1,2 s    2,0 s    4,8 s    8,0 s   15,8 s   (36,3 s)
-   Suavizar (Média)          1,3 s    2,3 s    5,5 s   12,2 s   27,9 s   (27,9 s)
+   Suavizar (Média)          1,3 s    2,2 s    4,4 s    8,7 s   26,3 s   (27,9 s)
+   Suavizar (Forte)          3,5 s    5,7 s   13,3 s   27,0 s   69,9 s    (187 s)
+   Suavizar: a Média de hoje alisa ~5% da peça (a de antes, 1,4%) no mesmo
+   tempo; a Forte (187 s) caiu pra 70 s com o multigrade.
    Selecionar em peça > 100 mil triângulos: a vizinhança é calculada no motor
    auxiliar assim que a peça é escolhida — o 1º clique não trava a tela.
    Tudo que passa de ~1 s mostra etapa e % e tem Cancelar.
@@ -525,9 +534,10 @@ MATRIZ DE MATURIDADE (evidência = teste que roda, não impressão)
 
    Ferramenta        Funciona                 Qualidade (medida)          Desempenho            Produção
    ----------------  -----------------------  --------------------------  --------------------  ----------------------
-   Suavizar          sim: 8 testes + tela 6/6 normal 3,5° do liso real,   100 mil 2,3 s;        PRONTA até ~500 mil;
-                                              volume +0,15%, fora da      1 milhão 28 s         1 milhão: PRECISA
-                                              seleção 0 mm                (barra + Cancelar)    (lento)
+   Suavizar          sim: 11 testes + tela    caroço de IA: Média tira    500 mil: Média 8,7 s, PRONTA até ~500 mil;
+                     7/7                      82%, Forte 89%; malha de    Forte 27 s; 1 milhão: 1 milhão: Forte
+                                              IA não amassa; fora da      Média 26 s, Forte 70 s PRECISA (lenta)
+                                              seleção 0 mm                (barra + Cancelar)
    Corte + pinos     sim: 189 cortes          0 furo vazando, 0 parede    500 mil 6,3 s;        PRONTA
                      auditados + tela 4/4     < 0,8 mm, 0 cruzamento;     1 milhão 11,5 s
                                               onde não cabe: "cole"
@@ -551,6 +561,9 @@ MATRIZ DE MATURIDADE (evidência = teste que roda, não impressão)
 O QUE AINDA NÃO FAZ
   - Arredondar borda de forma livre (curva que não é reta nem círculo):
     recusa com aviso. Use Suavizar.
+  - Suavizar Média/Forte arredonda o detalhe menor que ~5% / ~10% da peça
+    (é o que tira o caroço). Pra proteger um detalhe, selecione só a região
+    que quer alisar. Ondulação grande (> 10% da peça) é forma: só a Forte.
   - Curva 3D: pelos planos (mesa com altura, em pé, sobre a peça). Não
     há "desenhar no ar" com o mouse em qualquer direção.
   - Texto na quina: quina curva (borda redonda de pote) fica aproximada.

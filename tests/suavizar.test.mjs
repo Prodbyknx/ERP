@@ -13,6 +13,7 @@ import { validar, autoInterseccoes } from '../src/estudio3d/core/validador.js';
 import { caixa, criar, volume } from '../src/estudio3d/core/malha.js';
 import { executar } from '../src/estudio3d/motor/operacoes.js';
 import { gerarBoneco } from './util/boneco.mjs';
+import { cabecaIA, carocoCabeca, cabecaDecimada, diedros } from './util/cabeca-ia.mjs';
 import { construirBVH, pontoMaisPerto } from '../src/estudio3d/core/bvh.js';
 
 await carregarManifold();
@@ -157,10 +158,10 @@ test('SUAVIZAR: avisa o progresso (etapa e %), até 100%', () => {
   assert.ok(lista.some(x => /grão/.test(x[1])), 'etapa grão');
 });
 
-test('SUAVIZAR boneco de IA (pele ondulada, 120 mil triângulos): ondas somem (mais perto do limpo), volume igual, nenhum cruzamento novo, 3MF ida e volta igual', () => {
+test('SUAVIZAR boneco de IA (pele ondulada, 120 mil triângulos) no LEVE: ondas somem sem perder a forma (mais perto do limpo), volume igual, nenhum cruzamento novo, 3MF ida e volta igual', () => {
   const limpo = gerarBoneco('limpo').malha, ia = gerarBoneco('ia').malha;
   const e0 = erro(ia, limpo);
-  const r = suavizarMalha(ia, { intensidade: 0.55 });
+  const r = suavizarMalha(ia, { intensidade: 0.25 });
   const e1 = erro(r.malha, limpo);
   assert.ok(e1 < e0 * 0.85, 'erro ' + e0.toFixed(4) + ' -> ' + e1.toFixed(4));
   assert.ok(Math.abs(r.info.volume) < 0.2, 'volume ' + r.info.volume);
@@ -170,4 +171,42 @@ test('SUAVIZAR boneco de IA (pele ondulada, 120 mil triângulos): ondas somem (m
   const x = executar('exportar3MF', { cena: { objetos: [{ nome: 'b', transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], partes: [{ nome: 'b', malha: r.malha, cor: '#999999' }] }] }, opc: {} });
   const m2 = executar('importar', { nome: 'b.3mf', bytes: x.bytes, extras: {} }).objetos[0].partes[0].malha;
   assert.ok(Math.abs(volume(m2) - volume(r.malha)) < 1e-3 * volume(r.malha), '3MF manteve');
+});
+
+// O CASO QUE FEZ ABRIR O BLENDER: cabeça de modelo de IA com caroço em grade
+// (comprimento de onda ~8% da peça, 0,4 mm) e duas orelhas encostadas.
+// Antes: Leve/Média/Forte saíam quase iguais ao original (o caroço virava
+// "detalhe protegido" e o alcance era 1-3% da peça). Agora a Média tira a
+// maior parte e a Forte deixa liso; a junção orelha-cabeça não cruza nem rasga.
+test('SUAVIZAR caroço de modelo de IA (cabeça com orelhas): Média tira a maior parte, Forte deixa liso; orelhas ficam; nada vira nem cruza', () => {
+  const m = cabecaIA(), c0 = carocoCabeca(m);
+  const aiIn = autoInterseccoes(m, { max: 5000 }).pares;
+  const res = {};
+  for (const [nome, I] of [['Leve', 0.25], ['Média', 0.6], ['Forte', 0.9]]) {
+    const r = suavizarMalha(m, { intensidade: I });
+    res[nome] = carocoCabeca(r.malha) / c0;
+    assert.equal(r.info.viradas != null, true);
+    const v = validar(r.malha, { completo: true });
+    assert.ok(v.fechada && v.componentesInvertidos === 0, nome + ' fechada');
+    assert.ok(autoInterseccoes(r.malha, { max: 5000 }).pares <= aiIn, nome + ' cruzou');
+    assert.ok(Math.abs(r.info.volume) < 3, nome + ' volume ' + r.info.volume);
+    // orelha continua de pé (topo da peça quase igual)
+    assert.ok(caixa(r.malha).max[2] > caixa(m).max[2] - 1.5, nome + ' orelha encolheu');
+  }
+  assert.ok(res['Média'] < 0.25, 'Média deixou ' + (100 * res['Média']).toFixed(0) + '% do caroço');
+  assert.ok(res['Forte'] < 0.15, 'Forte deixou ' + (100 * res['Forte']).toFixed(0) + '% do caroço');
+  assert.ok(res['Leve'] > res['Média'] && res['Média'] > res['Forte'], 'níveis em ordem ' + JSON.stringify(res));
+});
+
+// Malha de IA / scan reduzido é cheia de triângulo FINO (agulha). O encaixe
+// pesava cada face pela área: a agulha não contava, ficava solta e tombava —
+// na tela, "papel amassado" no rosto todo. Medida: arestas que eram quase
+// planas (< 5°) e viram dobra viva (> 10°). Antes 14‰; agora < 10‰.
+test('SUAVIZAR malha decimada (14% de triângulo fino, como sai de IA): Média não amassa a superfície', () => {
+  const m = cabecaDecimada(), a0 = diedros(m);
+  const r = suavizarMalha(m, { intensidade: 0.6 }), a = diedros(r.malha);
+  let novas = 0; for (let i = 0; i < a.length; i++) if (a0[i] < 5 && a[i] > 10) novas++;
+  assert.ok(novas / a.length < 0.010, 'amassou: ' + novas + ' arestas viraram dobra (' + (1000 * novas / a.length).toFixed(1) + '‰)');
+  const v = validar(r.malha, { completo: true });
+  assert.ok(v.fechada && v.autoInterseccoes === 0, 'malha ' + JSON.stringify({ f: v.fechada, ai: v.autoInterseccoes }));
 });

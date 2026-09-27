@@ -7,13 +7,15 @@
 //     Wang 2015) e os vértices seguem as normais filtradas (Sun 2007). Quina
 //     viva, olho, vinco ficam; não encolhe.
 //  2) TIRA O CAROÇO na escala r (mm) — difusão IMPLÍCITA das normais com
-//     barreira nos detalhes (Tasdizen 2002) + reconstrução global da
-//     superfície por gradiente conjugado. Não encolhe (encaixa normais, não
-//     tira média de posições). Custo ~ (r/h)·nT, não (r/h)²·nT.
+//     barreira nas quinas (Tasdizen 2002) + reconstrução global da
+//     superfície (cada vértice anda só na normal; toda face pesa igual, então
+//     triângulo fino de malha de IA não tomba). Não encolhe (encaixa normais,
+//     não tira média de posições). Malha grande: gradiente conjugado com
+//     V-ciclo de multigrade (~20 iterações em vez de ~500).
 // Com seleção: só a região + uma margem entra na conta (rápido em malha
 // grande) e a borda da seleção tem transição suave (sem degrau).
 import { criar, caixa, volume, subMalha } from './malha.js';
-import { vizinhosDoVertice, facesDoVertice, componentes } from './topologia.js';
+import { vizinhosDoVertice, facesDoVertice, componentes, estatisticaArestas } from './topologia.js';
 import { construirBVH, paresProximos } from './bvh.js';
 import { triCruzaTri } from './validador.js';
 import { progresso } from './progresso.js';
@@ -51,7 +53,10 @@ export function analisarSuavizar(m) {
 }
 
 // intensidade (0..1) -> escala em mm do que some (proporcional à peça)
-export function raioDaIntensidade(I, S) { return S * 0.035 * Math.pow(I, 1.5); }
+// Leve (25%) ~1,2% da peça: grão e ondulação fina, a forma fica · Média
+// (60%) ~4,7%: o caroço de modelo de IA some · Forte (90%) ~10%: liso de
+// verdade (arredonda detalhe fino e enche vão estreito, como no Blender)
+export function raioDaIntensidade(I, S) { return S * (0.004 + 0.12 * I * I); }
 
 // --------------------------------------------------------------- topologia
 // faces vizinhas por vértice (anel de cada face), CSR sem repetição
@@ -273,71 +278,219 @@ function difundir(B, M, W, viz, nv, t, prog, tol = 1e-4) {
   return { X, its: it };
 }
 
+// ---------------------------------------------- multigrade (malha grande)
+// Em malha grande o alcance é dezenas de arestas e o CG puro precisa de
+// ~500 iterações por difusão. V-ciclo como precondicionador (agregação +
+// Galerkin, Jacobi): ~20 iterações, mesmo resultado (< 0,01 mm).
+// Agrupa o vértice com os vizinhos ligados FORTE (a barreira da quina não
+// junta os dois lados); quem sobra vai pro grupo do vizinho mais forte.
+function agregar(W, viz, nv) {
+  const ag = new Int32Array(nv).fill(-1), forte = new Float64Array(nv); let n = 0;
+  for (let i = 0; i < nv; i++) { let mx = 0; for (let k = viz.inicio[i]; k < viz.inicio[i + 1]; k++) if (W[k] > mx) mx = W[k]; forte[i] = mx; }
+  for (let i = 0; i < nv; i++) {
+    if (ag[i] >= 0) continue;
+    let livre = true;
+    for (let k = viz.inicio[i]; k < viz.inicio[i + 1]; k++) if (ag[viz.lista[k]] >= 0 && W[k] >= 0.25 * forte[i]) { livre = false; break; }
+    if (!livre) continue;
+    ag[i] = n;
+    for (let k = viz.inicio[i]; k < viz.inicio[i + 1]; k++) { const j = viz.lista[k]; if (ag[j] < 0 && W[k] >= 0.25 * Math.max(forte[i], forte[j])) ag[j] = n; }
+    n++;
+  }
+  for (let i = 0; i < nv; i++) {
+    if (ag[i] >= 0) continue;
+    let melhor = -1, wm = -1;
+    for (let k = viz.inicio[i]; k < viz.inicio[i + 1]; k++) { const j = viz.lista[k]; if (ag[j] >= 0 && W[k] > wm) { wm = W[k]; melhor = ag[j]; } }
+    ag[i] = melhor >= 0 ? melhor : n++;
+  }
+  return { ag, n };
+}
+// nível grosso de Galerkin (P constante por grupo). A = diag − W
+function nivelGrosso(L, ag, n) {
+  const diag = new Float64Array(n), mapa = new Map();
+  for (let i = 0; i < L.nv; i++) {
+    const I = ag[i]; diag[I] += L.diag[i];
+    for (let k = L.viz.inicio[i]; k < L.viz.inicio[i + 1]; k++) {
+      const J = ag[L.viz.lista[k]];
+      if (J === I) diag[I] -= L.W[k]; else { const ch = I * n + J; mapa.set(ch, (mapa.get(ch) || 0) + L.W[k]); }
+    }
+  }
+  const ini = new Uint32Array(n + 1);
+  for (const ch of mapa.keys()) ini[Math.floor(ch / n) + 1]++;
+  for (let I = 0; I < n; I++) ini[I + 1] += ini[I];
+  const lista = new Uint32Array(ini[n]), W = new Float64Array(ini[n]), q = ini.slice(0, n);
+  for (const [ch, w] of mapa) { const I = Math.floor(ch / n), k = q[I]++; lista[k] = ch - I * n; W[k] = w; }
+  return { diag, W, viz: { inicio: ini, lista }, nv: n };
+}
+// níveis pro V-ciclo de A = diag − W (W ≥ 0 nos vizinhos), nc componentes
+function hierarquia(diag, W, viz, nv, nc) {
+  const niveis = [{ diag, W, viz, nv }];
+  for (let L = niveis[0]; L.nv > 3000;) {
+    const { ag, n } = agregar(L.W, L.viz, L.nv);
+    if (n > L.nv * 0.7) break;
+    L.ag = ag; L = nivelGrosso(L, ag, n); niveis.push(L);
+  }
+  for (const L of niveis) { L.r = new Float64Array(L.nv * nc); L.z = new Float64Array(L.nv * nc); L.Az = new Float64Array(L.nv * nc); }
+  niveis.nc = nc;
+  return niveis;
+}
+function aplicarA(L, nc, v, out) {
+  const { diag, W, viz, nv } = L;
+  if (nc === 1) {
+    for (let i = 0; i < nv; i++) { let s = 0; for (let k = viz.inicio[i]; k < viz.inicio[i + 1]; k++) s += W[k] * v[viz.lista[k]]; out[i] = diag[i] * v[i] - s; }
+    return;
+  }
+  for (let i = 0; i < nv; i++) {
+    let sx = 0, sy = 0, sz = 0;
+    for (let k = viz.inicio[i]; k < viz.inicio[i + 1]; k++) { const w = W[k], u = viz.lista[k] * 3; sx += w * v[u]; sy += w * v[u + 1]; sz += w * v[u + 2]; }
+    const a = diag[i], i3 = i * 3;
+    out[i3] = a * v[i3] - sx; out[i3 + 1] = a * v[i3 + 1] - sy; out[i3 + 2] = a * v[i3 + 2] - sz;
+  }
+}
+// z = V(r) no nível l: Jacobi amortecido antes e depois, correção do grosso
+function vciclo(niveis, l, r, z) {
+  const L = niveis[l], nc = niveis.nc, nv = L.nv, Az = L.Az, om = 0.7;
+  const jacobi = primeira => {
+    if (!primeira) aplicarA(L, nc, z, Az);
+    for (let i = 0; i < nv; i++) { const d = om / L.diag[i]; for (let e = 0; e < nc; e++) { const q = i * nc + e; z[q] += d * (r[q] - (primeira ? 0 : Az[q])); } }
+  };
+  z.fill(0);
+  if (l === niveis.length - 1) { jacobi(true); for (let it = 1; it < 60; it++) jacobi(false); return; }
+  jacobi(true);
+  aplicarA(L, nc, z, Az);
+  const C = niveis[l + 1], rc = C.r, zc = C.z, ag = L.ag;
+  rc.fill(0);
+  for (let i = 0; i < nv; i++) { const I = ag[i] * nc; for (let e = 0; e < nc; e++) rc[I + e] += r[i * nc + e] - Az[i * nc + e]; }
+  vciclo(niveis, l + 1, rc, zc);
+  for (let i = 0; i < nv; i++) { const I = ag[i] * nc; for (let e = 0; e < nc; e++) z[i * nc + e] += zc[I + e]; }
+  jacobi(false);
+}
+// (M + tL) X = M B com CG precondicionado pelo V-ciclo (3 componentes juntas)
+function difundirPCG(B, M, niveis, prog, tol = 1e-4) {
+  const L = niveis[0], nv = L.nv, n3 = nv * 3;
+  const X = Float64Array.from(B), r = new Float64Array(n3), z = new Float64Array(n3), p = new Float64Array(n3), Ap = new Float64Array(n3);
+  aplicarA(L, 3, X, Ap);
+  let b2 = 0;
+  for (let i = 0; i < nv; i++) for (let e = 0; e < 3; e++) { const bi = M[i] * B[i * 3 + e]; r[i * 3 + e] = bi - Ap[i * 3 + e]; b2 += bi * bi; }
+  vciclo(niveis, 0, r, z); p.set(z);
+  let rz = 0; for (let i = 0; i < n3; i++) rz += r[i] * z[i];
+  let it = 0;
+  while (it < 200) {
+    aplicarA(L, 3, p, Ap); it++;
+    let pAp = 0; for (let i = 0; i < n3; i++) pAp += p[i] * Ap[i];
+    const a = rz / (pAp || 1e-300); let r2 = 0;
+    for (let i = 0; i < n3; i++) { X[i] += a * p[i]; r[i] -= a * Ap[i]; r2 += r[i] * r[i]; }
+    if (r2 <= b2 * tol * tol) break;
+    vciclo(niveis, 0, r, z);
+    let rz2 = 0; for (let i = 0; i < n3; i++) rz2 += r[i] * z[i];
+    const be = rz2 / (rz || 1e-300); rz = rz2;
+    for (let i = 0; i < n3; i++) p[i] = z[i] + be * p[i];
+    prog(Math.min(0.95, it / 30));
+  }
+  return { X, its: it };
+}
+
 // superfície que segue as normais N das faces:
 // min Σ_f A_f Σ_arestas (n_f·(xj−xi))² + α Σ_i m_i |xi − x0i|²
 // (projetado: vértice fixo não anda)
-function encaixarNormais(P, P0, I, N, A, nt, nv, alfa, fixo, prog, maxIt = 400) {
+// Encaixe SÓ NA NORMAL: cada vértice anda s·n (n = normal do vértice).
+// Caroço é altura ao longo da normal: sai. Deslizar de lado não existe —
+// na junção côncava (orelha na cabeça) a lateral não passa por cima da
+// outra face. Uma incógnita por vértice (3x menos conta).
+// Toda face pesa IGUAL no encaixe (não pela área): malha de IA / decimada é
+// cheia de triângulo fino (agulha); pesando por área a agulha não conta, fica
+// solta, tomba e a tela mostra "papel amassado"
+function encaixarNaNormal(P, P0, I, N, A0, nt, nv, alfa, fixo, prog, NV, maxIt = 400, alfaV = null, viz = null) {
   const M = new Float64Array(nv), D = new Float64Array(nv);
-  for (let t = 0; t < nt; t++) for (let k = 0; k < 3; k++) { M[I[t * 3 + k]] += A[t] / 3; D[I[t * 3 + k]] += A[t] * 2 / 3; }
+  const al = alfaV ? v => alfaV[v] : () => alfa;
+  let a = 0; for (let t = 0; t < nt; t++) a += A0[t]; a /= Math.max(1, nt);
+  // diagonal: soma de a·(n_t·n_v)² nas arestas do vértice + âncora (massa = área de verdade)
+  for (let t = 0; t < nt; t++) {
+    const nx = N[t * 3], ny = N[t * 3 + 1], nz = N[t * 3 + 2];
+    for (let k = 0; k < 3; k++) { const v = I[t * 3 + k], d = nx * NV[v * 3] + ny * NV[v * 3 + 1] + nz * NV[v * 3 + 2]; M[v] += A0[t] / 3; D[v] += a * 2 * d * d; }
+  }
   let mMed = 0; for (let v = 0; v < nv; v++) mMed += M[v]; mMed /= Math.max(1, nv);
-  for (let v = 0; v < nv; v++) D[v] = (fixo && fixo[v]) || !(M[v] > mMed * 1e-6) ? 0 : 1 / (D[v] + alfa * M[v]);
-  const Hmul = (U, out, anc) => {
+  for (let v = 0; v < nv; v++) D[v] = (fixo && fixo[v]) || !(M[v] > mMed * 1e-6) ? 0 : 1 / (D[v] + al(v) * M[v] + 1e-30);
+  // H·s: termo a·(n_t·(x_j - x_i))² com x = P + s·NV
+  const Hs = (S, out, anc) => {
     out.fill(0);
     for (let t = 0; t < nt; t++) {
-      const nx = N[t * 3], ny = N[t * 3 + 1], nz = N[t * 3 + 2], a = A[t];
+      const nx = N[t * 3], ny = N[t * 3 + 1], nz = N[t * 3 + 2];
       for (let k = 0; k < 3; k++) {
-        const i = I[t * 3 + k] * 3, j = I[t * 3 + (k + 1) % 3] * 3;
-        const d = a * (nx * (U[j] - U[i]) + ny * (U[j + 1] - U[i + 1]) + nz * (U[j + 2] - U[i + 2]));
-        out[j] += nx * d; out[j + 1] += ny * d; out[j + 2] += nz * d; out[i] -= nx * d; out[i + 1] -= ny * d; out[i + 2] -= nz * d;
+        const i = I[t * 3 + k], j = I[t * 3 + (k + 1) % 3];
+        const ci = nx * NV[i * 3] + ny * NV[i * 3 + 1] + nz * NV[i * 3 + 2], cj = nx * NV[j * 3] + ny * NV[j * 3 + 1] + nz * NV[j * 3 + 2];
+        const d = a * (cj * S[j] - ci * S[i]);
+        out[j] += cj * d; out[i] -= ci * d;
       }
     }
-    if (anc) for (let v = 0; v < nv; v++) { const w = alfa * M[v]; out[v * 3] += w * U[v * 3]; out[v * 3 + 1] += w * U[v * 3 + 1]; out[v * 3 + 2] += w * U[v * 3 + 2]; }
+    if (anc) for (let v = 0; v < nv; v++) out[v] += al(v) * M[v] * S[v];
   };
-  const n3 = nv * 3, u = new Float64Array(n3), r = new Float64Array(n3), z = new Float64Array(n3), p = new Float64Array(n3), Ap = new Float64Array(n3);
-  Hmul(P, r, false);
-  for (let v = 0; v < nv; v++) for (let e = 0; e < 3; e++) r[v * 3 + e] = -r[v * 3 + e] - alfa * M[v] * (P[v * 3 + e] - P0[v * 3 + e]);
-  let rz = 0, b2 = 0;
-  for (let v = 0, i = 0; v < nv; v++, i += 3) {
-    const d = D[v];
-    if (!d) { r[i] = r[i + 1] = r[i + 2] = 0; }
-    z[i] = r[i] * d; z[i + 1] = r[i + 1] * d; z[i + 2] = r[i + 2] * d;
-    p[i] = z[i]; p[i + 1] = z[i + 1]; p[i + 2] = z[i + 2];
-    rz += r[i] * z[i] + r[i + 1] * z[i + 1] + r[i + 2] * z[i + 2];
-    b2 += r[i] * r[i] + r[i + 1] * r[i + 1] + r[i + 2] * r[i + 2];
+  // resíduo inicial: -gradiente em s=0 (P já fora de P0 pela etapa 1: âncora puxa pra P0)
+  const r = new Float64Array(nv), z = new Float64Array(nv), p = new Float64Array(nv), Ap = new Float64Array(nv), s = new Float64Array(nv);
+  for (let t = 0; t < nt; t++) {
+    const nx = N[t * 3], ny = N[t * 3 + 1], nz = N[t * 3 + 2];
+    for (let k = 0; k < 3; k++) {
+      const i = I[t * 3 + k], j = I[t * 3 + (k + 1) % 3];
+      const ci = nx * NV[i * 3] + ny * NV[i * 3 + 1] + nz * NV[i * 3 + 2], cj = nx * NV[j * 3] + ny * NV[j * 3 + 1] + nz * NV[j * 3 + 2];
+      const d = a * (nx * (P[j * 3] - P[i * 3]) + ny * (P[j * 3 + 1] - P[i * 3 + 1]) + nz * (P[j * 3 + 2] - P[i * 3 + 2]));
+      r[j] -= cj * d; r[i] += ci * d;
+    }
   }
+  for (let v = 0; v < nv; v++) r[v] -= al(v) * M[v] * (NV[v * 3] * (P[v * 3] - P0[v * 3]) + NV[v * 3 + 1] * (P[v * 3 + 1] - P0[v * 3 + 1]) + NV[v * 3 + 2] * (P[v * 3 + 2] - P0[v * 3 + 2]));
+  // malha grande: V-ciclo na matriz do encaixe (vizinho com peso a·cᵢ·cⱼ)
+  let niveis = null;
+  if (viz && nv >= 20000) {
+    const Wd = new Float64Array(viz.lista.length), dg = new Float64Array(nv);
+    const achar = (u, w) => { for (let k = viz.inicio[u]; k < viz.inicio[u + 1]; k++) if (viz.lista[k] === w) return k; return -1; };
+    for (let t = 0; t < nt; t++) {
+      const nx = N[t * 3], ny = N[t * 3 + 1], nz = N[t * 3 + 2];
+      for (let k = 0; k < 3; k++) {
+        const i = I[t * 3 + k], j = I[t * 3 + (k + 1) % 3];
+        const w = a * (nx * NV[i * 3] + ny * NV[i * 3 + 1] + nz * NV[i * 3 + 2]) * (nx * NV[j * 3] + ny * NV[j * 3 + 1] + nz * NV[j * 3 + 2]);
+        if (w > 0) { const q1 = achar(i, j), q2 = achar(j, i); if (q1 >= 0) Wd[q1] += w; if (q2 >= 0) Wd[q2] += w; }
+      }
+    }
+    for (let v = 0; v < nv; v++) dg[v] = D[v] ? 1 / D[v] : 1e300;
+    niveis = hierarquia(dg, Wd, viz, nv, 1);
+  }
+  const prec = niveis ? () => { vciclo(niveis, 0, r, z); for (let v = 0; v < nv; v++) if (!D[v]) z[v] = 0; } : () => { for (let v = 0; v < nv; v++) z[v] = r[v] * D[v]; };
+  let b2 = 0;
+  for (let v = 0; v < nv; v++) { if (!D[v]) r[v] = 0; b2 += r[v] * r[v]; }
+  prec(); p.set(z);
+  let rz = 0; for (let v = 0; v < nv; v++) rz += r[v] * z[v];
   let it = 0;
   for (; it < maxIt && b2 > 0; it++) {
-    Hmul(p, Ap, true);
-    let pAp = 0; for (let i = 0; i < n3; i++) pAp += p[i] * Ap[i];
-    const al = rz / (pAp || 1e-300); let r2 = 0, rz2 = 0;
-    for (let v = 0, i = 0; v < nv; v++, i += 3) {
-      const d = D[v];
-      u[i] += al * p[i]; u[i + 1] += al * p[i + 1]; u[i + 2] += al * p[i + 2];
-      if (d) {
-        const r0 = r[i] - al * Ap[i], r1 = r[i + 1] - al * Ap[i + 1], rr2 = r[i + 2] - al * Ap[i + 2];
-        r[i] = r0; r[i + 1] = r1; r[i + 2] = rr2;
-        r2 += r0 * r0 + r1 * r1 + rr2 * rr2;
-        z[i] = r0 * d; z[i + 1] = r1 * d; z[i + 2] = rr2 * d;
-        rz2 += r0 * z[i] + r1 * z[i + 1] + rr2 * z[i + 2];
-      } else { r[i] = r[i + 1] = r[i + 2] = 0; z[i] = z[i + 1] = z[i + 2] = 0; }
-    }
+    Hs(p, Ap, true);
+    let pAp = 0; for (let v = 0; v < nv; v++) pAp += p[v] * Ap[v];
+    const passo = rz / (pAp || 1e-300); let r2 = 0;
+    for (let v = 0; v < nv; v++) { s[v] += passo * p[v]; if (D[v]) { r[v] -= passo * Ap[v]; r2 += r[v] * r[v]; } else r[v] = 0; }
     if (r2 < b2 * 1e-6) break;
-    const be = rz2 / rz; rz = rz2;
-    for (let i = 0; i < n3; i++) p[i] = z[i] + be * p[i];
-    if ((it & 7) === 7) prog(Math.min(0.95, it / 120));
+    prec();
+    let rz2 = 0; for (let v = 0; v < nv; v++) rz2 += r[v] * z[v];
+    const be = rz2 / (rz || 1e-300); rz = rz2;
+    for (let v = 0; v < nv; v++) p[v] = z[v] + be * p[v];
+    if ((it & 7) === 7) prog(Math.min(0.95, it / (niveis ? 30 : 120)));
   }
-  for (let i = 0; i < n3; i++) P[i] += u[i];
+  for (let v = 0; v < nv; v++) { P[v * 3] += s[v] * NV[v * 3]; P[v * 3 + 1] += s[v] * NV[v * 3 + 1]; P[v * 3 + 2] += s[v] * NV[v * 3 + 2]; }
   return it;
 }
 
-function tirarCaroco(P, I, nt, nv, viz, { r, th0, h }, fixo, prog, marcar = () => {}) {
+function dirNormal(ND, nv) { const X = new Float64Array(nv * 3); for (let v = 0; v < nv; v++) { const L = Math.hypot(ND[v * 3], ND[v * 3 + 1], ND[v * 3 + 2]) || 1; X[v * 3] = ND[v * 3] / L; X[v * 3 + 1] = ND[v * 3 + 1] / L; X[v * 3 + 2] = ND[v * 3 + 2] / L; } return X; }
+function tirarCaroco(P, I, nt, nv, viz, { r, th0, h, S = 0 }, fixo, prog, marcar = () => {}) {
   const NV = normaisVertice(P, I, nv);
   const t0 = th0 * Math.PI / 180;
-  const F = th0 ? forcaDetalhe(P, NV, viz, nv, Math.max(2 * h, r * 0.33)) : null;
+  // QUINA de verdade = a normal gira mais de 30° em 2 arestas (não cresce
+  // com a força): encontro orelha-cabeça, aresta de peça mecânica. Caroço de
+  // modelo de IA gira devagar (~10° em 2 arestas) e é alisado — antes o raio
+  // crescia com a força e o caroço virava "detalhe"
+  const rhoQ = Math.max(2 * h, 0.001 * S);
+  const F = th0 ? forcaDetalhe(P, NV, viz, nv, rhoQ) : null;
+  // barreira: plana até perto do limite e cai de uma vez (caroço não fica
+  // "meio protegido"; quina de 90° fecha)
+  const barreira = f => 1 / (1 + Math.pow(f / t0, 6));
   prog(0.15);
   marcar('detalhe');
   const W = pesosCot(P, I, viz);
-  if (F) for (let i = 0; i < nv; i++) for (let k = viz.inicio[i]; k < viz.inicio[i + 1]; k++) { const f = Math.max(F[i], F[viz.lista[k]]); W[k] *= Math.max(0.002, Math.exp(-((f / t0) ** 2))); }
+  if (F) for (let i = 0; i < nv; i++) for (let k = viz.inicio[i]; k < viz.inicio[i + 1]; k++) { const f = Math.max(F[i], F[viz.lista[k]]); W[k] *= Math.max(0.002, barreira(f)); }
   const N = new Float64Array(nt * 3), A = new Float64Array(nt);
   geomFaces(P, I, nt, N, null, A);
   const M = new Float64Array(nv);
@@ -345,8 +498,16 @@ function tirarCaroco(P, I, nt, nv, viz, { r, th0, h }, fixo, prog, marcar = () =
   marcar('pesos');
   // 2 passos de meia difusão: corta mais a onda curta (caroço) com o mesmo
   // efeito na forma grande
-  const d1 = difundir(NV, M, W, viz, nv, r * r / 4, f => prog(0.15 + 0.17 * f));
-  const d2 = difundir(d1.X, M, W, viz, nv, r * r / 4, f => prog(0.32 + 0.18 * f));
+  const t = r * r / 4;
+  let niveis = null;
+  if (nv >= 20000) {
+    const Wt = new Float64Array(W.length), dg = new Float64Array(nv);
+    for (let i = 0; i < nv; i++) { let s = 0; for (let k = viz.inicio[i]; k < viz.inicio[i + 1]; k++) { Wt[k] = t * W[k]; s += Wt[k]; } dg[i] = M[i] + s; }
+    niveis = hierarquia(dg, Wt, viz, nv, 3);
+  }
+  const dif = (B, pr) => niveis ? difundirPCG(B, M, niveis, pr) : difundir(B, M, W, viz, nv, t, pr);
+  const d1 = dif(NV, f => prog(0.15 + 0.17 * f));
+  const d2 = dif(d1.X, f => prog(0.32 + 0.18 * f));
   const ND = d2.X, its = d1.its + d2.its;
   marcar('difusao');
   // normal-alvo de cada face; face em detalhe/quina fica com a própria
@@ -354,14 +515,42 @@ function tirarCaroco(P, I, nt, nv, viz, { r, th0, h }, fixo, prog, marcar = () =
     let x = 0, y = 0, z = 0;
     for (let k = 0; k < 3; k++) { const v = I[t * 3 + k] * 3; x += ND[v]; y += ND[v + 1]; z += ND[v + 2]; }
     const L = Math.hypot(x, y, z) || 1;
-    const b = F ? Math.exp(-((Math.max(F[I[t * 3]], F[I[t * 3 + 1]], F[I[t * 3 + 2]]) / t0) ** 2)) : 1;
+    const b = F ? barreira(Math.max(F[I[t * 3]], F[I[t * 3 + 1]], F[I[t * 3 + 2]])) : 1;
     x = b * x / L + (1 - b) * N[t * 3]; y = b * y / L + (1 - b) * N[t * 3 + 1]; z = b * z / L + (1 - b) * N[t * 3 + 2];
     const L2 = Math.hypot(x, y, z) || 1; N[t * 3] = x / L2; N[t * 3 + 1] = y / L2; N[t * 3 + 2] = z / L2;
   }
   const P0 = Float64Array.from(P);
-  const cg = encaixarNormais(P, P0, I, N, A, nt, nv, (h / r) ** 2, fixo, f => prog(0.5 + 0.5 * f));
+  const alfa = (h / r) ** 2;
+  // âncora só na LINHA da quina VIVA (giro > 40° em 2 arestas: orelha na
+  // cabeça, aresta de peça): o vértice entre os dois lados não tem normal
+  // definida — solto, vira ponta. Dobra mole (bigode, ruga, 30-40°) fica
+  // solta: ancorada, os vizinhos amassam em volta dela
+  let alfaV = null;
+  if (F) {
+    const Fc = forcaDetalhe(P, NV, viz, nv, 2 * h), ta = 40 * Math.PI / 180, ka = 4;
+    alfaV = new Float64Array(nv);
+    for (let v = 0; v < nv; v++) { const q = 1 - 1 / (1 + Math.pow(Fc[v] / ta, 6)); alfaV[v] = alfa + ka * q * q * q * q; }
+  }
+  const cg = encaixarNaNormal(P, P0, I, N, A, nt, nv, alfa, fixo, f => prog(0.5 + 0.5 * f), dirNormal(ND, nv), 400, alfaV, viz);
   marcar('encaixe');
   return { difusao: its, cg };
+}
+
+function desvirar(P, P0, I, nt, fixo) {
+  const n = (Q, t) => { const a = I[t * 3] * 3, b = I[t * 3 + 1] * 3, c = I[t * 3 + 2] * 3; const ux = Q[b] - Q[a], uy = Q[b + 1] - Q[a + 1], uz = Q[b + 2] - Q[a + 2], wx = Q[c] - Q[a], wy = Q[c + 1] - Q[a + 1], wz = Q[c + 2] - Q[a + 2]; return [uy * wz - uz * wy, uz * wx - ux * wz, ux * wy - uy * wx]; };
+  let total = 0;
+  for (let volta = 0; volta < 12; volta++) {
+    const mover = new Set();
+    for (let t = 0; t < nt; t++) {
+      const x = n(P, t), y = n(P0, t);
+      if (x[0] * y[0] + x[1] * y[1] + x[2] * y[2] < 0) for (let k = 0; k < 3; k++) mover.add(I[t * 3 + k]);
+    }
+    if (!mover.size) break;
+    if (!volta) total = mover.size;
+    const w = volta < 10 ? 0.5 : 1;                 // últimas voltas: volta inteiro
+    for (const v of mover) { if (fixo && fixo[v]) continue; for (let e = 0; e < 3; e++) P[v * 3 + e] += w * (P0[v * 3 + e] - P[v * 3 + e]); }
+  }
+  return total;
 }
 
 // ------------------------------------------------------- modo local
@@ -490,7 +679,7 @@ export function suavizarMalha(m0, opc = {}) {
   const t0 = Date.now();
   const I0 = m0.idx, nt0 = I0.length / 3, nv0 = m0.pos.length / 3;
   if (!nt0) throw new Error('Peça vazia.');
-  const inten = Math.max(0, Math.min(1, opc.intensidade == null ? 0.5 : +opc.intensidade));
+  const inten = Math.max(0, Math.min(1, opc.intensidade == null ? 0.6 : +opc.intensidade));
   const preservar = opc.preservar !== false;
   const diag = analisarSuavizar(m0), S = diag.tamanho, h0 = diag.aresta;
   const r = opc.raio != null ? +opc.raio : raioDaIntensidade(inten, S);
@@ -553,8 +742,20 @@ export function suavizarMalha(m0, opc = {}) {
   if (S / h0 >= 20) tirarGrao(P, I, nt, nv, VF, fdv, { K, sr: preservar ? 0.3 : 0.7, V: 14, guia }, fixo, f => progresso(0.03 + pesoGrao * f, 'Tirando o grão'));
   marcar('grao');
   let est2 = null;
-  if (faseCaroco) est2 = tirarCaroco(P, I, nt, nv, viz, { r, th0: preservar ? 25 : 0, h: h0 }, fixo, f => progresso(0.48 + 0.5 * f, 'Alisando os caroços'), marcar);
+  // alcance grande em VÁRIAS passadas moderadas (cada uma ≤ 5% da peça,
+  // somando o mesmo alcance: r² = k·rᵢ²), recalculando normal e quina a cada
+  // uma — de uma vez só, o alvo fica longe demais da malha e ela amassa
+  if (faseCaroco) {
+    const passo = 0.05 * S, k = Math.max(1, Math.ceil((r / passo) ** 2)), ri = r / Math.sqrt(k);
+    for (let i = 0; i < k; i++) est2 = tirarCaroco(P, I, nt, nv, viz, { r: ri, th0: preservar ? 30 : 0, h: h0, S }, fixo, f => progresso(0.48 + 0.5 * (i + f) / k, k > 1 ? 'Alisando os caroços (' + (i + 1) + ' de ' + k + ')' : 'Alisando os caroços'), marcar);
+    if (est2) est2.passes = k;
+  }
 
+  // triângulo fino que tombou (normal invertida em relação à entrada): os
+  // vértices dele voltam metade do caminho, até nenhum ficar virado — mexe na
+  // escala de uma lasca, não deixa emenda
+  const viradas = desvirar(P, m.pos, I, nt, fixo);
+  marcar('desvirar');
   // ---- volta pra peça inteira (com a transição suave)
   let Pout;
   if (!peso && !volta) Pout = P;
@@ -577,7 +778,9 @@ export function suavizarMalha(m0, opc = {}) {
   let cruz = null;
   if (opc.conferir !== false) {
     progresso(0.99, 'Conferindo a peça');
-    cruz = consertarCruzamentos(m0, Pout, moveu, viz0);
+    // tempo pela quantidade de triângulos (1 milhão ~ 11 s): com limite fixo a
+    // peça grande parava no meio da conferência
+    cruz = consertarCruzamentos(m0, Pout, moveu, viz0, Math.max(12000, nt0 * 0.03));
     marcar('conferir');
     if (!cruz.ok) {
       const e = new Error('Com essa força, uma parte fina da peça passaria a atravessar ela mesma. Nada foi alterado. Use uma intensidade menor ou selecione só a região que quer alisar.');
@@ -586,13 +789,16 @@ export function suavizarMalha(m0, opc = {}) {
     if (cruz.revertidos) { desl = 0; deslMax = 0; mov = 0; for (let v = 0; v < nv0; v++) { const d = Math.hypot(Pout[v * 3] - m0.pos[v * 3], Pout[v * 3 + 1] - m0.pos[v * 3 + 1], Pout[v * 3 + 2] - m0.pos[v * 3 + 2]); if (d > 1e-9) { desl += d; mov++; if (d > deslMax) deslMax = d; } } }
   }
   const malha = criar(Pout, m0.idx, m0.cor ? m0.cor : null);
-  const v0 = volume(m0), v1 = volume(malha);
+  // volume só vale em peça FECHADA (aberta: a conta depende de onde fica a
+  // origem e mostraria "-22%" falso)
+  const fechada = estatisticaArestas(m0).abertas === 0;
+  const v0 = fechada ? volume(m0) : 0, v1 = fechada ? volume(malha) : 0;
   progresso(1, 'Pronto');
   return {
     malha,
     info: {
       raio: faseCaroco ? r : 0, passadas: K, aspereza: asp, facetada: diag.facetada,
-      volume: v0 ? (v1 / v0 - 1) * 100 : 0, deslocamentoMedio: mov ? desl / mov : 0, deslocamentoMax: deslMax,
+      volume: v0 ? (v1 / v0 - 1) * 100 : null, viradas, deslocamentoMedio: mov ? desl / mov : 0, deslocamentoMax: deslMax,
       vertices: mov, local: !!peso, regiao: nt, ms: Date.now() - t0, etapa2: est2, tempos, cruzamentos: cruz
     }
   };
