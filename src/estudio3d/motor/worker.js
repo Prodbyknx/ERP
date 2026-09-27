@@ -2,7 +2,7 @@
 // abrindo o index.html com dois cliques). O WASM do Manifold chega pela 1ª
 // mensagem, já em bytes — nada é baixado aqui dentro.
 import Module from 'manifold-3d';
-import { definirManifold } from '../core/solidos.js';
+import { definirManifold, ehErroWasm } from '../core/solidos.js';
 import { executar, transferiveis, SEM_RENDER } from './operacoes.js';
 import { prepararRender, malhasDe } from '../core/render.js';
 import { definirProgresso } from '../core/progresso.js';
@@ -34,6 +34,9 @@ self.onmessage = async ev => {
     if (!SEM_RENDER.has(op)) for (const m of malhasDe(resultado)) m._r = prepararRender(m);
     self.postMessage({ id, ok: true, resultado, ms: Date.now() - t0 }, transferiveis(resultado));
   } catch (e) {
+    // pane no WASM: a tela reinicia este worker (o módulo pode ter ficado
+    // corrompido); a peça não mudou — a operação só aplica quando dá certo
+    if (ehErroWasm(e)) { self.postMessage({ id, ok: false, codigo: 'wasm', reiniciar: true, erro: 'O motor 3D teve uma pane interna nessa operação e foi reiniciado. Nada mudou na peça — tente de novo com outro ajuste (ex.: espessura, posição) ou rode "Analisar e reparar" antes.' }); return; }
     self.postMessage({ id, ok: false, erro: String(e && e.message || e), codigo: e && e.codigo });
   }
 };

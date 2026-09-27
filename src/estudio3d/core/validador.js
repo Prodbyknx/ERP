@@ -2,6 +2,7 @@
 import { arestas, gemeas, estatisticaArestas, componentes, verticesNaoManifold, facesDoVertice, listasPorRotulo } from './topologia.js';
 import { caixa, volume, area, areaFace, subMalha, normaisFace } from './malha.js';
 import { construirBVH, paresProximos, lancarRaio, pontoDentro, dentroDeOutras } from './bvh.js';
+import { progresso } from './progresso.js';
 
 const EPS = 1e-12;
 
@@ -110,15 +111,19 @@ export function facesDuplicadas(m) {
 // Vértices diferentes na mesma posição (a menos de tol)
 export function verticesCoincidentes(m, tol) {
   const nv = m.pos.length / 3, p = m.pos;
-  const inv = 1 / tol;
+  // célula = 4·tol: só olha a célula vizinha quando o ponto está a menos de
+  // tol da divisa (~3 consultas por vértice em vez de 27; mesmo resultado)
+  const cel = 4 * tol, inv = 1 / cel;
   const grade = new Map();
   let n = 0;
   const chave = (i, j, k) => (i * 73856093) ^ (j * 19349663) ^ (k * 83492791);
+  const faixa = (c, x) => { const f = x * inv - c; return f < 0.25 ? -1 : f > 0.75 ? 1 : 0; };
   for (let v = 0; v < nv; v++) {
     const x = p[v * 3], y = p[v * 3 + 1], z = p[v * 3 + 2];
     const ci = Math.floor(x * inv), cj = Math.floor(y * inv), ck = Math.floor(z * inv);
+    const fi = faixa(ci, x), fj = faixa(cj, y), fk = faixa(ck, z);
     let achou = false;
-    for (let di = -1; di <= 1 && !achou; di++) for (let dj = -1; dj <= 1 && !achou; dj++) for (let dk = -1; dk <= 1 && !achou; dk++) {
+    for (let di = Math.min(0, fi); di <= Math.max(0, fi) && !achou; di++) for (let dj = Math.min(0, fj); dj <= Math.max(0, fj) && !achou; dj++) for (let dk = Math.min(0, fk); dk <= Math.max(0, fk) && !achou; dk++) {
       const l = grade.get(chave(ci + di, cj + dj, ck + dk));
       if (!l) continue;
       for (const u of l) {
@@ -198,6 +203,9 @@ export function validar(m, opc = {}) {
     fechada: false, imprimivel: false
   };
   if (!nt) return r;
+  // etapas pra barra só quando a operação de cima pede (validar roda dentro de outras)
+  const pg = opc.progresso ? progresso : () => {};
+  pg(0.05, 'Conferindo as arestas');
   const top = arestas(m);
   const est = estatisticaArestas(m, top);
   r.arestasAbertas = est.abertas; r.arestasNaoManifold = est.naoManifold; r.orientacaoTrocada = est.invertidas;
@@ -214,6 +222,7 @@ export function validar(m, opc = {}) {
   r.area = area(m);
 
   // componentes: abertos, invertidos (volume negativo) e internos (dentro de outro)
+  pg(0.25, 'Separando as cascas');
   const comp = componentes(m, top);
   r.componentes = comp.n;
   const listas = listasPorRotulo(comp.rotulo, comp.n);
@@ -241,6 +250,7 @@ export function validar(m, opc = {}) {
   const fazerPesado = opc.completo !== false;
   let bvh = null;
   if (fazerPesado) {
+    pg(0.45, 'Procurando cruzamentos');
     bvh = construirBVH(m);
     const ai = autoInterseccoes(m, { bvh, tempoMs: opc.tempoMs || 20000, max: opc.maxInterseccoes || 5000 });
     r.autoInterseccoes = ai.pares;
@@ -258,6 +268,7 @@ export function validar(m, opc = {}) {
         if (infoComp[c].interno) r.componentesInternos++;
       }
     }
+    pg(0.8, 'Medindo a espessura');
     const e = espessuras(m, { bvh, limite: r.limiteEspessura, amostras: opc.amostrasEspessura });
     r.espessuraMinima = e.minima;
     r.facesFinas = e.abaixo;

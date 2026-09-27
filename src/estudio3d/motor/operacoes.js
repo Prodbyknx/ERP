@@ -10,7 +10,9 @@ import { aplicarOperacao, reaplicar } from '../core/historico.js';
 import { deformar } from '../core/deformar.js';
 import { suavizarMalha, analisarSuavizar } from '../core/suavizar.js';
 import { criarDoDesenho } from '../core/desenho.js';
-import { separarDetalhe, separarPorCor, separarCascas } from '../core/separar.js';
+import { separarDetalhe, separarCascas } from '../core/separar.js';
+import { separarPorCor } from '../core/separarCor.js';
+import { prepararAdjacencia } from '../core/selecao.js';
 import { aplicarRelevo } from '../core/relevo.js';
 import { segmentar } from '../core/segmentacao.js';
 import { escrever3MF } from '../core/formatos/tmf.js';
@@ -23,9 +25,10 @@ import { fotosPara3D, prepararVistas } from '../core/ia/reconstrucao.js';
 import { melhorGiro, normalizar, avaliar } from '../core/ia/avaliacao.js';
 import { BufferGeometry, BufferAttribute } from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
+import { progresso } from '../core/progresso.js';
 
 // operações cujo resultado não vai pra tela como peça
-export const SEM_RENDER = new Set(['analisar', 'bvh', 'exportar3MF', 'exportarSTL', 'medidas', 'sugerirSeparacao']);
+export const SEM_RENDER = new Set(['analisar', 'bvh', 'exportar3MF', 'exportarSTL', 'medidas', 'sugerirSeparacao', 'adjacencia']);
 
 function resumoValidacao(v) {
   const r = Object.assign({}, v);
@@ -37,18 +40,20 @@ export const OPERACOES = {
   importar({ nome, bytes, extras }) { return importarArquivo(nome, bytes, extras || {}); },
 
   analisar({ parte, opc }) {
-    const v = validar(parte.malha, opc || {});
+    const v = validar(parte.malha, { ...(opc || {}), progresso: true });
     return resumoValidacao(v);
   },
 
   reparar({ parte, opc }) {
     opc = opc || {};
+    progresso(0.02, 'Conferindo a malha');
     const antes = resumoValidacao(validar(parte.malha, { completo: false }));
-    const r = repararMalha(parte.malha, opc);
+    const r = repararMalha(parte.malha, { ...opc, progresso: true });
     let malha = r.malha, cor = parte.cor, paleta = parte.paleta;
     const passos = r.passos.slice();
     let solido = false;
     if (temManifold()) {
+      progresso(0.6, 'Virando sólido');
       try {
         comContexto(ctx => {
           const man = ctx.solido({ malha, cor, paleta: malha.cor ? paleta : null }, parte.nome);
@@ -58,6 +63,7 @@ export const OPERACOES = {
         solido = true;
       } catch (e) { passos.push('ainda não é um sólido fechado: ' + e.message); }
     }
+    progresso(0.75, 'Conferindo o resultado');
     const depois = resumoValidacao(validar(malha, { completo: opc.completo !== false }));
     return { parte: { nome: parte.nome, malha, cor, paleta }, passos, antes, depois, solido };
   },
@@ -85,11 +91,11 @@ export const OPERACOES = {
     return { parte: { ...parte, malha: m } };
   },
 
-  cortar({ partes, plano, opc }) { return cortarPorPlano(partes, plano, opc || {}); },
+  cortar({ partes, plano, opc }) { return cortarPorPlano(partes, plano, { ...(opc || {}), progresso: true }); },
   // só a parte clicada (mão, cabeça…): sugestão do lugar e o corte em si
   sugerirSeparacao({ partes, ponto, opc }) { return sugerirSeparacao(partes, ponto, opc || {}); },
   cortarLocal({ partes, plano, ponto, opc }) { return cortarLocal(partes, plano, ponto, opc || {}); },
-  separarDetalhe({ parte, mascara, opc }) { return separarDetalhe(parte, mascara, opc || {}); },
+  separarDetalhe({ parte, mascara, opc }) { return separarDetalhe(parte, mascara, { ...(opc || {}), progresso: true }); },
   separarPorCor({ parte, opc }) { return separarPorCor(parte, opc || {}); },
   separarCascas({ parte }) { return { partes: separarCascas(parte) }; },
   relevo({ partes, alvo, forma, opc }) { return aplicarRelevo(partes, alvo, forma, opc || {}); },
@@ -111,7 +117,7 @@ export const OPERACOES = {
   // biblioteca de formas (sempre sólido fechado, em mm)
   forma({ id, params, opc }) { return gerarForma(id, params || {}, opc || {}); },
   // unir / tirar uma da outra / parte comum
-  combinar({ objetos, modo, opc }) { return combinar(objetos, modo, opc || {}); },
+  combinar({ objetos, modo, opc }) { progresso(0.1, 'Calculando a combinação'); return combinar(objetos, modo, opc || {}); },
   // fotos de várias vistas -> sólido fechado (silhuetas, sem IA, roda na CPU)
   // (etapa final do pipeline: o mesmo Consertar do editor)
   fotosPara3D({ entradas, opc }) {
@@ -189,7 +195,7 @@ export const OPERACOES = {
   exportar3MF({ cena, opc }) {
     // furos entram na geometria de verdade; objeto-furo não vai pro arquivo
     cena = aplicarFurosNaCena(cena);
-    const r = escrever3MF(cena, opc || {});
+    const r = escrever3MF(cena, { ...(opc || {}), progresso: true });
     return { bytes: r.bytes, cores: r.cores, avisos: r.avisos };
   },
 
@@ -227,7 +233,14 @@ export const OPERACOES = {
     return { version: s.version, roots: s.roots, index: s.index };
   },
 
-  medidas({ parte }) { return { volume: volume(parte.malha), caixa: caixa(parte.malha) }; }
+  medidas({ parte }) { return { volume: volume(parte.malha), caixa: caixa(parte.malha) }; },
+
+  // vizinhança das faces (seleção/pincel) calculada fora da tela: peça de 1
+  // milhão de triângulos não trava o primeiro clique
+  adjacencia({ malha }) { return prepararAdjacencia(malha); },
+
+  // teste de recuperação: simula a pane do WASM (o worker tem que subir de novo)
+  _simularPane() { throw new WebAssembly.RuntimeError('memory access out of bounds'); }
 };
 
 export function executar(op, args) {

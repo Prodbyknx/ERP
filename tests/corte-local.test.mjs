@@ -59,7 +59,7 @@ test('SEPARAR MÃO COM ENCAIXE: corte anda até caber pino, pino entra no furo c
     const r = cortarLocal([parte], s.plano, CLIQUES.mao, { conector: { tipo: 'cilindrico', auto: true, folga: 0.2, quantidade: 1 } });
     assert.equal(r.relatorio.length, 1, 'sem pino: ' + r.avisos.join(' | '));
     const c = r.relatorio[0], d = parseFloat(c.pino.replace(/[^\d,]/g, '').replace(',', '.')), f = parseFloat(c.furo.replace(/[^\d,]/g, '').replace(',', '.'));
-    assert.ok(d >= 3, 'pino Ø' + d);
+    assert.ok(d >= 2.5, 'pino Ø' + d);    // palma de 4,6 mm: Ø2,5 é o que cabe com 0,8 mm de parede em volta
     assert.ok(Math.abs(f - d - 0.4) < 1e-6, 'furo = pino + 2×folga');
     const A = r.A[0].malha, B = r.B[0].malha;
     valido(A, 'mão'); valido(B, 'resto');
@@ -73,10 +73,12 @@ test('SEPARAR MÃO COM ENCAIXE: corte anda até caber pino, pino entra no furo c
   }
 });
 
-test('CORTE COM ENCAIXE na peça inteira: cascas sobrepostas e STL cru ganham os 2 pinos (antes: pulados / "Not manifold")', () => {
+test('CORTE COM ENCAIXE na peça inteira: cascas sobrepostas e STL cru — quadril ganha os 2 pinos E cada antebraço cortado ganha o seu (nenhum pedaço solto)', () => {
   for (const v of ['cascas', 'sujo', 'ia']) {
     const r = cortarPorPlano([{ nome: 'B', malha: BONECOS[v].malha, cor: '#999999' }], { n: [0, 0, 1], d: 48 }, { conector: { tipo: 'cilindrico', diametro: 5, profundidade: 6, folga: 0.2, quantidade: 2 } });
-    assert.equal(r.relatorio.length, 2, v + ': ' + r.avisos.join(' | '));
+    assert.equal(r.relatorio.length, 4, v + ': ' + r.avisos.join(' | '));
+    assert.equal(r.relatorio.filter(c => Math.abs(c.x) < 15).length, 2, 'quadril com 2');
+    assert.equal(r.relatorio.filter(c => Math.abs(c.x) > 15).length, 2, 'um em cada antebraço');
     for (const p of [...r.A, ...r.B]) { const vv = valido(p.malha, v); assert.ok(vv.autoInterseccoes <= REF[v].ai, v + ' cruzamento novo'); }
     assert.ok(volInter(r.A[0].malha, r.B[0].malha) < 0.01);
   }

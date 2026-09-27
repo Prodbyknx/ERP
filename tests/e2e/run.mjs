@@ -10,6 +10,7 @@
 // 11) v7: escala em mm, detalhe no pincel, curva, texto envolvendo, preparar (tests/e2e/v7.mjs)
 // 12) v8: curva 3D, editar desenho, em pé, sobre a peça, texto na quina, vincar (tests/e2e/v8.mjs)
 // 13) placas: várias placas na grade do Bambu, organizar, 3MF por placa (tests/e2e/placas.mjs)
+// 16) separar por cor pra fabricação (tests/e2e/cores.mjs)
 // 4) gerador de chaveiro: 3MF novo (cor que o Bambu lê) e "Abrir no Estúdio"
 import fs from 'node:fs';
 import path from 'node:path';
@@ -642,6 +643,14 @@ async function main() {
   console.log('14) suavizar: boneco de IA, Forte com prévia, desfazer, 3MF, só a seleção, progresso e cancelar, facetada');
   const { secaoSuavizar } = await import('./suavizar.mjs');
   await secaoSuavizar({ b, teste, tmp, novaPagina, passo, abrirEstudio, abrirSecao, confirmarPrevia });
+
+  console.log('15) corte com pinos no boneco de IA: cada pedaço com encaixe, pino não bate no furo, 3MF, parede fina explica');
+  const { secaoPinos } = await import('./pinos.mjs');
+  await secaoPinos({ b, teste, tmp, novaPagina, passo, abrirEstudio, abrirSecao, confirmarPrevia });
+
+  console.log('16) separar por cor pra fabricação: personagem 3 cores, prévia diz como saiu, peças montam sem sobrepor, 3MF, faixa com folga, pane do motor');
+  const { secaoCores } = await import('./cores.mjs');
+  await secaoCores({ b, teste, tmp, novaPagina, passo, abrirEstudio, abrirSecao, confirmarPrevia });
 
   console.log('7) laboratório fotos -> 3D (pacote de teste, file://)');
   const { cenaDeFotos } = await import('../util/fotos.mjs');

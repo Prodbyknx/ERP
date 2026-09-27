@@ -38,7 +38,7 @@ export function montarSeparar(est) {
     <div style="margin-top:14px;border-top:1px solid var(--line-soft);padding-top:10px">
       <div class="e3d-titulo">Separar por cor ou material</div>
       <p class="u">Cada cor vira uma peça física (corpo preto, olhos brancos, detalhe vermelho…) pra imprimir sem AMS e montar depois. Região só pintada ganha a espessura abaixo.</p>
-      <div class="e3d-l2"><div class="field"><label>Espessura da peça colorida</label><input type="text" data-a="espCor" value="1"></div>
+      <div class="e3d-l2"><div class="field"><label>Espessura da peça colorida</label><input type="text" data-a="espCor" value="0,8"></div>
         <div class="field"><label>Folga do bolso</label><input type="text" data-a="folgaCor" value="0,1"></div></div>
       <div class="e3d-botoes"><button class="btn" data-a="porCor">Separar por cor</button><button class="btn" data-a="cascas" title="Cada ilha solta da malha vira um objeto">Separar cascas soltas</button></div>
     </div>
@@ -121,9 +121,12 @@ export function montarSeparar(est) {
     if (!o || !p) { avisar('Escolha a peça colorida.', 'warn'); return; }
     if (!p.paleta || p.paleta.length < 2) { avisar('Essa peça tem uma cor só. Se as cores estão em peças diferentes do objeto, use "Peças → objetos" na lista.', 'warn'); return; }
     let r;
-    try { r = await est.rodar('separarPorCor', { parte: est.parteParaMotor(p), opc: { espessura: lerNumero(q('espCor').value, 1), folga: lerNumero(q('folgaCor').value, 0.1) } }, 'Separar por cor'); }
+    try { r = await est.rodar('separarPorCor', { parte: est.parteParaMotor(p), opc: { espessura: lerNumero(q('espCor').value, 0.8), folga: lerNumero(q('folgaCor').value, 0.1) } }, 'Separar por cor'); }
     catch (e) { return; }
-    previaVarias(o, p, r.pecas.map(x => ({ ...x, nome: nomeDaCor(x.cor) + (x.cor === r.corBase ? ' (corpo)' : '') })), 'Separar por cor', r.avisos);
+    // como cada região de cor virou peça (a prévia não esconde o que falhou)
+    const g = r.regioes || {}, esp = lerNumero(q('espCor').value, 0.8).toFixed(1).replace('.', ',');
+    const como = [g.inserto && g.inserto + ' inserto(s) de ' + esp + ' mm com bolso', g.plano && g.plano + ' corte(s) no plano da divisa', g.atravessa && g.atravessa + ' atravessando parede fina', g.casca && g.casca + ' peça(s) inteira(s) (casca própria)', g.falhou && g.falhou + ' região(ões) NÃO virou(aram) peça — ficou na cor do corpo'].filter(Boolean);
+    previaVarias(o, p, r.pecas.map(x => ({ ...x, nome: nomeDaCor(x.cor) + (x.cor === r.corBase ? ' (corpo)' : '') })), 'Separar por cor', (como.length ? ['Como saiu: ' + como.join(' · ') + '.'] : []).concat(r.avisos));
   }
   async function cascas() {
     const o = est.objetoAtual(), p = est.parteAtual();

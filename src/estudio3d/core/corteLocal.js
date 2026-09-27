@@ -345,8 +345,10 @@ export function cortarLocal(partes, plano, ponto, opc = {}) {
     const r = separarNoPlano(ctx, U, plano, ponto, opc, avisos);
     const extras = r.soltos.map((s, i) => ({ nome: 'Pino solto ' + (i + 1), ...ctx.parte(s.man, 'Pino solto ' + (i + 1), partes[0].cor), soltoComprimento: s.comprimento }));
     const nome = partes[0].nome || 'Peça';
-    const A = [ctx.parte(r.det, opc.nomeParte || nome + ' (parte)', partes[0].cor, true)];
-    const B = [ctx.parte(r.resto, nome, partes[0].cor, true)];
+    // com encaixe: limpa vértice quase repetido (2 µm) da booleana do pino
+    const limpo = x => r.relatorio && r.relatorio.length ? ctx.guardar(x.simplify(2e-3)) : x;
+    const A = [ctx.parte(limpo(r.det), opc.nomeParte || nome + ' (parte)', partes[0].cor, true)];
+    const B = [ctx.parte(limpo(r.resto), nome, partes[0].cor, true)];
     if (extras.length) {
       let x1 = -Infinity, y0 = Infinity, z0 = Infinity;
       for (const p of [...A, ...B]) { const c = caixa(p.malha); x1 = Math.max(x1, c.max[0]); y0 = Math.min(y0, c.min[1]); z0 = Math.min(z0, c.min[2]); }

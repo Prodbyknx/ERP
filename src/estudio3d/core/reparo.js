@@ -6,6 +6,7 @@ import { criar, caixa, soldar, compactar, subMalha, volume, area, semFaces } fro
 import { facesDuplicadas, verticesCoincidentes } from './validador.js';
 import { triangularPoligono3D, normalNewell, baseDoPlano, lacoSeCruza } from './triangular.js';
 import { construirBVH, lancarRaio, dentroDeOutras } from './bvh.js';
+import { progresso } from './progresso.js';
 
 /* ------------------------------------------------------------ passos */
 
@@ -392,6 +393,7 @@ export function orientarParaFora(m) {
 
 export function reparar(m0, opc = {}) {
   const passos = [];
+  const pg = opc.progresso ? progresso : () => {};
   let m = m0;
   const cx = caixa(m);
   const diag = cx ? Math.hypot(cx.tam[0], cx.tam[1], cx.tam[2]) : 1;
@@ -400,6 +402,7 @@ export function reparar(m0, opc = {}) {
   if (c0.pos.length < m.pos.length) passos.push('tirou ' + (m.pos.length - c0.pos.length) / 3 + ' vértice(s) solto(s)');
   m = c0;
 
+  pg(0.18, 'Soldando vértices repetidos');
   const tolSolda = opc.tolSolda != null ? opc.tolSolda : Math.max(1e-6, diag * 1e-6);
   if (verticesCoincidentes(m, tolSolda)) {
     const s = soldar(m, tolSolda);
@@ -413,6 +416,7 @@ export function reparar(m0, opc = {}) {
   if (r.removidas) passos.push('removeu ' + r.removidas + ' face(s) repetida(s)');
   m = r.malha;
 
+  pg(0.3, 'Acertando a orientação');
   const o = orientarESeparar(m);
   if (o.viradas) passos.push('acertou a orientação de ' + o.viradas + ' face(s)');
   if (o.separados) passos.push('separou ' + o.separados + ' ponto(s) non-manifold');
@@ -423,6 +427,7 @@ export function reparar(m0, opc = {}) {
   m = f.malha;
 
   if (opc.taparBuracos !== false) {
+    pg(0.42, 'Fechando buracos');
     const t = taparBuracos(m, { maxPerimetro: opc.maxPerimetroBuraco, alisar: opc.alisar });
     if (t.tapados) passos.push('fechou ' + t.tapados + ' buraco(s)' + (t.maiorPerimetro ? ' (o maior com ' + t.maiorPerimetro.toFixed(1) + ' mm de contorno)' : ''));
     if (t.ignorados) passos.push(t.ignorados + ' abertura(s) grande(s) mantida(s) — acima do limite');
@@ -435,6 +440,7 @@ export function reparar(m0, opc = {}) {
       m = t2.malha;
     }
   }
+  pg(0.52, 'Virando pra fora');
   const pf = orientarParaFora(m);
   if (pf.viradas) passos.push('virou pra fora ' + pf.viradas + ' face(s) de peça do avesso');
   m = pf.malha;

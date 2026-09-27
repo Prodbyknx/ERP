@@ -6,6 +6,8 @@ import { gerarConectores, dimensionarConector } from './conectores.js';
 import { solidoPronto } from './preparo.js';
 import * as M4 from './mat4.js';
 import { caixa, transladar } from './malha.js';
+import { dentro as dentroPol } from './geo2d.js';
+import { progresso } from './progresso.js';
 
 export function normalizarPlano(plano) {
   const L = Math.hypot(plano.n[0], plano.n[1], plano.n[2]);
@@ -43,6 +45,8 @@ export function secao(ctx, solidos, frame) {
 // opc.conector: config de conector (ver conectores.js) ou null
 export function cortarPorPlano(partes, plano0, opc = {}) {
   const plano = normalizarPlano(plano0);
+  const pg = opc.progresso ? progresso : () => {};
+  pg(0.05, 'Preparando a peça');
   return comContexto(ctx => {
     const { Manifold } = manifold();
     const avisos = [];
@@ -50,6 +54,7 @@ export function cortarPorPlano(partes, plano0, opc = {}) {
     const frame = referencialDoPlano(plano);
     const sec = secao(ctx, solidos, frame);
     if (!sec.poligonos.length || sec.area <= 1e-9) throw new Error('O plano não atravessa a peça.');
+    pg(0.25, 'Cortando');
     const A = [], B = [];
     solidos.forEach((s, i) => {
       const [a, b] = s.splitByPlane(plano.n, plano.d);
@@ -67,24 +72,30 @@ export function cortarPorPlano(partes, plano0, opc = {}) {
       const inverter = opc.conector.ladoPino === 'B';
       const fr = inverter ? M4.multiplicar(frame, M4.rotacaoEuler(180, 0, 0)) : frame;
       const secaoUsada = inverter ? sec.poligonos.map(a => a.map(p => [p[0], -p[1]])) : sec.poligonos;
+      pg(0.35, 'Planejando o encaixe');
       const cfg = dimensionarConector(secaoUsada, opc.conector, avisos);
       const g = gerarConectores(ctx, { solidoA: inverter ? solB : solA, solidoB: inverter ? solA : solB, frame: fr, secao: secaoUsada, cfg });
       avisos.push(...g.avisos);
       relatorio = g.relatorio;
+      pg(0.7, 'Colando pinos e abrindo furos');
       const ladoPos = inverter ? B : A, ladoNeg = inverter ? A : B;
       if (g.positivos.length) {
-        // pino vai pra peça com maior área no corte
-        let alvo = null, maior = -1;
+        // cada pino vai pra parte que está embaixo dele (objeto de várias
+        // partes: pino não pode ficar solto numa parte que não toca nele)
         const inv = Array.from(M4.inverter(fr));
-        for (const x of ladoPos) {
-          if (x.man.isEmpty()) continue;
-          const loc = ctx.guardar(x.man.transform(inv));
-          const cs = ctx.guardar(loc.slice(1e-3));
-          const a = cs.area();
-          if (a > maior) { maior = a; alvo = x; }
-        }
-        const pinos = g.positivos.length === 1 ? g.positivos[0] : ctx.guardar(Manifold.union(g.positivos));
-        alvo.man = ctx.guardar(alvo.man.add(pinos));
+        const secoes = ladoPos.filter(x => !x.man.isEmpty()).map(x => {
+          const loc = ctx.guardar(x.man.transform(inv)), cs = ctx.guardar(loc.slice(1e-3));
+          return { x, pol: cs.toPolygons(), area: cs.area() };
+        });
+        const maior = secoes.reduce((a, b) => (b.area > a.area ? b : a), secoes[0]);
+        const porParte = new Map();
+        g.positivos.forEach((pino, k) => {
+          const c = g.relatorio[k];
+          const s = secoes.find(z => c && dentroPol(z.pol, c.x, c.y)) || maior;
+          if (!porParte.has(s.x)) porParte.set(s.x, []);
+          porParte.get(s.x).push(pino);
+        });
+        for (const [alvo, lista] of porParte) alvo.man = ctx.guardar(alvo.man.add(lista.length === 1 ? lista[0] : ctx.guardar(Manifold.union(lista))));
       }
       if (g.negativosB.length) {
         const furos = g.negativosB.length === 1 ? g.negativosB[0] : ctx.guardar(Manifold.union(g.negativosB));
@@ -99,7 +110,11 @@ export function cortarPorPlano(partes, plano0, opc = {}) {
         extras.push({ nome: 'Pino solto ' + (k + 1), ...ctx.parte(s.man, 'Pino solto ' + (k + 1), corPino), soltoComprimento: s.comprimento });
       });
     }
-    const saida = lado => lado.filter(x => !x.man.isEmpty()).map(x => ctx.parte(x.man, partes[x.i].nome, partes[x.i].cor, true));
+    // simplify(2 µm): a booleana do encaixe às vezes deixa vértice quase
+    // repetido (1 µm) na quina pino/face do corte, que vira "cruzamento" no
+    // diagnóstico; 2 µm está 25x abaixo do que a impressora enxerga
+    pg(0.85, 'Finalizando as partes');
+    const saida = lado => lado.filter(x => !x.man.isEmpty()).map(x => ctx.parte(relatorio.length ? ctx.guardar(x.man.simplify(2e-3)) : x.man, partes[x.i].nome, partes[x.i].cor, true));
     const pa = saida(A), pb = saida(B);
     // pino solto nasce na origem: coloca em pé, ao lado das peças, na mesma base
     if (extras.length) {

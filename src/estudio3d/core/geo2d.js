@@ -11,18 +11,62 @@ export function dentro(aneis, x, y) {
   return d;
 }
 
+function distSeg(x, y, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+  let t = L2 > 0 ? ((x - ax) * dx + (y - ay) * dy) / L2 : 0;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  return Math.hypot(x - ax - t * dx, y - ay - t * dy);
+}
+// grade de segmentos por polígono (a seção de uma malha de 1 milhão de
+// triângulos tem milhares de lados e o planejador de pino consulta milhares
+// de pontos): busca em anéis de células, para quando nada mais perto pode existir
+const grades = new WeakMap();
+function gradeDe(aneis) {
+  let g = grades.get(aneis);
+  if (g) return g;
+  const seg = [];
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const a of aneis) for (let i = 0, j = a.length - 1; i < a.length; j = i++) {
+    seg.push(a[j][0], a[j][1], a[i][0], a[i][1]);
+    x0 = Math.min(x0, a[i][0]); y0 = Math.min(y0, a[i][1]); x1 = Math.max(x1, a[i][0]); y1 = Math.max(y1, a[i][1]);
+  }
+  const ns = seg.length / 4, G = Math.max(1, Math.min(256, Math.ceil(Math.sqrt(ns)))), s = Math.max(x1 - x0, y1 - y0, 1e-9) / G;
+  const cel = Array.from({ length: G * G }, () => []);
+  const cx = x => Math.max(0, Math.min(G - 1, Math.floor((x - x0) / s))), cy = y => Math.max(0, Math.min(G - 1, Math.floor((y - y0) / s)));
+  for (let k = 0; k < ns; k++) {
+    const i0 = cx(Math.min(seg[k * 4], seg[k * 4 + 2])), i1 = cx(Math.max(seg[k * 4], seg[k * 4 + 2]));
+    const j0 = cy(Math.min(seg[k * 4 + 1], seg[k * 4 + 3])), j1 = cy(Math.max(seg[k * 4 + 1], seg[k * 4 + 3]));
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) cel[j * G + i].push(k);
+  }
+  g = { seg, G, s, x0, y0, cel, cx, cy };
+  grades.set(aneis, g);
+  return g;
+}
+
 export function distanciaBorda(aneis, x, y) {
+  let total = 0; for (const a of aneis) total += a.length;
+  if (total < 256) {
+    let m = Infinity;
+    for (const a of aneis) for (let i = 0, j = a.length - 1; i < a.length; j = i++) { const d = distSeg(x, y, a[j][0], a[j][1], a[i][0], a[i][1]); if (d < m) m = d; }
+    return m;
+  }
+  const g = gradeDe(aneis), { seg, G, s, cel } = g;
+  // ponto fora da caixa do polígono: a busca em anéis varreria célula vazia — força bruta
+  if (x < g.x0 || y < g.y0 || x > g.x0 + G * s || y > g.y0 + G * s) {
+    let m = Infinity; for (let k = 0; k < seg.length; k += 4) { const d = distSeg(x, y, seg[k], seg[k + 1], seg[k + 2], seg[k + 3]); if (d < m) m = d; }
+    return m;
+  }
+  const i0 = g.cx(x), j0 = g.cy(y);
+  // distância do ponto até a célula de partida (ponto fora da grade)
+  const fx = Math.max(0, g.x0 + i0 * s - x, x - (g.x0 + (i0 + 1) * s)), fy = Math.max(0, g.y0 + j0 * s - y, y - (g.y0 + (j0 + 1) * s)), fora = Math.hypot(fx, fy);
   let m = Infinity;
-  for (const a of aneis) {
-    for (let i = 0, j = a.length - 1; i < a.length; j = i++) {
-      const ax = a[j][0], ay = a[j][1], bx = a[i][0], by = a[i][1];
-      const dx = bx - ax, dy = by - ay;
-      const L2 = dx * dx + dy * dy;
-      let t = L2 > 0 ? ((x - ax) * dx + (y - ay) * dy) / L2 : 0;
-      t = t < 0 ? 0 : t > 1 ? 1 : t;
-      const d = Math.hypot(x - ax - t * dx, y - ay - t * dy);
-      if (d < m) m = d;
+  for (let r = 0; r < G; r++) {
+    for (let i = i0 - r; i <= i0 + r; i++) for (let j = j0 - r; j <= j0 + r; j++) {
+      if (Math.max(Math.abs(i - i0), Math.abs(j - j0)) !== r || i < 0 || j < 0 || i >= G || j >= G) continue;
+      for (const k of cel[j * G + i]) { const d = distSeg(x, y, seg[k * 4], seg[k * 4 + 1], seg[k * 4 + 2], seg[k * 4 + 3]); if (d < m) m = d; }
     }
+    // o que não foi visto está a pelo menos r·s da célula de partida
+    if (m <= r * s - fora) return m;
   }
   return m;
 }

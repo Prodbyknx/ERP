@@ -26,6 +26,7 @@ import { componentes } from './topologia.js';
 import { autoInterseccoes } from './validador.js';
 import { separarNoPlano } from './corteLocal.js';
 import * as M4 from './mat4.js';
+import { progresso } from './progresso.js';
 
 /* ---------------------------------------------------------- utilidades */
 
@@ -208,11 +209,31 @@ function extrairPorPlano(ctx, atual, R, adj, opc, avisos) {
   for (let f = 0; f < faixa.length; f++) if (faixa[f] && atual.origem[f] >= 0) permitido.add(atual.origem[f]);
   let capturada = 0, daSelecao = 0;
   const dm = detParte.malha;
+  // opc.faixaMm: faixa aceita medida em mm (distância até a borda), não em
+  // anéis de triângulo — malha com triângulo miúdo na borda (borda de cor
+  // alisada) deixaria a faixa estreita demais
+  let perto = null;
+  if (opc.faixaMm != null) {
+    const bv = []; for (const laco of b.lacos) for (const v of laco) bv.push(m.pos[v * 3], m.pos[v * 3 + 1], m.pos[v * 3 + 2]);
+    const r2 = opc.faixaMm * opc.faixaMm, rootSel = new Set();
+    for (let f = 0; f < R.length; f++) if (R[f] && atual.origem[f] >= 0) rootSel.add(atual.origem[f]);
+    // face capturada conta como "perto" se algum vértice dela está na faixa
+    // (malha de triângulo grande: o vizinho da borda tem o centro longe, mas
+    // encosta nela; o vão entre as pontas de uma estrela continua contando)
+    perto = (o, t) => {
+      if (rootSel.has(o)) return true;
+      for (let k = 0; k < 3; k++) {
+        const q = dm.idx[t * 3 + k] * 3, cx = dm.pos[q], cy = dm.pos[q + 1], cz = dm.pos[q + 2];
+        for (let j = 0; j < bv.length; j += 3) { const dx = bv[j] - cx, dy = bv[j + 1] - cy, dz = bv[j + 2] - cz; if (dx * dx + dy * dy + dz * dz <= r2) return true; }
+      }
+      return false;
+    };
+  }
   for (let t = 0; t < dm.idx.length / 3; t++) {
     const o = detParte.origem[t];
     if (o < 0) continue;
     const a = areaFace(dm, t);
-    if (permitido.has(o)) daSelecao += a; else capturada += a;
+    if (perto ? perto(o, t) : permitido.has(o)) daSelecao += a; else capturada += a;
   }
   if (capturada > Math.max(0.02 * daSelecao, 0.5) && !opc.forcarPlano) {
     return { falhou: 'O corte plano pegaria outra parte do modelo junto (' + capturada.toFixed(1) + ' mm² fora da seleção).' };
@@ -298,6 +319,56 @@ function extrairPorCamada(ctx, atual, R, adj, opc) {
     if (o < 0 || !R[o]) bordas.push(I[f * 3 + k], I[f * 3 + (k + 1) % 3]);
   }
   if (!bordas.length) return { falhou: 'Não achei a borda da região.' };
+  // FOLGA LATERAL: a borda do inserto recua 'fl' mm pra dentro da região (no
+  // plano da superfície) e o bolso fica no contorno original — sem isso as
+  // duas paredes coincidem e o encaixe não entra na peça impressa
+  const fl = opc.folgaLateral != null ? Math.max(0, opc.folgaLateral) : folga;
+  const D = new Float64Array(nv * 3);
+  if (fl > 0) {
+    for (let i = 0; i < bordas.length; i += 2) {
+      const u = bordas[i], v = bordas[i + 1];
+      const ex = p[v * 3] - p[u * 3], ey = p[v * 3 + 1] - p[u * 3 + 1], ez = p[v * 3 + 2] - p[u * 3 + 2];
+      for (const j of [mapa[u], mapa[v]]) {
+        const nx = N0[j * 3], ny = N0[j * 3 + 1], nz = N0[j * 3 + 2];
+        // normal × aresta = lado de dentro (a face da região fica à esquerda)
+        const ix = ny * ez - nz * ey, iy = nz * ex - nx * ez, iz = nx * ey - ny * ex, L = Math.hypot(ix, iy, iz) || 1;
+        D[j * 3] += ix / L; D[j * 3 + 1] += iy / L; D[j * 3 + 2] += iz / L;
+      }
+    }
+    // direção alisada ao longo da borda (dobra curta na borda não entorta o recuo)
+    const vizB = new Map(); const liga = (a, b) => { if (!vizB.has(a)) vizB.set(a, []); vizB.get(a).push(b); };
+    for (let i = 0; i < bordas.length; i += 2) { const a = mapa[bordas[i]], b = mapa[bordas[i + 1]]; liga(a, b); liga(b, a); }
+    for (let it = 0; it < 3; it++) {
+      const S = Float64Array.from(D);
+      for (const [j, lista] of vizB) for (const q of lista) { S[j * 3] += 0.5 * D[q * 3]; S[j * 3 + 1] += 0.5 * D[q * 3 + 1]; S[j * 3 + 2] += 0.5 * D[q * 3 + 2]; }
+      D.set(S);
+    }
+    for (let j = 0; j < nv; j++) {
+      const nx = N0[j * 3], ny = N0[j * 3 + 1], nz = N0[j * 3 + 2], dn = D[j * 3] * nx + D[j * 3 + 1] * ny + D[j * 3 + 2] * nz;
+      D[j * 3] -= dn * nx; D[j * 3 + 1] -= dn * ny; D[j * 3 + 2] -= dn * nz;
+      const L = Math.hypot(D[j * 3], D[j * 3 + 1], D[j * 3 + 2]);
+      if (L > 1e-9) { D[j * 3] *= fl / L; D[j * 3 + 1] *= fl / L; D[j * 3 + 2] *= fl / L; }
+    }
+  }
+  const naBorda = new Uint8Array(nv); for (let i = 0; i < bordas.length; i++) naBorda[mapa[bordas[i]]] = 1;
+  // o miolo perto da borda recua junto, cada vez menos até 3·fl pra dentro:
+  // vértice a menos de fl da borda (triângulo miúdo) não fica pra trás dela
+  const Dm = new Float64Array(nv * 3);
+  if (fl > 0) {
+    const Rm = 3 * fl, dist = new Float64Array(nv).fill(Infinity), fonte = new Int32Array(nv).fill(-1), fila = [];
+    for (let j = 0; j < nv; j++) if (naBorda[j]) { dist[j] = 0; fonte[j] = j; fila.push(j); }
+    while (fila.length) {
+      let mi = 0; for (let i = 1; i < fila.length; i++) if (dist[fila[i]] < dist[fila[mi]]) mi = i;
+      const j = fila[mi]; fila[mi] = fila[fila.length - 1]; fila.pop();
+      const vj = verts[j] * 3;
+      for (const q of viz[j]) {
+        if (naBorda[q]) continue;
+        const vq = verts[q] * 3, nd = dist[j] + Math.hypot(p[vj] - p[vq], p[vj + 1] - p[vq + 1], p[vj + 2] - p[vq + 2]);
+        if (nd < Rm && nd < dist[q]) { if (dist[q] === Infinity) fila.push(q); dist[q] = nd; fonte[q] = fonte[j]; }
+      }
+    }
+    for (let j = 0; j < nv; j++) if (!naBorda[j] && fonte[j] >= 0) { const w = 1 - dist[j] / Rm; for (let e = 0; e < 3; e++) Dm[j * 3 + e] = D[fonte[j] * 3 + e] * w; }
+  }
   const temCor = !!m.cor;
   const kDet = atual.corDetalheIdx != null ? atual.corDetalheIdx : 0, kRes = atual.corRestoIdx != null ? atual.corRestoIdx : 0;
   // caixa da região + espessura: só ali pode aparecer cruzamento novo
@@ -320,28 +391,32 @@ function extrairPorCamada(ctx, atual, R, adj, opc) {
       for (let j = 0; j < nv; j++) for (const q of viz[j]) { S[j * 3] += N[q * 3]; S[j * 3 + 1] += N[q * 3 + 1]; S[j * 3 + 2] += N[q * 3 + 2]; }
       N = unit(S);
     }
-    const baseT = nv0, baseF = folga > 0 ? nv0 + nv : nv0;
-    const P = new Float64Array((nv0 + nv * (folga > 0 ? 2 : 1)) * 3);
+    const baseT = nv0, baseF = folga > 0 ? nv0 + nv : nv0, baseS = nv0 + nv * (folga > 0 ? 2 : 1);
+    const P = new Float64Array((baseS + (fl > 0 ? nv : 0)) * 3);
     P.set(p);
     for (let j = 0; j < nv; j++) for (let e = 0; e < 3; e++) {
       const v = verts[j] * 3 + e;
-      P[(baseT + j) * 3 + e] = p[v] - N[j * 3 + e] * t;
+      P[(baseT + j) * 3 + e] = p[v] - N[j * 3 + e] * t + D[j * 3 + e] + Dm[j * 3 + e];
+      if (Dm[j * 3 + e]) P[v] = p[v] + Dm[j * 3 + e];       // miolo: só o detalhe usa
       if (folga > 0) P[(baseF + j) * 3 + e] = p[v] - N[j * 3 + e] * (t + folga);
+      if (fl > 0) P[(baseS + j) * 3 + e] = p[v] + D[j * 3 + e];
     }
+    // vértice do topo do inserto: o recuado (borda) ou o original (miolo)
+    const topo = x => fl > 0 && naBorda[mapa[x]] ? baseS + mapa[x] : x;
     const iD = [], iR = [], cD = [], cR = [], oD = [], oR = [];
     const novaD = (a, b, c) => { iD.push(a, b, c); cD.push(kDet); oD.push(-1); };
     const novaR = (a, b, c) => { iR.push(a, b, c); cR.push(kRes); oR.push(-1); };
     for (let f = 0; f < nt; f++) {
       const a = I[f * 3], b = I[f * 3 + 1], c = I[f * 3 + 2];
       if (R[f]) {
-        iD.push(a, b, c); cD.push(temCor ? m.cor[f] : kDet); oD.push(atual.origem[f]);
+        iD.push(topo(a), topo(b), topo(c)); cD.push(temCor ? m.cor[f] : kDet); oD.push(atual.origem[f]);
         novaD(baseT + mapa[a], baseT + mapa[c], baseT + mapa[b]);   // fundo do detalhe
         novaR(baseF + mapa[a], baseF + mapa[b], baseF + mapa[c]);   // fundo do bolso
       } else { iR.push(a, b, c); cR.push(temCor ? m.cor[f] : kRes); oR.push(atual.origem[f]); }
     }
     for (let i = 0; i < bordas.length; i += 2) {
       const u = bordas[i], v = bordas[i + 1];
-      novaD(v, u, baseT + mapa[u]); novaD(v, baseT + mapa[u], baseT + mapa[v]);
+      novaD(topo(v), topo(u), baseT + mapa[u]); novaD(topo(v), baseT + mapa[u], baseT + mapa[v]);
       novaR(v, baseF + mapa[u], u); novaR(v, baseF + mapa[v], baseF + mapa[u]);
     }
     const d = compactarComOrigem(criar(P, Uint32Array.from(iD), temCor ? Uint16Array.from(cD) : null), oD);
@@ -349,6 +424,9 @@ function extrairPorCamada(ctx, atual, R, adj, opc) {
     if (cruza(d.malha) || cruza(r.malha)) continue;
     return { detMalha: d.malha, detOrigem: d.origem, restoMalha: r.malha, restoOrigem: r.origem, metodo: 'camada' };
   }
+  // borda serrilhada (degraus) pode fazer o recuo lateral se cruzar nos
+  // cantos: sem folga lateral ainda dá peça (encaixe mais justo), com aviso
+  if (fl > 0) { const r2 = extrairPorCamada(ctx, atual, R, adj, { ...opc, folgaLateral: 0 }); if (!r2.falhou) { r2.semFolgaLateral = true; return r2; } }
   return { falhou: 'A camada de ' + t.toFixed(1) + ' mm se cruzaria (curva mais fechada ou parede mais fina que a espessura). Use uma espessura menor.' };
 }
 
@@ -572,11 +650,14 @@ export function separarDetalhe(parte, mascara, opc = {}) {
   const avisos = [];
   if (mascara.length !== parte.malha.idx.length / 3) throw new Error('Seleção não corresponde à peça.');
   // malha aberta (STL cru com buraco): conserta aqui mesmo e leva a seleção junto
-  const rep = consertarComMascara(parte, mascara);
+  // opc.solida: quem chama garante casca única fechada (separar por cor já
+  // consertou e separou as cascas) — pula as duas conferências, que
+  // convertem a peça inteira
+  const rep = opc.solida ? null : consertarComMascara(parte, mascara);
   if (rep) { parte = rep.parte; mascara = rep.mascara; avisos.push(rep.aviso); }
   // cascas que se atravessam (braço solto sobre o corpo) viram UM sólido antes
   // de tudo; a seleção vai junto pelas faces de origem
-  const un = unirCascasComMascara(parte, mascara);
+  const un = opc.solida ? null : unirCascasComMascara(parte, mascara);
   if (un) { parte = un.parte; mascara = un.mascara; avisos.push(un.aviso); }
   const nt0 = parte.malha.idx.length / 3;
   if (mascara.length !== nt0) throw new Error('Seleção não corresponde à peça.');
@@ -601,14 +682,18 @@ export function separarDetalhe(parte, mascara, opc = {}) {
     const { Manifold } = manifold();
     // estado atual da peça principal
     let atual = { malha: parte.malha, cor: parte.cor, paleta: parte.paleta, origem: raizOrigem };
-    atual.man = ctx.solido(atual, parte.nome);
     const detalhes = [];
     const metodos = [];
     const relatorio = [];
     let plano = null;
     // regiões em ordem de tamanho (maior primeiro)
     const ordem = [...Array(reg.n).keys()].sort((a, b) => reg.tamanhos[b] - reg.tamanhos[a]);
+    const pg = opc.progresso ? progresso : () => {};
+    let iReg = 0;
     for (const r of ordem) {
+      pg(0.1 + 0.75 * (iReg++) / ordem.length, ordem.length > 1 ? 'Separando a região ' + iReg + ' de ' + ordem.length : 'Separando');
+      // sólido da peça atual só quando precisa (depois da última região não precisa)
+      if (!atual.man) atual.man = ctx.solido(atual, parte.nome);
       // região r em termos das faces originais
       const raiz = new Uint8Array(nt0);
       for (let f = 0; f < nt0; f++) if (reg.rotulo[f] === r) raiz[f] = 1;
@@ -641,6 +726,7 @@ export function separarDetalhe(parte, mascara, opc = {}) {
               const c = extrairPorCamada(ctx, atual, R, adj, opc);
               if (c.falhou) throw new Error(res.falhou + ' ' + c.falhou);
               avisos.push('A região é curva: o detalhe virou uma camada de ' + (+opc.profundidade).toFixed(1) + ' mm que acompanha a superfície.');
+              if (c.semFolgaLateral) avisos.push('A borda da região é serrilhada: a camada saiu sem folga dos lados (encaixe justo — lixe de leve se não entrar).');
               res = c;
             } else {
               // antes do fechamento curvo: plano da borda soltando só a parte
@@ -653,6 +739,7 @@ export function separarDetalhe(parte, mascara, opc = {}) {
           paletaDasTampas(atual, corDetalhe);
           res = extrairPorCamada(ctx, atual, R, adj, opc);
           if (res.falhou) throw new Error(res.falhou);
+          if (res.semFolgaLateral) avisos.push('A borda da região é serrilhada: a camada saiu sem folga dos lados (encaixe justo — lixe de leve se não entrar).');
         }
         if (!res) {
           paletaDasTampas(atual, corDetalhe);
@@ -668,8 +755,9 @@ export function separarDetalhe(parte, mascara, opc = {}) {
       if (res.plano && !plano) plano = res.plano;
       let det, resto;
       if (res.det) {
-        det = ctx.parte(res.det, opc.nomeDetalhe || 'Detalhe', corDetalhe, true);
-        resto = ctx.parte(res.resto, parte.nome, parte.cor, true);
+        const limpo = x => res.relatorio && res.relatorio.length ? ctx.guardar(x.simplify(2e-3)) : x;
+        det = ctx.parte(limpo(res.det), opc.nomeDetalhe || 'Detalhe', corDetalhe, true);
+        resto = ctx.parte(limpo(res.resto), parte.nome, parte.cor, true);
       } else {
         // malhas vindas do método superfície/casca: valida no Manifold (e limpa)
         const md = ctx.solido({ malha: res.detMalha, cor: corDetalhe, paleta: atual.paleta, origem: res.detOrigem }, 'O detalhe separado');
@@ -684,7 +772,6 @@ export function separarDetalhe(parte, mascara, opc = {}) {
       }
       detalhes.push(det);
       atual = { malha: resto.malha, cor: resto.cor, paleta: resto.paleta, origem: resto.origem };
-      atual.man = ctx.solido(atual, parte.nome);
     }
     if (!detalhes.length) throw new Error('A seleção marcou só a superfície do detalhe (ex.: só a face de cima). Clique no detalhe com "Detalhe inteiro" ligado, ou use Expandir, e tente de novo.');
     // o que o corte plano levou de fora da seleção (faixa perto da borda)
@@ -718,38 +805,7 @@ export function separarDetalhe(parte, mascara, opc = {}) {
   });
 }
 
-// Separa cada cor em peça própria. Cor base = a de maior área (ou opc.corBase).
-// Região pintada na superfície precisa de espessura (opc.espessura, padrão 1 mm).
-export function separarPorCor(parte, opc = {}) {
-  const m = parte.malha;
-  if (!m.cor || !parte.paleta || parte.paleta.length < 2) throw new Error('Essa peça tem uma cor só.');
-  const nt = m.idx.length / 3;
-  const area = new Float64Array(parte.paleta.length);
-  for (let f = 0; f < nt; f++) area[m.cor[f]] += areaFace(m, f);
-  let base = opc.corBase != null ? parte.paleta.indexOf(opc.corBase) : -1;
-  if (base < 0) { base = 0; for (let k = 1; k < area.length; k++) if (area[k] > area[base]) base = k; }
-  const ordem = [...area.keys()].filter(k => k !== base && area[k] > 0).sort((a, b) => area[a] - area[b]);
-  let atual = { nome: parte.nome, malha: m, cor: parte.paleta[base], paleta: parte.paleta };
-  const pecas = [];
-  const avisos = [];
-  const esp = opc.espessura != null ? opc.espessura : 1.0;
-  for (const k of ordem) {
-    const hex = parte.paleta[k];
-    const ma = atual.malha;
-    const mask = new Uint8Array(ma.idx.length / 3);
-    let n = 0;
-    for (let f = 0; f < mask.length; f++) if (ma.cor && atual.paleta[ma.cor[f]] === hex) { mask[f] = 1; n++; }
-    if (!n) continue;
-    // região que é uma casca inteira sai sem espessura extra
-    const r = separarDetalhe(atual, mask, { modo: 'auto', profundidade: esp, folga: opc.folga || 0, nomeDetalhe: opc.nomes && opc.nomes[hex] || hex, limparSelecao: false });
-    avisos.push(...r.avisos.map(a => hex + ': ' + a));
-    // peça de cor = um filamento só
-    pecas.push({ nome: r.detalhe.nome, malha: { pos: r.detalhe.malha.pos, idx: r.detalhe.malha.idx }, cor: hex, paleta: null });
-    atual = r.principal;
-  }
-  pecas.unshift(Object.assign(atual, { cor: parte.paleta[base] }));
-  return { pecas, avisos, corBase: parte.paleta[base] };
-}
+// SEPARAR POR COR: ver separarCor.js (peças de fabricação, com folga).
 
 // Cada casca solta vira uma peça
 export function separarCascas(parte) {

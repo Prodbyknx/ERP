@@ -6,7 +6,7 @@
 // Se o navegador não deixar criar worker, roda tudo aqui mesmo (mais lento,
 // com a tela parando durante o cálculo).
 import Module from 'manifold-3d';
-import { definirManifold } from '../core/solidos.js';
+import { definirManifold, ehErroWasm } from '../core/solidos.js';
 import { executar } from './operacoes.js';
 import { malhasDe } from '../core/render.js';
 import { cacheRender } from '../ui/cacheRender.js';
@@ -24,7 +24,7 @@ let wasmBytes = null;
 const bytesWasm = () => wasmBytes || (wasmBytes = base64ParaBytes(__MANIFOLD_WASM__));
 
 // operações que vão pro worker auxiliar
-const OPS_AUX = new Set(['analisar', 'bvh']);
+const OPS_AUX = new Set(['analisar', 'bvh', 'adjacencia']);
 
 // cópia dos arrays que vão pro worker (a cena na tela continua com os
 // originais). Campos que começam com "_" são da tela e não viajam.
@@ -70,6 +70,8 @@ class Canal {
         if (prox) prox.desde = performance.now();
         this.motor.avisar(this);
         if (m.ok) p.resolve(recolherRender(m.resultado)); else { const e = new Error(m.erro); e.codigo = m.codigo; p.reject(e); }
+        // pane no WASM: joga este worker fora e sobe outro limpo
+        if (m.reiniciar) this.motor.reiniciarCanal(this);
       };
       w.onerror = ev => { clearTimeout(limite); ev.preventDefault && ev.preventDefault(); if (!ok) reject(new Error('erro no worker: ' + (ev.message || ''))); };
       const wasm = bytesWasm().slice();
@@ -148,6 +150,12 @@ export class Motor {
       // deixa a tela pintar o "calculando..." antes de travar
       await new Promise(r => setTimeout(r, 30));
       try { return executar(op, copiarArrays(args, [])); }
+      catch (e) {
+        if (!ehErroWasm(e)) throw e;
+        // sem worker: recarrega o módulo aqui mesmo
+        await this.usarLocal(this.motivoLocal);
+        const x = new Error('O motor 3D teve uma pane interna nessa operação e foi reiniciado. Nada mudou na peça — tente de novo com outro ajuste.'); x.codigo = 'wasm'; throw x;
+      }
       finally { this._ocupadoLocal--; if (this.aoMudar) this.aoMudar(this._ocupadoLocal, null); }
     }
     let canal = this.principal;
@@ -162,6 +170,14 @@ export class Motor {
     this.principal.derrubar('Cancelado.');
     await this.reiniciarPrincipal();
     return true;
+  }
+  // worker com o WASM corrompido: derruba (o que estava na fila dele volta
+  // com erro) e sobe outro
+  async reiniciarCanal(canal) {
+    canal.derrubar('O motor 3D foi reiniciado depois de uma pane. Tente de novo.');
+    if (canal === this.principal) return this.reiniciarPrincipal();
+    this.auxPronto = canal.iniciar(this.url).then(() => true, () => { canal.derrubar(); return false; });
+    return this.auxPronto;
   }
   async reiniciarPrincipal() {
     if (this._reiniciando) return this._reiniciando;

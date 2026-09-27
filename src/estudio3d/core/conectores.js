@@ -5,7 +5,7 @@
 //
 // Folga = espaço POR LADO. Pino Ø5,00 com folga 0,25 -> furo Ø5,50.
 import { manifold, segmentos } from './solidos.js';
-import { espalharPontos, eixoPrincipal, distanciaBorda, dentro } from './geo2d.js';
+import { eixoPrincipal, distanciaBorda, dentro } from './geo2d.js';
 import * as M4 from './mat4.js';
 
 export const TIPOS_CONECTOR = [
@@ -65,152 +65,217 @@ function prisma(cs, z0, z1, chanfro, meia) {
   return r;
 }
 
-// Tamanho do conector pra seção: cfg.auto escolhe (~45% da largura livre,
-// Ø2 a Ø8); tamanho pedido que não cabe é REDUZIDO (com aviso) em vez de pulado.
-export function dimensionarConector(secao, cfg0, avisos = []) {
-  const cfg = Object.assign({}, PADRAO_CONECTOR, cfg0 || {});
-  if (!['cilindrico', 'solto', 'quadrado', 'hexagonal'].includes(cfg.tipo) || !secao.length) return cfg;
-  const { CrossSection } = manifold();
-  const cs = CrossSection.ofPolygons(secao, 'EvenOdd');
-  let lo = 0, hi = Math.sqrt(Math.max(cs.area(), 0) / Math.PI) * 1.5 + 1;
-  for (let i = 0; i < 20; i++) {
-    const m = (lo + hi) / 2, o = cs.offset(-m, 'Round', 2, 24), ok = !o.isEmpty();
-    o.delete(); if (ok) lo = m; else hi = m;
-  }
-  cs.delete();
-  const rIn = lo;                                   // raio do maior círculo que cabe na seção
-  const parede = Math.min(cfg.parede, Math.max(0.8, rIn * 0.3));
-  const rMax = rIn - cfg.folga - parede;            // raio do conector que ainda deixa parede
-  const tam = cfg.tipo === 'quadrado' ? cfg.lado * Math.SQRT1_2 : cfg.tipo === 'hexagonal' ? cfg.diametro / 2 / Math.cos(Math.PI / 6) : cfg.diametro / 2;
-  let r = cfg.auto ? Math.min(4, Math.max(rIn * 0.45, Math.min(1.5, rMax))) : tam;
-  if (r > rMax) r = rMax;
-  if (r < 0.9) {
-    // não cabe nem Ø2 com parede: explica em vez de "precisa de X mm"
-    avisos.push('A seção do corte tem só ~' + (2 * rIn).toFixed(1).replace('.', ',') + ' mm de largura: não cabe pino (precisa de uns 5 mm). Saiu sem encaixe — cole as partes, ou deixe a parede mais grossa aí.');
-    return { ...cfg, naoCabe: true };
-  }
-  const passo = v => Math.floor(v * 2) / 2;         // de 0,5 em 0,5 mm
-  const antes = medidaTexto(cfg);
-  if (cfg.tipo === 'quadrado') cfg.lado = Math.max(1.5, passo(r / Math.SQRT1_2));
-  else if (cfg.tipo === 'hexagonal') cfg.diametro = Math.max(2, passo(r * 2 * Math.cos(Math.PI / 6)));
-  else cfg.diametro = Math.max(2, passo(r * 2));
-  cfg.parede = parede;
-  if (cfg.auto) {
-    const d = cfg.tipo === 'quadrado' ? cfg.lado : cfg.diametro;
-    cfg.profundidade = Math.max(3, Math.min(10, Math.round(d * 1.4)));
-  } else if (medidaTexto(cfg) !== antes) avisos.push('O conector ' + antes + ' não cabia nessa seção: usei ' + medidaTexto(cfg) + '.');
-  return cfg;
+// Configuração normalizada. O TAMANHO de verdade (e onde fica, e quão
+// fundo) sai do planejador, que olha a peça inteira abaixo do corte.
+export function dimensionarConector(secao, cfg0) {
+  return Object.assign({}, PADRAO_CONECTOR, cfg0 || {});
 }
 
-// Onde cabem os conectores na seção do corte (em mm, no plano)
-export function posicionar(secao, cfg, forma) {
+// ------------------------------------------------------------ PLANEJADOR
+// Decide posição + tamanho + profundidade de cada pino JUNTOS, olhando a peça
+// abaixo do corte em fatias de 0,5 mm (não só no fundo do furo): o furo, com
+// a parede em volta, tem que caber em TODA a profundidade. Cada ilha do corte
+// (duas pernas, uma mão) ganha o seu encaixe — senão sai pedaço solto. Pino
+// largo e raso não segura: profundidade mínima ~0,8 × diâmetro.
+const PASSO_Z = 0.5;
+const circunraio = (tipo, t, cfg) => tipo === 'quadrado' ? t / Math.SQRT2 : tipo === 'hexagonal' ? t / 2 / Math.cos(Math.PI / 6) : tipo === 'retangular' ? Math.hypot(cfg.comprimento, cfg.largura) / 2 : t / 2;
+function fatias(loc, sinal, zMax) {
+  const out = [];
+  for (let k = 0; (k + 0.5) * PASSO_Z <= zMax; k++) {
+    const cs = loc.slice(sinal * (k + 0.5) * PASSO_Z);
+    const pol = cs.toPolygons(); cs.delete();
+    out.push(pol);
+  }
+  return out;
+}
+// raio livre em cada fatia (0 = fora da peça)
+function perfil(fs, x, y) {
+  const R = new Float32Array(fs.length);
+  for (let k = 0; k < fs.length; k++) R[k] = fs[k].length && dentro(fs[k], x, y) ? distanciaBorda(fs[k], x, y) : 0;
+  return R;
+}
+// quantos mm de fundo cabem pra um furo de raio rho com parede w
+function fundoLivre(R, rho, w) { let k = 0; while (k < R.length && R[k] >= rho + w) k++; return k * PASSO_Z; }
+
+export function planejarConectores(ctx, { locA, locB, secao, cfg }) {
   const { CrossSection } = manifold();
+  let tipo = cfg.tipo;
   const avisos = [];
-  const cs = CrossSection.ofPolygons(secao, 'EvenOdd');
-  const folgaLateral = cfg.tipo === 'solto' ? cfg.folga : cfg.folga;
-  const recuo = forma.raio + folgaLateral + cfg.parede;
-  const perm = cs.offset(-recuo, 'Round', 2, 24);
-  let permitida = perm.toPolygons();
-  cs.delete(); perm.delete();
-  if (!permitida.length) {
-    avisos.push('O corte é estreito demais pra um conector desse tamanho (precisa de ' + (recuo * 2).toFixed(1) + ' mm de largura livre).');
-    return { pontos: [], avisos, angulo: 0 };
+  const f = cfg.folga, fundo = cfg.folgaFundo;
+  const fixo = !cfg.auto || tipo === 'retangular';
+  const pedido = tipo === 'quadrado' ? cfg.lado : tipo === 'retangular' ? cfg.largura : cfg.diametro;
+  // tamanhos a tentar (maior primeiro); pedido fixo: ele e, se não couber, menores
+  const tams = [];
+  if (fixo) { tams.push(pedido); if (tipo !== 'retangular') for (let t = Math.floor((pedido - 0.5) * 2) / 2; t >= 2; t -= 0.5) tams.push(t); }
+  else for (let t = 8; t >= 2; t -= 0.5) tams.push(t);
+  const pDes = t => fixo ? cfg.profundidade : Math.max(3, Math.min(10, Math.round(t * 1.4)));
+  const pMin = t => Math.min(pDes(t), Math.max(2, 0.8 * t));
+  const zMax = Math.max(...tams.map(pDes)) + fundo + cfg.parede + 1;
+  const fB = fatias(locB, -1, zMax), fA = tipo === 'solto' ? fatias(locA, +1, zMax) : null;
+  // raiz do pino: material da peça de cima em volta dele logo acima do corte
+  const raiz = (() => { const c = locA.slice(0.25), p = c.toPolygons(); c.delete(); return p; })();
+  // ilhas do corte
+  const cs = ctx.guardar(CrossSection.ofPolygons(secao, 'EvenOdd'));
+  const ilhas = cs.decompose().map(c => { ctx.guardar(c); return { pol: c.toPolygons(), area: c.area() }; }).filter(i => i.area > 0.5);
+  const aMax = Math.max(0, ...ilhas.map(i => i.area));
+  const q = Math.max(1, Math.min(12, cfg.quantidade | 0));
+  const escolhidos = [];
+  ilhas.sort((a, b) => b.area - a.area);
+  for (const il of ilhas) {
+    const n = Math.max(1, Math.min(q, Math.round(q * il.area / aMax)));
+    const { x0, x1, y0, y1 } = limites(il.pol);
+    const passo = Math.max(0.3, Math.min(2, Math.sqrt(il.area) / 28));
+    // menor pino possível (inclui o cilíndrico Ø2 de reserva das partes pequenas)
+    const rMin = Math.min(circunraio(tipo, tams[tams.length - 1], cfg), 1) + f + 0.8;
+    const cand = [];
+    for (let y = y0 + passo / 2; y <= y1; y += passo) for (let x = x0 + passo / 2; x <= x1; x += passo) {
+      if (!dentro(il.pol, x, y)) continue;
+      const R0 = distanciaBorda(il.pol, x, y);
+      if (R0 < rMin) continue;
+      const RR = raiz.length && dentro(raiz, x, y) ? distanciaBorda(raiz, x, y) : 0;
+      cand.push({ x, y, R0: Math.min(R0, RR + 0.8), RB: perfil(fB, x, y), RA: fA ? perfil(fA, x, y) : null });
+    }
+    const eixo = eixoPrincipal(il.pol);
+    // pra cada tamanho (maior primeiro) e parede (1,2 mm; se não der, 0,8):
+    // quantos pinos espalhados cabem com fundo suficiente
+    const tentar = (t, w) => {
+      const rho = circunraio(tipo, t, cfg) + f, ok = [];
+      for (const c of cand) {
+        if (c.R0 < rho + w) continue;
+        let p = fundoLivre(c.RB, rho, w) - fundo;
+        if (tipo === 'solto') p = Math.min(p, fundoLivre(c.RA, rho, w) - fundo);
+        p = Math.min(pDes(t), Math.floor(p * 2) / 2);
+        if (p >= pMin(t)) ok.push({ ...c, p });
+      }
+      if (!ok.length) return [];
+      // o 1º é o mais fundo (e mais longe da borda); os outros se espalham
+      ok.sort((a, b2) => b2.p - a.p || b2.R0 - a.R0);
+      const sel = [ok[0]], dMin = 2 * rho + Math.max(w, 1.5);
+      while (sel.length < n) {
+        let melhor = null, dm = -1;
+        for (const c of ok) {
+          if (c.p < ok[0].p * 0.7) continue;
+          let d = Infinity; for (const s2 of sel) d = Math.min(d, Math.hypot(c.x - s2.x, c.y - s2.y));
+          if (d >= dMin && d > dm) { dm = d; melhor = c; }
+        }
+        if (!melhor) break;
+        sel.push(melhor);
+      }
+      return sel.map(c => ({ x: c.x, y: c.y, tam: t, prof: c.p, parede: w, girar: eixo.ang * 180 / Math.PI }));
+    };
+    // automático: com 2+ pedidos, 2 pinos menores seguram melhor que 1 grande
+    // (não deixa girar); manual: fica no tamanho pedido se couber pelo menos 1
+    const alvo = fixo ? 1 : Math.min(n, 2);
+    let usar = null, reserva = null;
+    for (const t of tams) {
+      for (const w of [cfg.parede, 0.8]) {
+        const sel = tentar(t, w);
+        if (!sel.length) continue;
+        if (!reserva || sel.length > reserva.length) reserva = sel;
+        if (sel.length >= alvo) { usar = sel; break; }
+      }
+      if (usar) break;
+    }
+    usar = usar || reserva;
+    // parte pequena onde o tipo escolhido não cabe (quadrado, sextavado,
+    // solto): pino cilíndrico pequeno, melhor que deixar a parte solta
+    if (!usar && tipo !== 'cilindrico') {
+      const tipoOrig = tipo;
+      tipo = 'cilindrico';
+      for (let t = Math.min(4, tams[0]); t >= 2 && !usar; t -= 0.5) for (const w of [cfg.parede, 0.8]) { const sel = tentar(t, w); if (sel.length) { usar = sel.map(x => ({ ...x, tipo: 'cilindrico' })); break; } }
+      tipo = tipoOrig;
+      if (usar) avisos.push('Numa parte pequena do corte o ' + (TIPOS_CONECTOR.find(x => x.id === tipoOrig) || { nome: tipoOrig }).nome.toLowerCase() + ' não cabia: usei pino cilíndrico Ø' + String(usar[0].tam).replace('.', ',') + ' ali.');
+    }
+    if (usar) {
+      escolhidos.push(...usar);
+      if (fixo && usar[0].tam !== pedido) avisos.push('O conector ' + medidaTexto({ ...cfg, diametro: pedido, lado: pedido }) + ' não cabia aqui: usei ' + medidaTexto({ ...cfg, diametro: usar[0].tam, lado: usar[0].tam }) + '.');
+      if (usar.length < n) avisos.push('Couberam ' + usar.length + ' de ' + n + ' conectores nesta parte do corte sem encostar um no outro.');
+    } else {
+      const larg = 2 * distanciaMax(il.pol);
+      avisos.push(ilhas.length > 1
+        ? 'Uma parte do corte com ~' + larg.toFixed(1).replace('.', ',') + ' mm de largura (área ' + il.area.toFixed(0) + ' mm²) não comporta pino com parede: fica sem encaixe — cole essa parte.'
+        : 'A seção do corte tem só ~' + larg.toFixed(1).replace('.', ',') + ' mm de largura: não cabe pino (precisa de uns 5 mm). Saiu sem encaixe — cole as partes, ou deixe a parede mais grossa aí.');
+    }
   }
-  const n = Math.max(1, Math.min(12, cfg.quantidade | 0));
-  const pontos = espalharPontos(permitida, n);
-  // conectores não podem se encostar
-  const minDist = 2 * forma.raio + 2 * folgaLateral + cfg.parede;
-  const ok = [];
-  for (const p of pontos) if (ok.every(q => Math.hypot(p[0] - q[0], p[1] - q[1]) >= minDist)) ok.push(p);
-  if (ok.length < n) avisos.push('Couberam ' + ok.length + ' de ' + n + ' conectores sem encostar um no outro.');
-  const eixo = eixoPrincipal(secao);
-  return { pontos: ok, avisos, angulo: eixo.ang * 180 / Math.PI };
+  return { conectores: escolhidos, avisos, ilhas: ilhas.length };
 }
-
-// Quanto material tem atrás do ponto (x,y) do plano, pro lado 'sinal' (-1 = B, +1 = A)
-function espessuraDisponivel(solido, frame, x, y, sinal) {
-  const o = M4.aplicarPonto(frame, x, y, sinal * 0.01);
-  const L = 1000;
-  const f = M4.aplicarPonto(frame, x, y, sinal * L);
-  const hits = solido.rayCast(o, f);
-  // o 1º acerto é a face do corte (entrando), o 2º é o fundo (saindo)
-  const dist = hits.map(h => h.distance * (L - 0.01) + 0.01);
-  const saidas = dist.filter(d => d > 0.02);
-  if (saidas.length === 0) return 0;
-  if (saidas.length === 1) return saidas[0];
-  return saidas[0] < 0.05 ? saidas[1] : saidas[0];
+// maior distância à borda na ilha (pra explicar quando não cabe nada)
+function limites(pol) {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const a of pol) for (const p of a) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1]; }
+  return { x0, x1, y0, y1 };
 }
-
-// Lateral do furo não pode furar a parede da peça mais pra baixo
-function cabeLateral(solidoLocal, x, y, raioLivre, z) {
-  const sec = solidoLocal.slice(z);
-  const pol = sec.toPolygons();
-  sec.delete();
-  if (!pol.length || !dentro(pol, x, y)) return false;
-  return distanciaBorda(pol, x, y) >= raioLivre;
+function distanciaMax(pol) {
+  let m = 0;
+  const { x0, x1, y0, y1 } = limites(pol);
+  const s = Math.max((x1 - x0), (y1 - y0)) / 40 || 0.1;
+  for (let y = y0; y <= y1; y += s) for (let x = x0; x <= x1; x += s) if (dentro(pol, x, y)) m = Math.max(m, distanciaBorda(pol, x, y));
+  return m;
 }
 
 // Gera pino (A) e furo (B). solidoA/solidoB: Manifold de cada lado (mundo
 // da peça). Devolve Manifolds em coordenadas da peça + relatório.
 export function gerarConectores(ctx, { solidoA, solidoB, frame, secao, cfg }) {
-  const { Manifold, CrossSection } = manifold();
+  const { Manifold } = manifold();
   cfg = Object.assign({}, PADRAO_CONECTOR, cfg || {});
-  const avisos = [];
   const inv = M4.inverter(frame);
   const locA = ctx.guardar(solidoA.transform(Array.from(inv)));
   const locB = ctx.guardar(solidoB.transform(Array.from(inv)));
   const positivos = [], negativosA = [], negativosB = [], soltos = [];
   const relatorio = [];
 
-  if (cfg.naoCabe) return { positivos, negativosA, negativosB, soltos, relatorio, avisos };
   if (cfg.tipo === 'lingueta' || cfg.tipo === 'andorinha') {
-    return gerarTrilho(ctx, { frame, secao, cfg, avisos });
+    return gerarTrilho(ctx, { frame, secao, cfg, locA, locB });
   }
-
-  const forma = formaConector(cfg);
-  ctx.guardar(forma.cs);
-  const pos = posicionar(secao, cfg, forma);
-  avisos.push(...pos.avisos);
-  const juncao = forma.juncao;
-  const csFuro = ctx.guardar(forma.cs.offset(cfg.folga, juncao, 4, segmentos(forma.raio + cfg.folga)));
-  const girar = !forma.simetrica ? pos.angulo : 0;
-  for (const [x, y] of pos.pontos) {
-    // profundidade possível em B (e em A, se o pino for solto)
-    const dispB = espessuraDisponivel(solidoB, frame, x, y, -1);
-    const dispA = cfg.tipo === 'solto' ? espessuraDisponivel(solidoA, frame, x, y, +1) : Infinity;
-    let prof = Math.min(cfg.profundidade, dispB - cfg.folgaFundo - cfg.parede, dispA - cfg.folgaFundo - cfg.parede);
-    // a lateral do furo precisa caber lá embaixo também
-    const raioLivre = forma.raio + cfg.folga + Math.min(0.8, cfg.parede * 0.6);
-    while (prof > 1 && !cabeLateral(locB, x, y, raioLivre, -(prof + cfg.folgaFundo))) prof -= 0.5;
-    if (cfg.tipo === 'solto') while (prof > 1 && !cabeLateral(locA, x, y, raioLivre, prof + cfg.folgaFundo)) prof -= 0.5;
-    if (prof < Math.min(2, cfg.profundidade)) {
-      avisos.push('Sem espessura pra conector em (' + x.toFixed(1) + '; ' + y.toFixed(1) + ') — pulado.');
-      continue;
-    }
-    if (prof < cfg.profundidade - 1e-6) avisos.push('Conector em (' + x.toFixed(1) + '; ' + y.toFixed(1) + ') ficou com ' + prof.toFixed(1) + ' mm de profundidade (faltou material pros ' + cfg.profundidade + ' mm pedidos).');
-    const T = M4.multiplicar(frame, M4.multiplicar(M4.translacao(x, y, 0), M4.rotacaoEuler(0, 0, girar)));
-    const Tm = Array.from(T);
-    const ov = 0.02;
-    if (cfg.tipo === 'solto') {
-      // furo nos dois lados + pino separado
-      const fB = prisma(csFuro, -(prof + cfg.folgaFundo), ov, 0, 1);
-      const fA = prisma(csFuro, -ov, prof + cfg.folgaFundo, 0, 1);
-      negativosB.push(ctx.guardar(fB.transform(Tm))); fB.delete();
-      negativosA.push(ctx.guardar(fA.transform(Tm))); fA.delete();
+  const plano = planejarConectores(ctx, { locA, locB, secao, cfg });
+  const genA = locA.genus(), genB = locB.genus();
+  const avisos = plano.avisos;
+  // o pino entra 0,2 mm na peça de cima (lasca de 0,02 mm dava geometria
+  // quase degenerada na união); o planejador garante material ali
+  const ov = 0.2;
+  for (const c of plano.conectores) {
+    const tipoC = c.tipo || cfg.tipo;
+    const k = { ...cfg, tipo: tipoC, diametro: c.tam, lado: c.tam, parede: c.parede };
+    if (cfg.tipo === 'retangular') { k.largura = cfg.largura; k.comprimento = cfg.comprimento; }
+    const forma = formaConector(k); ctx.guardar(forma.cs);
+    const csFuro = ctx.guardar(forma.cs.offset(cfg.folga, forma.juncao, 4, segmentos(forma.raio + cfg.folga)));
+    const girar = forma.simetrica ? 0 : c.girar;
+    let prof = c.prof;
+    // conferência EXATA (entre as fatias pode ter detalhe): furo + ~2/3 da
+    // parede tem que ficar inteiro dentro da peça de baixo
+    // raio do furo: com a folga (no quadrado/sextavado o canto cresce mais)
+    const rFuro = forma.simetrica ? forma.raio + cfg.folga : forma.raio + cfg.folga / Math.cos(tipoC === 'hexagonal' ? Math.PI / 6 : Math.PI / 4);
+    const conferir = (loc, sinal, p) => {
+      const rr = rFuro + c.parede, h = p + cfg.folgaFundo + c.parede;
+      const cil = Manifold.cylinder(h, rr, rr, 32).translate([c.x, c.y, sinal < 0 ? -h : 0]);
+      const fora = cil.subtract(loc), v = fora.volume();
+      cil.delete(); fora.delete();
+      return v < 0.004 * Math.PI * rr * rr * h;      // tolera só o facetado da malha
+    };
+    while (prof >= 2 && !(conferir(locB, -1, prof) && (tipoC !== 'solto' || conferir(locA, +1, prof)))) prof -= 0.5;
+    // trava exata: o furo não pode abrir túnel na peça (gênero sobe)
+    const abreTunel = (loc, sinal, p) => { const h = p + cfg.folgaFundo, cil = Manifold.cylinder(h + 0.5, rFuro, rFuro, 32).translate([c.x, c.y, sinal < 0 ? -h : -0.5]), t = loc.subtract(cil), g = t.genus(); cil.delete(); t.delete(); return g > (sinal < 0 ? genB : genA); };
+    while (prof >= 2 && (abreTunel(locB, -1, prof) || (tipoC === 'solto' && abreTunel(locA, +1, prof)))) prof -= 0.5;
+    if (prof < 2) { avisos.push('Sem espessura pra conector em (' + c.x.toFixed(1) + '; ' + c.y.toFixed(1) + ') — pulado.'); continue; }
+    const T = Array.from(M4.multiplicar(frame, M4.multiplicar(M4.translacao(c.x, c.y, 0), M4.rotacaoEuler(0, 0, girar))));
+    if (tipoC === 'solto') {
+      const fB = prisma(csFuro, -(prof + cfg.folgaFundo), ov, 0, 1), fA = prisma(csFuro, -ov, prof + cfg.folgaFundo, 0, 1);
+      negativosB.push(ctx.guardar(fB.transform(T))); fB.delete();
+      negativosA.push(ctx.guardar(fA.transform(T))); fA.delete();
       const comp = 2 * prof - 0.2;
-      const pino = prisma(forma.cs, 0, comp, cfg.chanfro, forma.meiaLargura);
-      // chanfro na outra ponta também
-      soltos.push({ man: ctx.guardar(pino), comprimento: comp });
-      relatorio.push({ x, y, profundidade: prof, pino: medidaTexto(cfg), furo: medidaTexto(cfg, cfg.folga), comprimentoPino: comp });
+      soltos.push({ man: ctx.guardar(prisma(forma.cs, 0, comp, cfg.chanfro, forma.meiaLargura)), comprimento: comp });
+      relatorio.push({ x: c.x, y: c.y, profundidade: prof, pino: medidaTexto(k), furo: medidaTexto(k, cfg.folga), comprimentoPino: comp });
     } else {
       const pino = prisma(forma.cs, -prof, ov, cfg.chanfro, forma.meiaLargura);
       const furo = prisma(csFuro, -(prof + cfg.folgaFundo), 0.5, 0, 1);
-      positivos.push(ctx.guardar(pino.transform(Tm))); pino.delete();
-      negativosB.push(ctx.guardar(furo.transform(Tm))); furo.delete();
-      relatorio.push({ x, y, profundidade: prof, pino: medidaTexto(cfg), furo: medidaTexto(cfg, cfg.folga), fundoFuro: prof + cfg.folgaFundo });
+      positivos.push(ctx.guardar(pino.transform(T))); pino.delete();
+      negativosB.push(ctx.guardar(furo.transform(T))); furo.delete();
+      relatorio.push({ x: c.x, y: c.y, profundidade: prof, pino: medidaTexto(k), furo: medidaTexto(k, cfg.folga), fundoFuro: prof + cfg.folgaFundo });
     }
+    if (prof < c.prof) avisos.push('Conector em (' + c.x.toFixed(1) + '; ' + c.y.toFixed(1) + ') ficou com ' + prof.toFixed(1) + ' mm de profundidade (a peça afina ali).');
   }
-  void CrossSection; void Manifold;
+  if (!relatorio.length && plano.conectores.length) avisos.push('Nenhum conector coube com parede em volta — saiu sem encaixe.');
+  if (!cfg.auto && relatorio.length && cfg.tipo !== 'retangular' && relatorio.some(r => r.profundidade < cfg.profundidade - 1e-6) && !avisos.some(a => /profundidade/.test(a))) avisos.push('Faltou material pros ' + cfg.profundidade + ' mm de profundidade pedidos em algum conector.');
   return { positivos, negativosA, negativosB, soltos, relatorio, avisos };
 }
 
@@ -224,65 +289,99 @@ export function medidaTexto(cfg, folga = 0) {
   return '';
 }
 
-// Lingueta (ranhura fechada) e rabo de andorinha (trilho aberto nas pontas).
-// Perfil no plano (lateral, profundidade), puxado ao longo do eixo principal
-// da seção do corte.
-function gerarTrilho(ctx, { frame, secao, cfg, avisos }) {
+// Lingueta (ranhura fechada) e rabo de andorinha (trilho aberto nas pontas),
+// uma por ILHA do corte, ao longo do eixo principal dela.
+// LINGUETA segue a forma da peça de baixo em camadas de 0,5 mm: cada camada é
+// recortada pela fatia da peça (acumulada: a de baixo nunca é maior que a de
+// cima, então o pino desce sem travar) menos a parede — nunca vaza pro lado.
+// RABO DE ANDORINHA desliza de lado, então o perfil é constante: a
+// profundidade diminui até o canal caber inteiro na peça.
+function gerarTrilho(ctx, { frame, secao, cfg, locA, locB }) {
   const { Manifold, CrossSection } = manifold();
-  const eixo = eixoPrincipal(secao);
-  const cs = ctx.guardar(CrossSection.ofPolygons(secao, 'EvenOdd'));
-  const w = cfg.largura, prof = cfg.profundidade, f = cfg.folga;
-  const positivos = [], negativosB = [], relatorio = [];
-  const R = M4.multiplicar(M4.translacao(eixo.cx, eixo.cy, 0), M4.rotacaoEuler(0, 0, eixo.ang * 180 / Math.PI));
-  const Ri = M4.inverter(R);
-  let x0 = Infinity, x1 = -Infinity;
-  for (const a of secao) for (const p of a) {
-    const q = M4.aplicarPonto(Ri, p[0], p[1], 0);
-    if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0];
-  }
   const andorinha = cfg.tipo === 'andorinha';
-  let perfil, perfilFuro;
-  if (andorinha) {
-    // trapézio: estreito junto ao corte, largo na ponta -> trava ao puxar
-    const a = w / 2, b = w / 2 + prof * Math.tan(15 * Math.PI / 180);
-    perfil = [[-a, 0.02], [a, 0.02], [b, -prof], [-b, -prof]];
-    perfilFuro = [[-(a + f), 0.5], [a + f, 0.5], [b + f, -(prof + cfg.folgaFundo)], [-(b + f), -(prof + cfg.folgaFundo)]];
-  } else {
-    perfil = [[-w / 2, 0.02], [w / 2, 0.02], [w / 2, -prof], [-w / 2, -prof]];
-    perfilFuro = [[-(w / 2 + f), 0.5], [w / 2 + f, 0.5], [w / 2 + f, -(prof + cfg.folgaFundo)], [-(w / 2 + f), -(prof + cfg.folgaFundo)]];
-  }
-  // extrude em Z -> (lateral, profundidade, comprimento) vira (comprimento, lateral, profundidade)
-  const P = [0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1];
-  const xm = (x0 + x1) / 2;
-  const noPlano = Array.from(M4.multiplicar(R, M4.translacao(xm, 0, 0)));
-  const barra = (pts, comp) => {
-    const csP = CrossSection.ofPolygons([pts], 'EvenOdd');
-    const e = Manifold.extrude(csP, comp).translate([0, 0, -comp / 2]);
-    csP.delete();
-    const g = e.transform(P); e.delete();
-    const r = g.transform(noPlano); g.delete();
-    return ctx.guardar(r);
-  };
-  const L = x1 - x0;
-  const comp = andorinha ? L + 20 : L - 2 * (cfg.parede + 1);
-  if (L < 6 || comp < 4) {
-    avisos.push('Corte curto demais pra ' + (andorinha ? 'rabo de andorinha' : 'lingueta') + '.');
-    return { positivos, negativosA: [], negativosB, soltos: [], relatorio, avisos };
-  }
-  let pino = barra(perfil, comp);
-  let furo = barra(perfilFuro, andorinha ? comp + 10 : comp + 2 * f);
-  // o positivo nunca sai da silhueta da peça A no plano
-  const limP = ctx.guardar(cs.offset(andorinha ? 0 : -cfg.parede, 'Round'));
-  const altP = ctx.guardar(Manifold.extrude(limP, prof + 1).translate([0, 0, -(prof + 0.5)]));
-  pino = ctx.guardar(pino.intersect(altP));
-  if (!andorinha) {
-    const limF = ctx.guardar(cs.offset(-cfg.parede + f, 'Round'));
-    const altF = ctx.guardar(Manifold.extrude(limF, prof + 4).translate([0, 0, -(prof + 3)]));
-    furo = ctx.guardar(furo.intersect(altF));
-  }
+  const w = cfg.largura, f = cfg.folga, fundo = cfg.folgaFundo, parede = cfg.parede;
+  const avisos = [], positivos = [], negativosB = [], relatorio = [];
+  const cs0 = ctx.guardar(CrossSection.ofPolygons(secao, 'EvenOdd'));
+  const ilhas = cs0.decompose().map(c => ctx.guardar(c)).filter(c => c.area() > 4).sort((a, b) => b.area() - a.area());
   const F = Array.from(frame);
-  positivos.push(ctx.guardar(pino.transform(F)));
-  negativosB.push(ctx.guardar(furo.transform(F)));
-  relatorio.push({ tipo: cfg.tipo, comprimento: andorinha ? L : comp, largura: w, profundidade: prof, folga: f });
+  const PZ = 0.5, nNiveis = Math.ceil((cfg.profundidade + fundo) / PZ), nParede = Math.ceil(parede / PZ);
+  // fatias acumuladas da peça de baixo, na BASE de cada camada (numa
+  // superfície quase deitada a parede recua muito dentro de meia camada) e
+  // indo além do fundo pela parede: acum[i] = ∩ fatias de 0 até −i·0,5 mm
+  const acum = [];
+  if (locB) { let at = null; for (let i = 0; i <= nNiveis + nParede; i++) { const sl = ctx.guardar(locB.slice(-Math.max(1e-3, i * PZ))); at = at ? ctx.guardar(at.intersect(sl)) : sl; acum.push(at); } }
+  const generoB = locB ? locB.genus() : 0;
+  const raizA = locA ? ctx.guardar(locA.slice(0.25)) : null;
+  for (const ilha of ilhas) {
+    const pol = ilha.toPolygons(), eixo = eixoPrincipal(pol);
+    const R = M4.multiplicar(M4.translacao(eixo.cx, eixo.cy, 0), M4.rotacaoEuler(0, 0, eixo.ang * 180 / Math.PI)), Ri = M4.inverter(R);
+    let x0 = Infinity, x1 = -Infinity;
+    for (const a of pol) for (const p of a) { const q = M4.aplicarPonto(Ri, p[0], p[1], 0); if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; }
+    const L = x1 - x0, comp = andorinha ? L + 20 : L - 2 * (parede + 1);
+    if (L < 6 || comp < 4) { avisos.push('Parte do corte curta demais pra ' + (andorinha ? 'rabo de andorinha' : 'lingueta') + ' (~' + L.toFixed(0) + ' mm): fica sem encaixe — cole essa parte.'); continue; }
+    const noPlano = Array.from(M4.multiplicar(R, M4.translacao((x0 + x1) / 2, 0, 0)));
+    // retângulo comprido no plano (comprimento c × largura l), já no lugar
+    const tira = (c, l) => { const r = CrossSection.square([c, l], true), t = r.transform(noPlanoMat2(noPlano)); r.delete(); return ctx.guardar(t); };
+    if (!andorinha) {
+      // perfil = o da camada mais funda (as fatias acumuladas só encolhem):
+      // prisma reto, desce sem travar; o furo é esse perfil + folga e, por
+      // construção, tem parede em toda a profundidade e embaixo
+      const tP = tira(comp, w);
+      const nFundo = Math.ceil(fundo / PZ);
+      const perfilEm = k => {
+        const base = acum.length ? acum[Math.min(acum.length - 1, k + nFundo + nParede)] : ilha;
+        let sh = ctx.guardar(ctx.guardar(ctx.guardar(base.offset(-parede - f, 'Round')).intersect(ilha)).intersect(tP));
+        if (raizA) sh = ctx.guardar(sh.intersect(raizA));
+        return sh;
+      };
+      const topo = perfilEm(1), area0 = topo.area();
+      if (area0 < w * 2) { avisos.push('Parte do corte estreita demais pra lingueta: fica sem encaixe — cole essa parte.'); continue; }
+      let prof = 0, perfil = null;
+      for (let k = 1; k * PZ <= cfg.profundidade + 1e-9; k++) {
+        const sh = perfilEm(k);
+        if (sh.area() < area0 * 0.5) break;                 // a peça afinou: a lingueta para aqui
+        prof = k * PZ; perfil = sh;
+      }
+      if (prof < 2 || !perfil) { avisos.push('Sem espessura pra lingueta nesta parte do corte: fica sem encaixe — cole essa parte.'); continue; }
+      const pino = ctx.guardar(Manifold.extrude(perfil, prof + 0.2).translate([0, 0, -prof]));
+      const furo = ctx.guardar(Manifold.extrude(ctx.guardar(perfil.offset(f, 'Round')), prof + fundo + 0.5).translate([0, 0, -(prof + fundo)]));
+      // trava exata: o furo não pode abrir túnel (gênero da peça de baixo sobe)
+      if (locB) { const t = locB.subtract(furo), g = t.genus(); t.delete(); if (g > generoB) { avisos.push('A lingueta furaria a parede nesta parte do corte: fica sem encaixe — cole essa parte.'); continue; } }
+      positivos.push(ctx.guardar(pino.transform(F)));
+      negativosB.push(ctx.guardar(furo.transform(F)));
+      relatorio.push({ tipo: cfg.tipo, comprimento: comp, largura: w, profundidade: prof, folga: f, x: eixo.cx, y: eixo.cy });
+      if (prof < cfg.profundidade) avisos.push('Lingueta com ' + prof.toFixed(1).replace('.', ',') + ' mm de profundidade nesta parte (a peça afina embaixo).');
+    } else {
+      // perfil constante; o canal atravessa a peça de ponta a ponta (desliza)
+      const P = [0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1];
+      const barra = (pts, c) => { const csP = CrossSection.ofPolygons([pts], 'EvenOdd'), e = Manifold.extrude(csP, c).translate([0, 0, -c / 2]); csP.delete(); const g = e.transform(P); e.delete(); const r = g.transform(noPlano); g.delete(); return ctx.guardar(r); };
+      const coluna = ctx.guardar(Manifold.extrude(ilha, cfg.profundidade + fundo + 2).translate([0, 0, -(cfg.profundidade + fundo + 2)]));
+      let ok = null;
+      for (let prof = cfg.profundidade; prof >= 2; prof -= 0.5) {
+        const a = w / 2, b = w / 2 + prof * Math.tan(15 * Math.PI / 180);
+        const perfil = [[-a, 0.2], [a, 0.2], [b, -prof], [-b, -prof]];
+        const perfilFuro = [[-(a + f), 0.5], [a + f, 0.5], [b + f, -(prof + fundo)], [-(b + f), -(prof + fundo)]];
+        const pino = ctx.guardar(barra(perfil, comp).intersect(ctx.guardar(Manifold.extrude(ilha, prof + 1).translate([0, 0, -(prof + 0.5)]))));
+        const furo = barra(perfilFuro, comp + 10);
+        // o canal (com parede) não pode sair pela lateral da peça de baixo
+        if (locB) {
+          const perfilP = [[-(a + f + parede), 0], [a + f + parede, 0], [b + f + parede, -(prof + fundo + parede)], [-(b + f + parede), -(prof + fundo + parede)]];
+          const casca = ctx.guardar(barra(perfilP, comp + 10).intersect(coluna));
+          const fora = casca.subtract(locB), v = fora.volume(); fora.delete();
+          if (v > 0.5) continue;
+          const t = locB.subtract(furo), g = t.genus(); t.delete();
+          if (g > generoB) continue;
+        }
+        ok = { pino, furo, prof }; break;
+      }
+      if (!ok) { avisos.push('Sem espessura pra rabo de andorinha nesta parte do corte: fica sem encaixe — cole essa parte.'); continue; }
+      positivos.push(ctx.guardar(ok.pino.transform(F)));
+      negativosB.push(ctx.guardar(ok.furo.transform(F)));
+      relatorio.push({ tipo: cfg.tipo, comprimento: L, largura: w, profundidade: ok.prof, folga: f, x: eixo.cx, y: eixo.cy });
+      if (ok.prof < cfg.profundidade) avisos.push('Rabo de andorinha com ' + ok.prof.toFixed(1).replace('.', ',') + ' mm de profundidade nesta parte (faltou parede pros ' + cfg.profundidade + ' mm).');
+    }
+  }
   return { positivos, negativosA: [], negativosB, soltos: [], relatorio, avisos };
 }
+// matriz 4x4 (coluna) de um referencial no plano -> 3x3 (coluna) do CrossSection.transform
+function noPlanoMat2(M) { return [M[0], M[1], 0, M[4], M[5], 0, M[12], M[13], 1]; }

@@ -7,17 +7,24 @@
 //   - "agulha" (dois vértices no mesmo lugar): funde os dois vértices, se isso
 //     não criar aresta non-manifold.
 // Cor e origem de cada face vão junto.
-import { arestas, gemeas } from './topologia.js';
 import { criar, subMalha } from './malha.js';
 
-function contarRuins(m) {
-  const top = arestas(m);
-  let n = 0;
-  for (let e = 0; e < top.nE; e++) {
-    const k = top.inicio[e + 1] - top.inicio[e];
-    if (k !== 2) n++;
-    else if (m.idx[top.ordem[top.inicio[e]]] === m.idx[top.ordem[top.inicio[e] + 1]]) n++;
+// arestas abertas / non-manifold / com orientação repetida que tocam os
+// vértices S (a fusão só muda a topologia em volta deles)
+function contarRuins(idx, S) {
+  const mapa = new Map();
+  for (let t = 0; t < idx.length / 3; t++) {
+    if (!S.has(idx[t * 3]) && !S.has(idx[t * 3 + 1]) && !S.has(idx[t * 3 + 2])) continue;
+    for (let k = 0; k < 3; k++) {
+      const u = idx[t * 3 + k], w = idx[t * 3 + (k + 1) % 3];
+      if (u === w || (!S.has(u) && !S.has(w))) continue;
+      const ch = Math.min(u, w) * 4294967296 + Math.max(u, w);
+      const e = mapa.get(ch);
+      if (!e) mapa.set(ch, { n: 1, s: u, mesmo: false });
+      else { if (e.n === 1 && e.s === u) e.mesmo = true; e.n++; }
+    }
   }
+  let n = 0; for (const e of mapa.values()) if (e.n !== 2 || e.mesmo) n++;
   return n;
 }
 
@@ -58,12 +65,21 @@ export function corrigirDegeneradas(m, extras = {}) {
     const deg = [];
     for (let t = 0; t < nt; t++) if (ehDegenerada(p, idx, t)) deg.push(t);
     if (!deg.length) break;
-    const mm = criar(p, idx);
-    const top = arestas(mm);
-    const gem = gemeas(mm, top);
-    // arestas existentes (pra não criar aresta repetida no flip)
-    const existe = new Set();
-    for (let e = 0; e < top.nE; e++) existe.add(top.v0[e] + '_' + top.v1[e]);
+    // vizinhança SÓ em volta dos degenerados (são dezenas numa malha de 1
+    // milhão): montar a topologia inteira a cada passada custava segundos.
+    // Consultas pelo retrato do começo da passada (como era com a topologia)
+    const idx0 = Uint32Array.from(idx), nv = p.length / 3;
+    const m1 = new Uint8Array(nv); for (const f of deg) for (let k = 0; k < 3; k++) m1[idx0[f * 3 + k]] = 1;
+    const m2 = Uint8Array.from(m1);
+    for (let t = 0; t < nt; t++) { const a = idx0[t * 3], b = idx0[t * 3 + 1], c = idx0[t * 3 + 2]; if (m1[a] || m1[b] || m1[c]) m2[a] = m2[b] = m2[c] = 1; }
+    const vf = new Map();
+    for (let t = 0; t < nt; t++) for (let k = 0; k < 3; k++) { const v = idx0[t * 3 + k]; if (!m2[v]) continue; let l = vf.get(v); if (!l) vf.set(v, l = []); if (l[l.length - 1] !== t) l.push(t); }
+    const tem = (t, v) => idx0[t * 3] === v || idx0[t * 3 + 1] === v || idx0[t * 3 + 2] === v;
+    // face do outro lado da aresta a-b (só se for exatamente uma: aresta manifold)
+    const gemea = (f, a, b) => { let o = -1, n = 0; for (const t of vf.get(a) || []) if (t !== f && tem(t, b)) { o = t; n++; } return n === 1 ? o : -1; };
+    // arestas criadas nesta passada (pra não criar aresta repetida no flip)
+    const novas = new Set();
+    const existe = { has: ch => { if (novas.has(ch)) return true; const c = Math.floor(ch / 4294967296), d = ch % 4294967296; for (const t of vf.get(c) || []) if (tem(t, d)) return true; return false; }, add: ch => novas.add(ch) };
     const tocada = new Uint8Array(nt);
     let mexeu = 0;
     const remover = new Uint8Array(nt);
@@ -85,16 +101,14 @@ export function corrigirDegeneradas(m, extras = {}) {
         continue;
       }
       // tampa: vértice oposto à maior aresta está em cima dela -> flip
-      const h = f * 3 + maior;
-      const g = gem[h];
-      if (g < 0) continue;
-      const o = (g / 3) | 0;
-      if (tocada[o]) continue;
       const a = v[maior], b = v[(maior + 1) % 3], c = v[(maior + 2) % 3];
+      const o = gemea(f, a, b);
+      if (o < 0) continue;
+      if (tocada[o]) continue;
       let d = -1;
       for (let k = 0; k < 3; k++) { const x = idx[o * 3 + k]; if (x !== a && x !== b) d = x; }
       if (d < 0 || d === c) continue;
-      const ch = c < d ? c + '_' + d : d + '_' + c;
+      const ch = c < d ? c * 4294967296 + d : d * 4294967296 + c;
       if (existe.has(ch)) continue;
       // os dois novos têm que ter área e apontar pro mesmo lado do vizinho
       const no = normal(p, idx[o * 3] * 3, idx[o * 3 + 1] * 3, idx[o * 3 + 2] * 3);
@@ -113,7 +127,8 @@ export function corrigirDegeneradas(m, extras = {}) {
     if (fundir.size) {
       // fusão segura: se piorar a topologia (aresta aberta/non-manifold), desfaz
       const antes = { idx: Uint32Array.from(idx), cor: cor && Uint16Array.from(cor), origem: origem && Int32Array.from(origem) };
-      const ruimAntes = contarRuins(criar(p, idx));
+      const S = new Set(); for (const [x, y] of fundir) { S.add(x); S.add(y); }
+      const ruimAntes = contarRuins(idx, S);
       for (let t = 0; t < nt; t++) for (let k = 0; k < 3; k++) { const x = fundir.get(idx[t * 3 + k]); if (x !== undefined) idx[t * 3 + k] = x; }
       for (let t = 0; t < nt; t++) {
         const a = idx[t * 3], b = idx[t * 3 + 1], c = idx[t * 3 + 2];
@@ -131,7 +146,7 @@ export function corrigirDegeneradas(m, extras = {}) {
         n++;
       }
       idx = idx2; cor = cor2; origem = or2;
-      if (contarRuins(criar(p, idx)) > ruimAntes) { idx = antes.idx; cor = antes.cor; origem = antes.origem; fusoes -= fundir.size; if (!trocas) break; }
+      if (contarRuins(idx, S) > ruimAntes) { idx = antes.idx; cor = antes.cor; origem = antes.origem; fusoes -= fundir.size; if (!trocas) break; }
     }
     if (!mexeu) break;
   }

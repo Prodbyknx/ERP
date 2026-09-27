@@ -10,6 +10,12 @@ let W = null;
 export function definirManifold(modulo) { W = modulo; }
 export function manifold() { if (!W) throw new Error('Motor geométrico (Manifold) não carregado.'); return W; }
 export const temManifold = () => !!W;
+// erro de dentro do WASM (acesso fora da memória, 'unreachable'...): o
+// módulo pode ter ficado corrompido — não dá pra seguir usando ele
+export function ehErroWasm(e) {
+  if (typeof WebAssembly !== 'undefined' && e instanceof WebAssembly.RuntimeError) return true;
+  return /memory access out of bounds|unreachable|table index is out of bounds|null function|RuntimeError|Aborted\(/i.test(String(e && e.message || e));
+}
 
 export class Contexto {
   constructor() {

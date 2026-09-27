@@ -227,7 +227,10 @@ export function deSopa(sopa, cor) {
 // na borda da célula). Devolve { malha, mapa, fundidos }.
 export function soldar(m, tol = 1e-4) {
   const nv = m.pos.length / 3, p = m.pos;
-  const inv = 1 / tol;
+  // célula = 4·tol: só olha a vizinha quando o ponto está a menos de tol da
+  // divisa (~3 consultas por vértice em vez de 27). Perto de mais de um
+  // representante: fica com o de menor índice
+  const inv = 1 / (4 * tol);
   const grade = new Map();
   const rep = new Int32Array(nv);
   const novoIdx = new Int32Array(nv).fill(-1);
@@ -235,15 +238,18 @@ export function soldar(m, tol = 1e-4) {
   let fundidos = 0;
   const tol2 = tol * tol;
   const chave = (i, j, k) => i * 73856093 ^ j * 19349663 ^ k * 83492791;
+  const faixa = (c, x) => { const f = x * inv - c; return f < 0.25 ? -1 : f > 0.75 ? 1 : 0; };
   for (let v = 0; v < nv; v++) {
     const x = p[v * 3], y = p[v * 3 + 1], z = p[v * 3 + 2];
     const ci = Math.floor(x * inv), cj = Math.floor(y * inv), ck = Math.floor(z * inv);
+    const fi = faixa(ci, x), fj = faixa(cj, y), fk = faixa(ck, z);
     let achou = -1;
-    for (let di = -1; di <= 1 && achou < 0; di++) for (let dj = -1; dj <= 1 && achou < 0; dj++) for (let dk = -1; dk <= 1 && achou < 0; dk++) {
+    for (let di = Math.min(0, fi); di <= Math.max(0, fi); di++) for (let dj = Math.min(0, fj); dj <= Math.max(0, fj); dj++) for (let dk = Math.min(0, fk); dk <= Math.max(0, fk); dk++) {
       const l = grade.get(chave(ci + di, cj + dj, ck + dk));
       if (!l) continue;
       for (let q = 0; q < l.length; q++) {
         const u = l[q];
+        if (achou >= 0 && u >= achou) break;
         const dx = pos[u * 3] - x, dy = pos[u * 3 + 1] - y, dz = pos[u * 3 + 2] - z;
         if (dx * dx + dy * dy + dz * dz <= tol2) { achou = u; break; }
       }

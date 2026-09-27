@@ -548,6 +548,7 @@ export class Estudio {
     if (this.painel.classList.contains('inicio')) this.renderInicio();
     this.renderMulti();
     this.garantirFurosSeFerramenta();
+    this.encomendarAdj(this.parteAtual());
     this.emitir('selecao');
   }
 
@@ -557,6 +558,16 @@ export class Estudio {
     let a = this.adjCache.get(malha);
     if (!a) { a = prepararAdjacencia(malha); this.adjCache.set(malha, a); }
     return a;
+  }
+  // peça grande selecionada: a vizinhança já vai sendo calculada no motor
+  // auxiliar (o primeiro clique da seleção não trava a tela)
+  encomendarAdj(p) {
+    const m = p && p.malha;
+    if (!m || this.motor.local || this.adjCache.has(m) || m.idx.length < 300000 || this._adjPedida === m) return;
+    this._adjPedida = m;
+    this.motor.rodar('adjacencia', { malha: { pos: m.pos, idx: m.idx } }, { canal: 'aux' })
+      .then(a => { if (a && !this.adjCache.has(m)) this.adjCache.set(m, a); }, () => {})
+      .finally(() => { if (this._adjPedida === m) this._adjPedida = null; });
   }
 
   atualizarHud() {

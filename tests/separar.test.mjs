@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { carregarManifold } from './util/manifold.mjs';
 import { caixaMalha, esfera } from './util/malhas.mjs';
-import { separarDetalhe, separarPorCor } from '../src/estudio3d/core/separar.js';
+import { separarDetalhe } from '../src/estudio3d/core/separar.js';
+import { separarPorCor } from '../src/estudio3d/core/separarCor.js';
 import { comContexto, manifold } from '../src/estudio3d/core/solidos.js';
 import { validar } from '../src/estudio3d/core/validador.js';
 import { caixa, volume, centroidesFace } from '../src/estudio3d/core/malha.js';
@@ -135,7 +136,13 @@ test('região curva com espessura (faixa na esfera) vira camada imprimível, com
     // sem folga as duas peças somam a original; com folga sobra o vão do fundo
     const soma = vd + volume(r.principal.malha);
     if (!folga) assert.ok(Math.abs(soma - v0) < 1e-3 * v0, 'soma ' + soma + ' vs ' + v0);
-    else assert.ok(soma < v0 && soma > v0 - area * folga * 1.05, 'folga ' + (v0 - soma).toFixed(2));
+    // com folga: vão do fundo (área × folga) + vão dos lados (perímetro × espessura × folga)
+    else {
+      const adjB = prepararAdjacencia(m); let perim = 0;
+      for (let t = 0; t < mask.length; t++) if (mask[t]) for (let k = 0; k < 3; k++) { const o = adjB.viz[t * 3 + k]; if (o >= 0 && !mask[o]) { const a2 = m.idx[t * 3 + k] * 3, b2 = m.idx[t * 3 + (k + 1) % 3] * 3; perim += Math.hypot(m.pos[a2] - m.pos[b2], m.pos[a2 + 1] - m.pos[b2 + 1], m.pos[a2 + 2] - m.pos[b2 + 2]); } }
+      const vao = v0 - soma, esperado = area * folga + perim * 0.8 * folga;
+      assert.ok(vao > area * folga * 0.95 && vao < esperado * 1.15, 'folga ' + vao.toFixed(2) + ' (esperado ~' + esperado.toFixed(2) + ')');
+    }
     // as duas peças não se sobrepõem
     const inter = comContexto(ctx => ctx.guardar(ctx.solido({ malha: r.detalhe.malha }).intersect(ctx.solido({ malha: r.principal.malha }))).volume());
     assert.ok(inter < 1e-3, 'sobreposição ' + inter);
