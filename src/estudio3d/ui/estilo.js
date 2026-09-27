@@ -151,6 +151,8 @@ html[data-tema=escuro] .e3d{ --e3d-fundo-a:#20242b; --e3d-fundo-b:#121418;
 .e3d-ocupado .roda{ width:26px; height:26px; border-radius:50%; border:3px solid var(--line); border-top-color:var(--brand); animation:e3dgira .8s linear infinite }
 .e3d-ocupado small{ display:block; font:500 11.5px var(--mono); color:var(--ink-dim); margin-top:2px }
 .e3d-ocupado .btn{ height:30px; padding:0 10px; font-size:12px; border-radius:8px; margin-left:4px }
+.e3d-ocupado .barra{ display:block; width:180px; height:3px; margin-top:6px; border-radius:2px; background:var(--line); overflow:hidden }
+.e3d-ocupado .barra b{ display:block; height:100%; width:0; background:var(--brand); transition:width .15s linear }
 @keyframes e3dgira{ to{ transform:rotate(360deg) } }
 @keyframes e3dsurge{ from{ opacity:0; transform:translate(-50%,-46%) } }
 

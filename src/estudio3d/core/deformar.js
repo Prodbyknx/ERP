@@ -1,10 +1,8 @@
-// Deformações da peça inteira (orgânico): TORCER, AFUNILAR, DOBRAR, INFLAR e
-// SUAVIZAR geométrico (muda a malha de verdade — diferente do "Facetado/liso"
-// da tela, que só muda o sombreado). Antes refina a malha pra curva sair
+// Deformações da peça inteira (orgânico): TORCER, AFUNILAR, DOBRAR e INFLAR
+// (o SUAVIZAR fica em suavizar.js). Antes refina a malha pra curva sair
 // lisa; depois confere que continua um sólido fechado sem se cruzar.
 import { comContexto, manifold } from './solidos.js';
 import { caixa, criar } from './malha.js';
-import { vizinhosDoVertice } from './topologia.js';
 import { autoInterseccoes } from './validador.js';
 
 const fmt = v => (Math.round(v * 100) / 100).toString().replace('.', ',');
@@ -66,39 +64,4 @@ function normaisVertice(m) {
   }
   for (let i = 0; i < N.length; i += 3) { const L = Math.hypot(N[i], N[i + 1], N[i + 2]) || 1; N[i] /= L; N[i + 1] /= L; N[i + 2] /= L; }
   return N;
-}
-
-// SUAVIZAR geométrico (Taubin: não encolhe) — peça inteira ou só as faces
-// da máscara. opc: { passos, manterMedidas }
-export function suavizar(parte, opc = {}) {
-  const m = parte.malha, P = Float64Array.from(m.pos), nv = P.length / 3;
-  const viz = vizinhosDoVertice(m), passos = Math.max(1, Math.min(60, opc.passos || 10));
-  let livre = null;
-  if (opc.mascara) {
-    livre = new Uint8Array(nv);
-    for (let t = 0; t < opc.mascara.length; t++) if (opc.mascara[t]) for (let k = 0; k < 3; k++) livre[m.idx[t * 3 + k]] = 1;
-  }
-  const cx0 = caixa(m);
-  const passo = lam => {
-    const Q = Float64Array.from(P);
-    for (let v = 0; v < nv; v++) {
-      if (livre && !livre[v]) continue;
-      const i0 = viz.inicio[v], i1 = viz.inicio[v + 1];
-      if (i1 === i0) continue;
-      const a = [0, 0, 0];
-      for (let j = i0; j < i1; j++) { const u = viz.lista[j]; a[0] += Q[u * 3]; a[1] += Q[u * 3 + 1]; a[2] += Q[u * 3 + 2]; }
-      const n = i1 - i0;
-      for (let e = 0; e < 3; e++) P[v * 3 + e] = Q[v * 3 + e] + lam * (a[e] / n - Q[v * 3 + e]);
-    }
-  };
-  for (let i = 0; i < passos; i++) { passo(0.5); passo(-0.53); }
-  let malha = criar(P, m.idx, m.cor ? m.cor : null);
-  if (opc.manterMedidas !== false && !livre) {
-    // volta pra caixa original (o "liso" não pode mudar a medida da peça)
-    const c1 = caixa(malha);
-    for (let v = 0; v < nv; v++) for (let e = 0; e < 3; e++) P[v * 3 + e] = cx0.min[e] + (P[v * 3 + e] - c1.min[e]) * (cx0.tam[e] / (c1.tam[e] || 1));
-    malha = criar(P, m.idx, m.cor ? m.cor : null);
-  }
-  if (autoInterseccoes(malha, { max: 5 }).pares > autoInterseccoes(m, { max: 5 }).pares) throw new Error('Suavizar tanto fez a peça se cruzar. Use menos passos.');
-  return { parte: { ...parte, malha } };
 }

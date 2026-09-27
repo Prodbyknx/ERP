@@ -5,6 +5,7 @@
 // uma etapa do Desfazer (e é desfeito sozinho se a peça se cruzar).
 import { el, fmt, lerNumero, avisar } from '../util.js';
 import { criarSessao, tocar, concluir, arestaMedia } from '../../core/esculpir.js';
+import { analisarSuavizar, raioDaIntensidade } from '../../core/suavizar.js';
 import * as M4 from '../../core/mat4.js';
 
 const PINCEL = [['puxar', 'Puxar'], ['empurrar', 'Empurrar'], ['inflar', 'Inflar'], ['achatar', 'Achatar'], ['suavizar', 'Suavizar'], ['vincar', 'Vincar']];
@@ -26,10 +27,12 @@ export function montarEsculpir(est) {
     <div class="e3d-l2"><div><label data-a="rotDef">Valor (graus)</label><input type="text" data-a="valDef" value="45"></div>
       <div><label>Ao longo de</label><div class="seg" data-a="eixo"><button type="button" data-v="0">X</button><button type="button" data-v="1">Y</button><button type="button" data-v="2" class="active">Z</button></div></div></div>
     <div class="e3d-botoes"><button class="btn primary" data-a="aplDef">Deformar (com prévia)</button></div>
-    <div class="e3d-titulo" style="margin-top:16px">Suavizar de verdade</div>
-    <p class="u" style="margin:0 0 6px">Muda a malha exportada. (O botão <b>Facetado</b> lá embaixo muda só o sombreado da tela.)</p>
-    <div class="field"><label>Intensidade</label><div class="e3d-slider"><input type="range" min="1" max="40" step="1" value="8" data-a="passos"><b data-a="passosv">8</b></div></div>
-    <label class="fer-check"><input type="checkbox" data-a="manter" checked> Manter as medidas da peça</label>
+    <div class="e3d-titulo" style="margin-top:16px">Suavizar</div>
+    <p class="u" style="margin:0 0 6px">Tira grão e caroço da superfície de verdade (vai pro arquivo) sem encolher a peça. Com faces selecionadas, só a seleção, com transição suave. (O <b>Facetado</b> lá embaixo muda só o sombreado da tela.)</p>
+    <div class="seg" data-a="nivel"><button type="button" data-v="30">Leve</button><button type="button" data-v="55" class="active">Média</button><button type="button" data-v="85">Forte</button></div>
+    <div class="field"><label>Intensidade <span class="u" data-a="alcance"></span></label><div class="e3d-slider"><input type="range" min="5" max="100" step="5" value="55" data-a="inten"><b data-a="intenv">55%</b></div></div>
+    <label class="fer-check" title="Quina viva, olho, vinco e encaixe ficam como estão"><input type="checkbox" data-a="preservar" checked> Preservar quinas e detalhes</label>
+    <label class="fer-check" data-a="blocoFacetas" style="display:none" title="Malha com poucos triângulos: mexer nos pontos não tira a faceta. Divide os triângulos numa superfície lisa (quina acima de 60° fica viva)."><input type="checkbox" data-a="facetas"> Arredondar as facetas <span class="u" data-a="facetasInfo"></span></label>
     <div class="e3d-botoes"><button class="btn primary" data-a="aplSuave">Suavizar (com prévia)</button></div>
     <div data-a="res"></div>
   </div>`;
@@ -38,7 +41,25 @@ export function montarEsculpir(est) {
   ['tipo', 'sim', 'def', 'eixo'].forEach(k => q(k).addEventListener('click', ev => { const b = ev.target.closest('button'); if (b) segVal(k, b.dataset.v); if (k === 'def' && b) { const x = DEF.find(y => y[0] === b.dataset.v); q('rotDef').textContent = 'Valor (' + x[2] + ')'; q('valDef').value = String(x[3]).replace('.', ','); } }));
   q('raio').addEventListener('input', () => { q('raiov').textContent = fmt(+q('raio').value, 1); });
   q('forca').addEventListener('input', () => { q('forcav').textContent = fmt(+q('forca').value, 2); });
-  q('passos').addEventListener('input', () => { q('passosv').textContent = q('passos').value; });
+  // SUAVIZAR: nível -> intensidade; mostra até quantos mm o caroço some
+  const cacheDiag = new WeakMap();
+  const diagDe = p => { let d = cacheDiag.get(p.malha); if (!d) { d = analisarSuavizar(p.malha); cacheDiag.set(p.malha, d); } return d; };
+  function renderSuave() {
+    const I = +q('inten').value / 100;
+    q('intenv').textContent = q('inten').value + '%';
+    q('nivel').querySelectorAll('button').forEach(b => b.classList.toggle('active', +b.dataset.v === +q('inten').value));
+    const p = est.parteAtual() || (est.objetoAtual() && est.objetoAtual().partes[0]);
+    if (!p) { q('alcance').textContent = ''; q('blocoFacetas').style.display = 'none'; return; }
+    const d = diagDe(p), r = raioDaIntensidade(I, d.tamanho);
+    q('alcance').textContent = r >= d.aresta ? 'caroço de até ~' + fmt(r, r < 1 ? 2 : 1) + ' mm' : 'só o grão fino';
+    q('blocoFacetas').style.display = d.facetada ? '' : 'none';
+    if (d.facetada && q('blocoFacetas').dataset.p !== String(p.id)) { q('blocoFacetas').dataset.p = String(p.id); q('facetas').checked = true; }
+    q('facetasInfo').textContent = d.facetada ? '(' + fmt(d.triangulos, 0) + ' triângulos: poucos pra ficar liso)' : '';
+  }
+  q('inten').addEventListener('input', renderSuave);
+  q('nivel').addEventListener('click', ev => { const b = ev.target.closest('button'); if (b) { q('inten').value = b.dataset.v; renderSuave(); } });
+  est.on('selecao', () => { if (d.open) renderSuave(); });
+  est.on('mudou', () => { if (d.open) renderSuave(); });
 
   let sessao = null;   // { s, o, p, it, antes }
   // esculpida, a forma deixa de ser paramétrica (mudar a medida apagaria o traço)
@@ -138,14 +159,14 @@ export function montarEsculpir(est) {
   }
   q('refinar').onclick = refinar;
 
-  async function comPrevia(op, args, titulo) {
+  async function comPrevia(op, args, titulo, relatorio) {
     const o = est.objetoAtual(), p = est.parteAtual() || (o && o.partes[0]);
     if (!p) { avisar('Escolha a peça.', 'warn'); return; }
     q('res').innerHTML = '<div class="e3d-nota">Calculando…</div>';
     let r;
     try { r = await est.rodar(op, { parte: est.parteParaMotor(p), ...args }, titulo); }
-    catch (e) { q('res').innerHTML = '<div class="e3d-nota erro">' + (e.message || e) + '</div>'; return; }
-    q('res').innerHTML = '';
+    catch (e) { q('res').innerHTML = e && e.codigo === 'cancelado' ? '' : '<div class="e3d-nota erro">' + (e.message || e) + '</div>'; return; }
+    q('res').innerHTML = relatorio ? '<div class="e3d-nota ok">' + relatorio(r) + '</div>' : '';
     est.mostrarPrevia({
       titulo, legenda: [], explodir: 0, textoConfirmar: 'Aplicar',
       objetos: [{ transform: o.transform, partes: o.partes.map(x => x.id === p.id ? { malha: r.parte.malha, cor: p.cor, paleta: p.paleta, papel: 'normal' } : { malha: x.malha, cor: x.cor, paleta: x.paleta, papel: 'normal' }) }],
@@ -155,10 +176,19 @@ export function montarEsculpir(est) {
   q('aplDef').onclick = () => { const o = est.objetoAtual(); comPrevia('deformar', { opc: { tipo: segVal('def'), valor: lerNumero(q('valDef').value, 0), ...(o ? (x => ({ eixo: x.i, sentido: x.sentido }))(dirLocal(o, +segVal('eixo'))) : { eixo: +segVal('eixo') }) } }, DEF.find(x => x[0] === segVal('def'))[1]); };
   q('aplSuave').onclick = () => {
     const p = est.parteAtual(), mask = p && est.visor.selecao(p.id);
-    comPrevia('suavizar', { opc: { passos: +q('passos').value, manterMedidas: q('manter').checked, mascara: mask || null } }, mask ? 'Suavizar seleção' : 'Suavizar');
+    const facetas = !mask && q('blocoFacetas').style.display !== 'none' && q('facetas').checked;
+    comPrevia('suavizar', { opc: { intensidade: +q('inten').value / 100, preservar: q('preservar').checked, facetas, mascara: mask || null } }, mask ? 'Suavizar seleção' : 'Suavizar', relSuave);
+  };
+  const relSuave = r => {
+    const i = r.info || {}, sinal = x => (x > 0 ? '+' : '') + fmt(x, 2);
+    return (i.facetas ? 'Facetas arredondadas: ' + fmt(i.facetas.antes, 0) + ' → ' + fmt(i.facetas.depois, 0) + ' triângulos. ' : '') +
+      'Volume ' + sinal(i.volume || 0) + '% · mexeu até ' + fmt(i.deslocamentoMax || 0, 2) + ' mm (média ' + fmt(i.deslocamentoMedio || 0, 2) + ') · ' + fmt((i.ms || 0) / 1000, 1) + ' s' +
+      (i.cruzamentos && i.cruzamentos.revertidos ? '<br>' + fmt(i.cruzamentos.revertidos, 0) + ' ponto(s) em parte fina ficaram como estavam (senão a peça se cruzaria ali).' : '') +
+      '<br>Confira na prévia e clique em Aplicar (Ctrl+Z desfaz).';
   };
 
   d.addEventListener('toggle', () => {
+    if (d.open) renderSuave();
     if (d.open) est.definirFerramenta('esculpir');
     else if (est.ferramenta === 'esculpir') est.definirFerramenta('navegar');
   });

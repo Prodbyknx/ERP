@@ -62,7 +62,7 @@ const NOMES_OP = {
   importar: 'Abrindo o arquivo', cortar: 'Cortando', separarDetalhe: 'Separando o detalhe', separarPorCor: 'Separando por cor',
   separarCascas: 'Separando as cascas', reparar: 'Consertando a malha', relevo: 'Aplicando o relevo', exportar3MF: 'Gerando o 3MF',
   exportarSTL: 'Gerando o STL', segmentar: 'Procurando as partes', unirSobrepostos: 'Unindo partes', removerInternos: 'Limpando sobras',
-  escalarGeometria: 'Convertendo a medida', analisar: 'Analisando'
+  escalarGeometria: 'Convertendo a medida', analisar: 'Analisando', suavizar: 'Suavizando'
 };
 
 export class Estudio {
@@ -82,6 +82,8 @@ export class Estudio {
     this.montar();
     this.motor.aoMudar = (n, info) => this.atualizarMotor(n, info);
     this.motor.aoMudarAux = () => this.atualizarMotor(this.motor.ocupado, this.motor.principal.atual);
+    // operação longa: etapa e % (a barra aparece só quando o motor informa)
+    this.motor.aoProgresso = (f, etapa, canal) => { if (canal === this.motor.principal) { this._prog = { f, etapa }; if (this._tick) this._tick(); } };
     this.motor.iniciar().then(modo => { this.modoMotor = modo; this.atualizarMotor(0); });
   }
 
@@ -159,7 +161,7 @@ export class Estudio {
     this.hud = el('div', { class: 'e3d-hud e3d-vidro' });
     this.dica = el('div', { class: 'e3d-dica e3d-vidro', html: 'arrastar: girar · botão direito: mover · rodinha: zoom' });
     this.ocupadoEl = el('div', { class: 'e3d-ocupado e3d-vidro' });
-    this.ocupadoEl.innerHTML = '<span class="roda"></span><div><span data-o="rot">Calculando…</span><small data-o="tempo">0,0 s</small></div><button type="button" class="btn" data-o="cancelar" style="display:none">Cancelar</button>';
+    this.ocupadoEl.innerHTML = '<span class="roda"></span><div><span data-o="rot">Calculando…</span><small data-o="tempo">0,0 s</small><i class="barra" data-o="barra" style="display:none"><b></b></i></div><button type="button" class="btn" data-o="cancelar" style="display:none">Cancelar</button>';
     this.ocupadoEl.querySelector('[data-o=cancelar]').onclick = () => this.cancelarCalculo();
     this.previaEl = el('div', { class: 'e3d-previa e3d-vidro', style: 'display:none' });
     this.multiEl = el('div', { class: 'e3d-multi e3d-vidro', style: 'display:none' });
@@ -586,14 +588,21 @@ export class Estudio {
     const on = n > 0;
     this.ocupadoEl.classList.toggle('on', on);
     clearInterval(this._relogio);
+    if (!info || !this._progDe || this._progDe !== info.desde) this._prog = null;
+    this._progDe = info && info.desde;
+    this._tick = null;
     if (on) {
       const ini = info && info.desde || performance.now();
       this.ocupadoEl.querySelector('[data-o=rot]').textContent = (info && NOMES_OP[info.op] || 'Calculando') + '…';
+      const barra = this.ocupadoEl.querySelector('[data-o=barra]');
       const tick = () => {
-        const s = (performance.now() - ini) / 1000;
-        this.ocupadoEl.querySelector('[data-o=tempo]').textContent = fmt(s, 1) + ' s' + (n > 1 ? ' · ' + (n - 1) + ' na fila' : '');
+        const s = (performance.now() - ini) / 1000, p = this._prog;
+        this.ocupadoEl.querySelector('[data-o=tempo]').textContent = (p ? (p.etapa ? p.etapa + ' · ' : '') + Math.round(p.f * 100) + '% · ' : '') + fmt(s, 1) + ' s' + (n > 1 ? ' · ' + (n - 1) + ' na fila' : '');
+        barra.style.display = p ? '' : 'none';
+        if (p) barra.firstChild.style.width = Math.round(p.f * 100) + '%';
         this.ocupadoEl.querySelector('[data-o=cancelar]').style.display = s > 1.2 && !this.motor.local ? '' : 'none';
       };
+      this._tick = tick;
       tick();
       this._relogio = setInterval(tick, 100);
     }

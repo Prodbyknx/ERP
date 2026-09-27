@@ -639,6 +639,10 @@ async function main() {
   const { secaoPlacas } = await import('./placas.mjs');
   await secaoPlacas({ b, teste, tmp, novaPagina, passo, abrirEstudio, abrirSecao });
 
+  console.log('14) suavizar: boneco de IA, Forte com prévia, desfazer, 3MF, só a seleção, progresso e cancelar, facetada');
+  const { secaoSuavizar } = await import('./suavizar.mjs');
+  await secaoSuavizar({ b, teste, tmp, novaPagina, passo, abrirEstudio, abrirSecao, confirmarPrevia });
+
   console.log('7) laboratório fotos -> 3D (pacote de teste, file://)');
   const { cenaDeFotos } = await import('../util/fotos.mjs');
   const { escreverPNG } = await import('../util/png.mjs');

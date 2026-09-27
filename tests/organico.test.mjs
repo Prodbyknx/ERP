@@ -7,7 +7,8 @@ import assert from 'node:assert/strict';
 import { carregarManifold } from './util/manifold.mjs';
 import { comContexto, manifold } from '../src/estudio3d/core/solidos.js';
 import { criarSessao, tocar, concluir } from '../src/estudio3d/core/esculpir.js';
-import { deformar, suavizar } from '../src/estudio3d/core/deformar.js';
+import { deformar } from '../src/estudio3d/core/deformar.js';
+import { suavizarMalha } from '../src/estudio3d/core/suavizar.js';
 import { criarDoDesenho } from '../src/estudio3d/core/desenho.js';
 import { validar } from '../src/estudio3d/core/validador.js';
 import { caixa } from '../src/estudio3d/core/malha.js';
@@ -62,12 +63,19 @@ test('DEFORMAR: torcer 90°, afunilar 0,5, dobrar 60° e inflar 1 mm saem sólid
   assert.throws(() => deformar({ nome: 'p', malha: mk(M => M.cube([40, 2, 20]).translate([-20, -1, 0])) }, { tipo: 'torcer', valor: 7200, eixo: 1 }), /menor/);
 });
 
-test('SUAVIZAR de verdade: cubo refinado vira forma arredondada, medida mantida, malha válida', () => {
-  const c = { nome: 'c', malha: mk(M => M.cube([20, 20, 20]).refineToLength(1.5)) };
-  const r = suavizar(c, { passos: 20 });
-  const v = ok(r.parte.malha, 'suave');
-  caixa(r.parte.malha).tam.forEach(t => assert.ok(Math.abs(t - 20) < 1e-6));
-  assert.ok(v.volume < 8000 * 0.99, 'cantos ficaram arredondados');
+test('SUAVIZAR de verdade: cubo refinado continua cubo preservando quinas; sem preservar e forte, arredonda; malha válida e 3MF igual', () => {
+  const c = mk(M => M.cube([20, 20, 20]).refineToLength(0.4));
+  const r = suavizarMalha(c, { intensidade: 0.55 });
+  const v = ok(r.malha, 'suave');
+  caixa(r.malha).tam.forEach(t => assert.ok(Math.abs(t - 20) < 0.01, 'medida ' + t));
+  assert.ok(Math.abs(v.volume - 8000) < 8, 'volume ' + v.volume);
+  // sem preservar e forte: o canto arredonda (sem perder volume: o que sai
+  // da quina fica nas faces vizinhas)
+  const canto = m => { let d = Infinity; for (let i = 0; i < m.pos.length; i += 3) d = Math.min(d, Math.hypot(m.pos[i] - 20, m.pos[i + 1] - 20, m.pos[i + 2] - 20)); return d; };
+  const s = suavizarMalha(c, { intensidade: 1, preservar: false });
+  const v2 = ok(s.malha, 'arredondado');
+  assert.ok(canto(r.malha) < 0.05 && canto(s.malha) > 0.2, 'canto: preservando ' + canto(r.malha).toFixed(3) + ', sem preservar ' + canto(s.malha).toFixed(3));
+  assert.ok(Math.abs(v2.volume - 8000) < 40, 'volume ' + v2.volume);
 });
 
 test('DESENHAR: contorno com espessura (cantos arredondados), perfil girado (vaso) e tubo por caminho', () => {

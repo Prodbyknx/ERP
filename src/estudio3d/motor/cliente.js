@@ -62,6 +62,7 @@ class Canal {
         const m = ev.data;
         if (m.tipo === 'pronto') { ok = true; clearTimeout(limite); resolve(); return; }
         if (m.tipo === 'falhou') { clearTimeout(limite); reject(new Error(m.erro)); return; }
+        if (m.tipo === 'progresso') { if (this.fila.has(m.id) && this.motor.aoProgresso) this.motor.aoProgresso(m.f, m.etapa, this); return; }
         const p = this.fila.get(m.id);
         if (!p) return;
         this.fila.delete(m.id);
@@ -101,6 +102,7 @@ export class Motor {
     this.pronto = null;
     this.aoMudar = null;        // (ocupadoPrincipal, info) -> tela
     this.aoMudarAux = null;     // (ocupadoAux) -> tela
+    this.aoProgresso = null;    // (fração, etapa, canal) -> tela
     this.principal = new Canal('principal', this);
     this.aux = new Canal('aux', this);
     this.url = null;

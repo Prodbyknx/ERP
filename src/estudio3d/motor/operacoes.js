@@ -7,7 +7,8 @@ import { comContexto, manifold, temManifold } from '../core/solidos.js';
 import { cortarPorPlano } from '../core/corte.js';
 import { cortarLocal, sugerirSeparacao } from '../core/corteLocal.js';
 import { aplicarOperacao, reaplicar } from '../core/historico.js';
-import { deformar, suavizar } from '../core/deformar.js';
+import { deformar } from '../core/deformar.js';
+import { suavizarMalha, analisarSuavizar } from '../core/suavizar.js';
 import { criarDoDesenho } from '../core/desenho.js';
 import { separarDetalhe, separarPorCor, separarCascas } from '../core/separar.js';
 import { aplicarRelevo } from '../core/relevo.js';
@@ -151,7 +152,25 @@ export const OPERACOES = {
   reaplicar({ parte, operacoes }) { return reaplicar(parte, operacoes); },
   // orgânico: torcer/afunilar/dobrar/inflar a peça inteira e suavizar de verdade
   deformar({ parte, opc }) { return deformar(parte, opc || {}); },
-  suavizar({ parte, opc }) { return suavizar(parte, opc || {}); },
+  // suavizar: tira grão e caroço sem encolher, quina/detalhe ficam; com
+  // seleção, só ela (transição suave). 'facetas': malha de poucos triângulos
+  // vira superfície lisa de verdade (divide; quina > 60° fica viva)
+  suavizar({ parte, opc }) {
+    const o = opc || {};
+    let p = parte, facetas = null;
+    if (o.facetas && !o.mascara) {
+      p = comContexto(ctx => {
+        const M = ctx.solido(parte, parte.nome), d = analisarSuavizar(parte.malha);
+        const L = Math.max(d.tamanho / 400, Math.sqrt(M.surfaceArea() / (150000 * 0.433)));
+        // simplify: o refine deixa triângulo degenerado em face plana — sai
+        const R = ctx.guardar(ctx.guardar(ctx.guardar(M.smoothOut(60, 0)).refineToLength(L)).simplify(1e-5));
+        facetas = { antes: M.numTri(), depois: R.numTri() };
+        return { ...parte, ...ctx.parte(R, parte.nome, parte.cor, false) };
+      });
+    }
+    const r = suavizarMalha(p.malha, o);
+    return { parte: { ...p, nome: parte.nome, malha: r.malha }, info: { ...r.info, facetas } };
+  },
   // desenho 2D -> peça (espessura, giro ou tubo)
   desenho({ pts, tipo, opc }) { return criarDoDesenho(pts, tipo, opc || {}); },
   // divide os triângulos (pro pincel de esculpir ter onde mexer)
