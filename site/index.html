@@ -2309,7 +2309,10 @@
               <button type="button" data-v="esquerda">Esquerda</button>
               <button type="button" data-v="direita">Direita</button>
               <button type="button" data-v="canto">Canto</button>
+              <button type="button" data-v="livre">Livre</button>
             </div>
+            <label class="fer-check" id="fer_lin_argola_meio" style="margin-top:9px"><input type="checkbox" id="fer_argola_meio" checked> Centralizar <span class="u">no meio da peça</span></label>
+            <p class="u" id="fer_argola_dica" style="margin:7px 0 12px">Ou arraste a argola na prévia e solte onde quiser.</p>
             <div class="field">
               <label>Furo da argola <span class="u">mm</span></label>
               <input type="number" id="fer_furo" value="4" min="1" max="15" step="0.5">
@@ -2375,7 +2378,7 @@
             <div class="fer-palco">
               <canvas id="fer_cv3d" width="900" height="660"></canvas>
               <canvas id="fer_cv2d" width="900" height="660" style="display:none"></canvas>
-              <span class="fer-dica-girar">arraste pra girar · rolinha aproxima</span>
+              <span class="fer-dica-girar">arraste pra girar · arraste a argola pra mover · rolinha aproxima</span>
             </div>
           </div>
 

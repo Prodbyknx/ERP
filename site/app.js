@@ -10761,7 +10761,9 @@ var PADRAO = {
   arteVazada: false,
   argolaLigada: true,
   argolaFuroMM: 4,
-  argolaPosicao: 'topo',     // topo | esquerda | direita | canto
+  argolaPosicao: 'topo',     // topo | esquerda | direita | canto | livre
+  argolaCentro: true,        // topo/esquerda/direita: no eixo do meio da peca
+  argolaPonto: null,         // livre: {u, v} na caixa da arte (0..1), vem do arrastar
   argolaParedeMM: 2.2,
   cantoMM: 3,                // arredondamento da placa
   bicoMM: 0.4,               // diametro do bico, para os avisos
@@ -10862,6 +10864,50 @@ function construir(mascaraOrig, cfg) {
     var cx = alvoX + dv[0] * (alcaR - encaixe);
     var cy = alvoY + dv[1] * (alcaR - encaixe);
 
+    if (cfg.argolaPosicao === 'livre' && cfg.argolaPonto) {
+      // onde a pessoa soltou (relativo a caixa da arte: sobrevive a troca de
+      // tamanho). Solta longe da peca: encosta no ponto mais perto, vindo do
+      // lado em que foi solta
+      cx = rec.folga + cfg.argolaPonto.u * rec.larguraArte;
+      cy = rec.folga + cfg.argolaPonto.v * rec.alturaArte;
+      var qd = Infinity, qx = cx, qy = cy;
+      for (var yq = 0; yq < H; yq++) for (var xq = 0; xq < W; xq++) {
+        if (!base.d[yq * W + xq]) continue;
+        var dq = (xq - cx) * (xq - cx) + (yq - cy) * (yq - cy);
+        if (dq < qd) { qd = dq; qx = xq; qy = yq; }
+      }
+      qd = Math.sqrt(qd);
+      if (qd > alcaR - encaixe) {
+        cx = qx + (cx - qx) / qd * (alcaR - encaixe);
+        cy = qy + (cy - qy) / qd * (alcaR - encaixe);
+      }
+    } else if (cfg.argolaCentro && cfg.argolaPosicao !== 'canto') {
+      // no eixo do meio da caixa da peca: a alca vem de fora nessa direcao
+      // ate encostar (disco de raio alcaR descendo pelo eixo)
+      var bx0 = W, bx1 = -1, by0 = H, by1 = -1;
+      for (var ye = 0; ye < H; ye++) for (var xe = 0; xe < W; xe++) {
+        if (!base.d[ye * W + xe]) continue;
+        if (xe < bx0) bx0 = xe; if (xe > bx1) bx1 = xe; if (ye < by0) by0 = ye; if (ye > by1) by1 = ye;
+      }
+      var Cx = (bx0 + bx1) / 2, Cy = (by0 + by1) / 2, pv = [-dv[1], dv[0]], sC = -Infinity;
+      for (var yc = 0; yc < H; yc++) for (var xc = 0; xc < W; xc++) {
+        if (!base.d[yc * W + xc]) continue;
+        var ddx = xc - Cx, ddy = yc - Cy, pe = ddx * pv[0] + ddy * pv[1];
+        if (pe > alcaR || pe < -alcaR) continue;
+        var sc = ddx * dv[0] + ddy * dv[1] + Math.sqrt(alcaR * alcaR - pe * pe);
+        if (sc > sC) sC = sc;
+      }
+      // no meio tem um vao fundo (tipo o "U" ou o meio de duas letras): fica
+      // no ponto mais pra fora e avisa
+      var sMax = melhor - (Cx * dv[0] + Cy * dv[1]) + alcaR;
+      if (sC > sMax - 2 * alcaR) {
+        cx = Cx + dv[0] * (sC - encaixe);
+        cy = Cy + dv[1] * (sC - encaixe);
+      } else {
+        avisos.push('No meio da peça tem um vão: a argola foi pro ponto mais pra fora. Arraste ela na prévia pra escolher o lugar.');
+      }
+    }
+
     // garante que a alca ficou grudada: se soltou, puxa para dentro da peca
     var tentativa = 0;
     while (tentativa < 40) {
@@ -10879,7 +10925,7 @@ function construir(mascaraOrig, cfg) {
     base = G.mascaraUniao(base, discoMascara(W, H, cx, cy, alcaR));
     G.pintarDisco(base, cx, cy, furoR, 0);
     G.pintarDisco(arte, cx, cy, alcaR, 0); // arte nunca invade a alca
-    furoCentro = { x: cx, y: cy, r: furoR };
+    furoCentro = { x: cx, y: cy, r: furoR, rAlca: alcaR };
   }
 
   // 4. arte vazada vira furo passante
@@ -11087,6 +11133,8 @@ function construir(mascaraOrig, cfg) {
       ? cfg.altArte * camadas.reduce(function (a, c) { return Math.max(a, c.altura == null ? 1 : c.altura); }, 0)
       : 0,
     furo: furoCentro,
+    // caixa da arte em pixel da mascara: a tela converte o arrastar da argola
+    arteCaixa: { x0: rec.folga, y0: rec.folga, w: rec.larguraArte, h: rec.alturaArte },
     avisos: avisos,
     cfg: cfg
   };
@@ -11184,6 +11232,8 @@ var FER = {
   malhas: null,
   timer: null,
   girando: null,
+  argolaPonto: null,         // argola "Livre": {u, v} onde foi solta (caixa da arte)
+  arrastoArgola: null,
   vista: { rx: 0.95, rz: -0.42, zoom: 1 },
   ocupado: false,
   visor: '3d'
@@ -11893,6 +11943,8 @@ function ferProcessar() {
       argolaLigada: ferLigado('fer_argola'),
       argolaFuroMM: Math.min(15, Math.max(1, ferNum('fer_furo', 4))),
       argolaPosicao: ferSeg('fer_argola_seg') || 'topo',
+      argolaCentro: ferLigado('fer_argola_meio'),
+      argolaPonto: FER.argolaPonto,
       argolaParedeMM: Math.min(10, Math.max(0.4, ferNum('fer_parede', 2.2))),
       cantoMM: Math.max(0, ferNum('fer_canto', 3)),
       bicoMM: Math.max(0.1, ferNum('fer_bico', 0.4)),
@@ -11959,6 +12011,7 @@ function ferPintar2D() {
   var pad = 14;
   var k = Math.min((W - pad * 2) / p.larguraMM, (H - pad * 2) / p.alturaMM);
   var ox = (W - p.larguraMM * k) / 2, oy = (H - p.alturaMM * k) / 2;
+  FER.proj2d = { k: k, ox: ox, oy: oy };
 
   function caminho(grupos, cor, contorno) {
     if (!grupos || !grupos.length) return;
@@ -12025,6 +12078,7 @@ function ferPintar3D() {
   var ca = Math.cos(v.rx), sa = Math.sin(v.rx);
   var tam = Math.max(p.larguraMM, p.alturaMM) || 1;
   var k = (Math.min(W, H) * 0.74 / tam) * v.zoom;
+  FER.proj3d = { W: W, H: H, k: k, cx: cx, cy: cy, zMax: zMax, cz: cz1, sz: sz1, ca: ca, sa: sa };
 
   function cam(x, y, z) {
     var dx = x - cx, dy = y - cy, dz = z - zMax / 2;
@@ -12176,6 +12230,86 @@ function ferPintar3D() {
     });
     tampa(s.grupos, s.z1, cor);
   });
+}
+
+/* ARGOLA arrastada na prévia: tela <-> pixel da máscara. No 3D o ponto é
+   tomado no plano de cima da base (onde a alça fica). */
+function ferPontoDaTela(cv, cli) {
+  var p = FER.peca, r = cv.getBoundingClientRect();
+  if (!p || !r.width || !r.height) return null;
+  var sx = (cli.x - r.left) * cv.width / r.width, sy = (cli.y - r.top) * cv.height / r.height;
+  if (cv.id === 'fer_cv2d') {
+    var q = FER.proj2d;
+    if (!q) return null;
+    return { x: (sx - q.ox) / (p.escala * q.k) + p.minX, y: (sy - q.oy) / (p.escala * q.k) + p.minY };
+  }
+  var t = FER.proj3d;
+  if (!t || t.ca < 0.08) return null;            // de lado não dá pra mirar o plano
+  var x1 = (sx - t.W / 2) / t.k, c1 = (t.H / 2 - sy) / t.k;
+  var y1 = (c1 - (p.altBase - t.zMax / 2) * t.sa) / t.ca;
+  var X = x1 * t.cz + y1 * t.sz + t.cx, Y = -x1 * t.sz + y1 * t.cz + t.cy;
+  return { x: X / p.escala + p.minX, y: (p.alturaMM - Y) / p.escala + p.minY };
+}
+function ferTelaDoPonto(cv, x, y) {
+  var p = FER.peca;
+  if (cv.id === 'fer_cv2d') {
+    var q = FER.proj2d;
+    return [q.ox + (x - p.minX) * p.escala * q.k, q.oy + (y - p.minY) * p.escala * q.k];
+  }
+  var t = FER.proj3d;
+  var dx = (x - p.minX) * p.escala - t.cx, dy = p.alturaMM - (y - p.minY) * p.escala - t.cy;
+  var x1 = dx * t.cz - dy * t.sz, y1 = dx * t.sz + dy * t.cz;
+  return [t.W / 2 + x1 * t.k, t.H / 2 - (y1 * t.ca + (p.altBase - t.zMax / 2) * t.sa) * t.k];
+}
+function ferNaArgola(cv, cli) {
+  var p = FER.peca;
+  if (!p || !p.furo || !p.furo.rAlca || !ferLigado('fer_argola')) return null;
+  var q = ferPontoDaTela(cv, cli);
+  if (!q || Math.hypot(q.x - p.furo.x, q.y - p.furo.y) > p.furo.rAlca * 1.3) return null;
+  return q;
+}
+function ferComecarArgola(cv, cli) {
+  var q = ferNaArgola(cv, cli);
+  if (!q) return false;
+  var f = FER.peca.furo;
+  FER.arrastoArgola = { cv: cv, dx: f.x - q.x, dy: f.y - q.y, x: f.x, y: f.y, mexeu: false };
+  cv.style.cursor = 'grabbing';
+  return true;
+}
+function ferMoverArgola(cli) {
+  var A = FER.arrastoArgola, q = ferPontoDaTela(A.cv, cli);
+  if (!q) return;
+  A.x = q.x + A.dx; A.y = q.y + A.dy; A.mexeu = true;
+  if (FER.visor === '2d') ferPintar2D(); else ferPintar3D();
+  // fantasma da alça onde vai ficar (a peça é refeita ao soltar)
+  var cv = A.cv, ctx = cv.getContext('2d'), f = FER.peca.furo;
+  var circ = function (r) {
+    ctx.beginPath();
+    for (var i = 0; i <= 48; i++) {
+      var a = i / 48 * 2 * Math.PI, t = ferTelaDoPonto(cv, A.x + r * Math.cos(a), A.y + r * Math.sin(a));
+      if (i) ctx.lineTo(t[0], t[1]); else ctx.moveTo(t[0], t[1]);
+    }
+    ctx.closePath();
+  };
+  var cor = (getComputedStyle(document.documentElement).getPropertyValue('--brand') || '#e54c00').trim();
+  ctx.save();
+  circ(f.rAlca);
+  ctx.globalAlpha = 0.28; ctx.fillStyle = cor; ctx.fill();
+  ctx.globalAlpha = 1; ctx.strokeStyle = cor; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.stroke();
+  circ(f.r); ctx.setLineDash([]); ctx.stroke();
+  ctx.restore();
+}
+function ferSoltarArgola() {
+  var A = FER.arrastoArgola;
+  if (!A) return;
+  FER.arrastoArgola = null;
+  A.cv.style.cursor = '';
+  if (!A.mexeu || !FER.peca || !FER.peca.arteCaixa) return;
+  var c = FER.peca.arteCaixa;
+  FER.argolaPonto = { u: (A.x - c.x0) / c.w, v: (A.y - c.y0) / c.h };
+  ferMarcarSeg('fer_argola_seg', 'livre');
+  ferAtualizarCamposModelo();
+  ferRecalcular(0);
 }
 
 function ferPintarInfo() {
@@ -12739,6 +12873,7 @@ function ferAtualizarCamposModelo() {
   mostrar('fer_lin_vazada', temBase);
   mostrar('fer_lin_canto', modelo === 'placa');
   mostrar('fer_lin_argola_ops', temBase && ferLigado('fer_argola'));
+  mostrar('fer_lin_argola_meio', ['topo', 'esquerda', 'direita'].indexOf(ferSeg('fer_argola_seg') || 'topo') >= 0);
   mostrar('fer_lin_nfc', temBase);
   mostrar('fer_lin_nfc_ops', temBase && ferLigado('fer_nfc'));
   var rot = document.getElementById('fer_rot_altbase');
@@ -12780,7 +12915,15 @@ function renderFerramentas() {
 
   ferBindSeg('fer_entrada_seg', ferTrocarModo);
   ferBindSeg('fer_modelo_seg', function () { ferAtualizarCamposModelo(); ferRecalcular(0); });
-  ferBindSeg('fer_argola_seg', function () { ferRecalcular(0); });
+  ferBindSeg('fer_argola_seg', function (v) {
+    // "Livre" sem ter arrastado ainda: começa de onde a argola está
+    if (v === 'livre' && !FER.argolaPonto && FER.peca && FER.peca.furo && FER.peca.arteCaixa) {
+      var c = FER.peca.arteCaixa;
+      FER.argolaPonto = { u: (FER.peca.furo.x - c.x0) / c.w, v: (FER.peca.furo.y - c.y0) / c.h };
+    }
+    ferAtualizarCamposModelo();
+    ferRecalcular(0);
+  });
   ferBindSeg('fer_recorte_seg', function (v) {
     if (v === 'auto') {
       var sl = document.getElementById('fer_limiar');
@@ -12845,7 +12988,7 @@ function renderFerramentas() {
       ferRecalcular();
     };
   });
-  ['fer_inverter', 'fer_argola', 'fer_vazada', 'fer_nfc',
+  ['fer_inverter', 'fer_argola', 'fer_argola_meio', 'fer_vazada', 'fer_nfc',
    'fer_relevo_inv', 'fer_fundo_dentro'].forEach(function (id) {
     var el = document.getElementById(id);
     if (el) el.onchange = function () { ferAtualizarCamposModelo(); ferRecalcular(0); };
@@ -12861,18 +13004,24 @@ function renderFerramentas() {
   var bt = document.getElementById('fer_stl'); if (bt) bt.onclick = ferBaixarSTL;
   var b3 = document.getElementById('fer_3mf'); if (b3) b3.onclick = ferBaixar3MF;
 
-  // girar o 3D com o mouse / dedo
-  var cv3 = document.getElementById('fer_cv3d');
+  // girar o 3D com o mouse / dedo (e arrastar a argola, no 3D e no 2D)
+  var cv3 = document.getElementById('fer_cv3d'), cv2 = document.getElementById('fer_cv2d');
   if (cv3) {
     var pegar = function (ev) {
       var t = ev.touches ? ev.touches[0] : ev;
       return { x: t.clientX, y: t.clientY };
     };
     var comecar = function (ev) {
+      if (ferComecarArgola(cv3, pegar(ev))) return;     // pegou a argola: move ela
       FER.girando = pegar(ev);
       FER.girando.rx = FER.vista.rx; FER.girando.rz = FER.vista.rz;
     };
     var mover = function (ev) {
+      if (FER.arrastoArgola) { ferMoverArgola(pegar(ev)); if (ev.cancelable) ev.preventDefault(); return; }
+      // em cima da argola: mãozinha de mover
+      if (!FER.girando && !ev.touches && (ev.target === cv3 || ev.target === cv2)) {
+        ev.target.style.cursor = ferNaArgola(ev.target, pegar(ev)) ? 'move' : '';
+      }
       if (!FER.girando) return;
       var p = pegar(ev);
       FER.vista.rz = FER.girando.rz + (p.x - FER.girando.x) * 0.012;
@@ -12881,13 +13030,21 @@ function renderFerramentas() {
       ferPintar3D();
       if (ev.cancelable) ev.preventDefault();
     };
-    var parar = function () { FER.girando = null; };
+    var parar = function () { FER.girando = null; ferSoltarArgola(); };
     cv3.addEventListener('mousedown', comecar);
     window.addEventListener('mousemove', mover);
     window.addEventListener('mouseup', parar);
     cv3.addEventListener('touchstart', comecar, { passive: true });
     cv3.addEventListener('touchmove', mover, { passive: false });
     cv3.addEventListener('touchend', parar);
+    // vista de cima (2D): só arrastar a argola
+    if (cv2) {
+      var pegarArgola = function (ev) { if (ferComecarArgola(cv2, pegar(ev)) && ev.cancelable) ev.preventDefault(); };
+      cv2.addEventListener('mousedown', pegarArgola);
+      cv2.addEventListener('touchstart', pegarArgola, { passive: false });
+      cv2.addEventListener('touchmove', mover, { passive: false });
+      cv2.addEventListener('touchend', parar);
+    }
     cv3.addEventListener('wheel', function (ev) {
       FER.vista.zoom = Math.max(0.35, Math.min(4, FER.vista.zoom * (ev.deltaY > 0 ? 0.9 : 1.1)));
       ferPintar3D();

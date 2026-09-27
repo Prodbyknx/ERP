@@ -64,7 +64,12 @@ ALTURA DO RELEVO é o quanto o desenho sobe. BORDA é a moldura em volta.
 
 FURO PRA ARGOLA já sai com parede em volta e nunca fica solto da peça,
 mesmo em formato torto. Escolhe o lado: em cima, esquerda, direita ou
-canto.
+canto. CENTRALIZAR (vem ligado) põe a argola no meio da peça — no
+coração cai no "v" de cima; se o meio for um vão (letra U), ela vai pro
+ponto mais pra fora e avisa. Desligado: vai pro ponto mais alto (ou mais
+pro lado). LIVRE: arraste a argola na prévia (3D ou vista de cima) e
+solte onde quiser; solta longe da peça, ela encosta na borda mais perto.
+O lugar fica guardado mesmo trocando o tamanho.
 
 ESPAÇO PRA TAG NFC abre um bolso redondo dentro da peça:
   ABERTO POR BAIXO    imprime normal e cola a tag no final.
