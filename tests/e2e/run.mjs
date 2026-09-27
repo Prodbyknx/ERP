@@ -11,7 +11,7 @@
 // 12) v8: curva 3D, editar desenho, em pé, sobre a peça, texto na quina, vincar (tests/e2e/v8.mjs)
 // 13) placas: várias placas na grade do Bambu, organizar, 3MF por placa (tests/e2e/placas.mjs)
 // 16) separar por cor pra fabricação (tests/e2e/cores.mjs)
-// 4) gerador de chaveiro: 3MF novo (cor que o Bambu lê), "Abrir no Estúdio" e argola (centralizar, arrastar)
+// 4) gerador de chaveiro: 3MF novo (cor que o Bambu lê), "Abrir no Estúdio", argola (centralizar, arrastar) e bolso da tag NFC no arquivo
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
@@ -502,6 +502,8 @@ async function main() {
   await pg.context().close();
   const { secaoArgola } = await import('./argola.mjs');
   await secaoArgola({ b, teste, novaPagina, passo });
+  const { secaoNFC } = await import('./nfc.mjs');
+  await secaoNFC({ b, teste, tmp, novaPagina, passo });
 
   console.log('8) separar a mão do boneco (STL cru, com furos) pelo corte de uma parte');
   pg = await novaPagina(b);

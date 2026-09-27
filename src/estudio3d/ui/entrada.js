@@ -1,7 +1,7 @@
 // Entrada do bundle site/estudio3d.js. Expõe window.Estudio3D pro app.js.
 import { Estudio } from './estudio.js';
 import { Motor } from '../motor/cliente.js';
-import { criar } from '../core/malha.js';
+import { criar, juntar } from '../core/malha.js';
 import * as M4 from '../core/mat4.js';
 import { baixar, nomeArquivo } from './util.js';
 
@@ -35,6 +35,16 @@ window.Estudio3D = {
     const m = motor();
     const saida = [];
     for (const p of pecas) {
+      if (p.fatias && p.fatias.length > 1) {
+        // fatias soltas (sem soldar uma na outra): a união do Manifold junta
+        // as faces que se encostam e mantém o bolso / o vão da tag NFC
+        try {
+          const junta = juntar(p.fatias.map(f => criar(f.pos, f.idx)));
+          const u = await m.rodar('unirSobrepostos', { parte: { nome: p.nome, malha: junta, cor: p.cor } });
+          saida.push({ nome: p.nome, malha: u.parte.malha, cor: p.cor });
+          continue;
+        } catch (e) { console.warn('fatias do gerador sem união:', e); }
+      }
       const malha = criar(p.malha.pos, p.malha.idx);
       let parte = { nome: p.nome, malha, cor: p.cor };
       try {

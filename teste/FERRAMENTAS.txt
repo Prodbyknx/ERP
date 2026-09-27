@@ -79,6 +79,9 @@ ESPAÇO PRA TAG NFC abre um bolso redondo dentro da peça:
 Ele põe o bolso no ponto mais "fundo" da peça, longe da borda e do
 furo da argola. Se a tag não couber, ele avisa e diz que tamanho de
 tag caberia ali.
+O bolso sai de verdade no 3MF e no STL (conferido cortando a peça em
+fatias, como o fatiador faz). Aberto por baixo fica VIRADO PRA MESA: no
+fatiador aparece olhando a peça por baixo ou nas primeiras camadas.
 
 
 AS CORES

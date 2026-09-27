@@ -12360,7 +12360,7 @@ function ferPintarInfo() {
       (p.nfc.modo === 'fechado'
         ? 'fechado por dentro. Pause a impressão em <b>Z = ' + p.nfc.zPausa.toFixed(1) +
           ' mm</b>, encaixe a tag e mande continuar.'
-        : 'aberto por baixo. Imprima normal e cole a tag no final.') +
+        : 'aberto por baixo, <b>virado pra mesa</b>: no fatiador ele aparece olhando a peça por baixo ou nas primeiras camadas. Imprima normal e cole a tag no final.') +
       '</div>';
   }
 
@@ -12726,9 +12726,18 @@ function carregarEstudio() {
 
 // peças do gerador no formato do Estúdio: {nome, cor '#hex', malha {pos, idx}}
 function ferPecasParaEstudio() {
+  var solidos = (FER.malhas && FER.malhas.solidos) || [];
   return ferMalhasIndexadas().map(function (p) {
     var m = (FER.reparadas && FER.reparadas[p.nome]) ? FER.reparadas[p.nome] : p.malha;
-    return { nome: p.rotulo, cor: ferRGBParaHex(p.cor).toUpperCase(), malha: { pos: m.pos, idx: m.idx } };
+    var out = { nome: p.rotulo, cor: ferRGBParaHex(p.cor).toUpperCase(), malha: { pos: m.pos, idx: m.idx } };
+    // peça feita de fatias empilhadas (bolso da tag NFC): cada fatia vai
+    // SEPARADA e o Estúdio une de verdade. Soldar as fatias antes deixava
+    // faces duplicadas (aberto por baixo) ou fechava o vão (fechado)
+    var fatias = solidos.filter(function (s) { return s.nome === p.nome; });
+    if (fatias.length > 1) {
+      out.fatias = fatias.map(function (s) { var q = MALHA.indexar(s.tris); return { pos: q.pos, idx: q.idx }; });
+    }
+    return out;
   });
 }
 
