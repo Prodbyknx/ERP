@@ -587,7 +587,7 @@ function compressImage(file, maxSize, cb){
 }
 function updateFotoPreview(){
   const p=$('c_foto_prev');
-  if(currentFoto){ p.innerHTML='<img src="'+currentFoto+'" alt="">'; $('c_foto_del').style.display=''; }
+  if(fotoSegura(currentFoto)){ p.innerHTML='<img src="'+fotoSegura(currentFoto)+'" alt="">'; $('c_foto_del').style.display=''; }
   else{ p.innerHTML='<span class="photo-empty">sem foto</span>'; $('c_foto_del').style.display='none'; }
 }
 $('c_foto_btn').onclick=()=>$('c_foto_file').click();
@@ -597,9 +597,20 @@ $('c_foto_file').onchange=e=>{
   e.target.value='';
 };
 $('c_foto_del').onclick=()=>{ currentFoto=''; updateFotoPreview(); };
-// thumb: usa a foto do produto se existir, senão o emoji
+// A foto só entra na tela se for imagem embutida (é o que o botão de foto
+// grava). Qualquer outra coisa gravada nesse campo (backup editado, outro
+// usuário) poderia fechar o src="" e rodar código — então vira "sem foto".
+function fotoSegura(u){
+  return typeof u === 'string' && /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+\/=]+$/.test(u) ? u : '';
+}
+// thumb: usa a foto do produto se existir, senão o emoji. A conferência da
+// foto fica guardada por produto: catálogo grande não reconfere a cada tela.
+const _fotoConferida = new WeakMap();
 function prodImg(p, cls){
-  return p && p.foto ? '<img class="'+cls+'" src="'+p.foto+'" alt="">' : '';
+  if(!p || !p.foto) return '';
+  let c = _fotoConferida.get(p);
+  if(!c || c.foto !== p.foto){ c = { foto: p.foto, ok: fotoSegura(p.foto) }; _fotoConferida.set(p, c); }
+  return c.ok ? '<img class="'+esc(cls)+'" src="'+c.ok+'" alt="">' : '';
 }
 
 /* ---------- botões da calculadora ---------- */

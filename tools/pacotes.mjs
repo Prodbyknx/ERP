@@ -63,6 +63,19 @@ export function gerarPacotes() {
   if (fs.existsSync(path.join(dist, 'ia-demo'))) { fs.mkdirSync(path.join(amostras, 'fotos-para-3d'), { recursive: true }); copiarPasta(path.join(dist, 'ia-demo'), path.join(amostras, 'fotos-para-3d')); }
   if (fs.existsSync(path.join(dist, 'pecas-modeladas-no-sistema.3mf'))) { fs.mkdirSync(amostras, { recursive: true }); fs.copyFileSync(path.join(dist, 'pecas-modeladas-no-sistema.3mf'), path.join(amostras, 'pecas-modeladas-no-sistema.3mf')); }
 
+  // kit de verificação do Supabase (só no pacote de teste; nunca sobe pro Cloudflare),
+  // já com o endereço e a chave PÚBLICA do config.js
+  const kit = path.join(teste, 'seguranca');
+  fs.mkdirSync(kit, { recursive: true });
+  const cfg = fs.readFileSync(path.join(site, 'config.js'), 'utf8');
+  const url = (/url:\s*'([^']+)'/.exec(cfg) || [])[1], chave = (/publicKey:\s*'([^']+)'/.exec(cfg) || [])[1];
+  if (!url || !chave || !/^sb_publishable_/.test(chave)) throw new Error('config.js sem url/chave pública');
+  for (const nome of fs.readdirSync(path.join(raiz, 'seguranca'))) {
+    let dados = fs.readFileSync(path.join(raiz, 'seguranca', nome));
+    if (nome.endsWith('.html')) dados = dados.toString('utf8').replace('__SUPABASE_URL__', url).replace('__SUPABASE_CHAVE__', chave);
+    fs.writeFileSync(path.join(kit, nome), dados);
+  }
+
   const obrigatorios = ['index.html', 'app.js', 'html2pdf.bundle.min.js'];
   for (const p of [prod, teste]) {
     for (const f of obrigatorios) {

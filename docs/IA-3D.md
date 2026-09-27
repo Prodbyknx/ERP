@@ -68,7 +68,7 @@ comercial. A alternativa MIT é o TRELLIS v1. O gerador por silhuetas é o
 cd servidor-ia
 pip install -r requirements.txt            # silhuetas (CPU) — funciona já
 pip install -r requirements-gpu.txt        # + PyTorch CUDA + Hunyuan3D-2 (ver arquivo)
-IA_TOKEN=um-segredo uvicorn app:app --host 0.0.0.0 --port 8765
+IA_TOKEN=um-segredo IA_ORIGENS=https://seu-site.pages.dev uvicorn app:app --host 0.0.0.0 --port 8765
 ```
 No laboratório: Gerador → "Servidor de IA próprio", com o endereço, o token e o modelo `hunyuan3d-2mv`, e depois "Testar conexão".
 O `/saude` lista os modelos prontos e os indisponíveis, cada um com o motivo. Ele não finge que um modelo funciona.

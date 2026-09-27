@@ -67,6 +67,52 @@ test('resultado de IA com Y pra cima, girado e em outra escala volta pro lugar c
 const py = spawnSync('python3', ['-c', 'import fastapi, uvicorn, PIL'], { encoding: 'utf8' });
 const semServidor = py.status !== 0 ? 'python3 com fastapi/uvicorn/pillow não instalado (pip install -r servidor-ia/requirements.txt)' : false;
 
+// segurança: fecha sem token, corpo gigante e fotos demais recusados antes
+// de processar, imagem "bomba" (dimensão absurda) vira 413 e não trava
+test('SERVIDOR segurança: sem IA_TOKEN não atende; corpo gigante, fotos demais, imagem bomba e força bruta no token são recusados', { skip: semServidor, timeout: 60000 }, async () => {
+  const subir = async env => {
+    const porta = 20000 + Math.floor(Math.random() * 2000), url = 'http://127.0.0.1:' + porta, e = { ...process.env, ...env };
+    if (!('IA_TOKEN' in env)) delete e.IA_TOKEN;
+    const srv = spawn('python3', ['-m', 'uvicorn', 'app:app', '--host', '127.0.0.1', '--port', String(porta)], { cwd: path.join(raiz, 'servidor-ia'), env: e, stdio: 'pipe' });
+    let log = ''; srv.stderr.on('data', d => { log += d; });
+    for (let i = 0; i < 100; i++) { try { await fetch(url + '/saude'); return { srv, url }; } catch { await new Promise(r => setTimeout(r, 150)); } }
+    srv.kill(); throw new Error('não subiu: ' + log.slice(-500));
+  };
+  const a = await subir({});
+  try {
+    const r = await fetch(a.url + '/saude');
+    assert.equal(r.status, 503, 'sem IA_TOKEN tem que recusar tudo');
+    assert.match((await r.json()).detail, /IA_TOKEN/);
+    assert.equal((await fetch(a.url + '/tarefas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"vistas":[]}' })).status, 503);
+  } finally { a.srv.kill(); }
+  const b = await subir({ IA_TOKEN: 'segredo-teste', IA_MAX_CORPO: '300000' });
+  const cab = { Authorization: 'Bearer segredo-teste', 'Content-Type': 'application/json' };
+  try {
+    assert.equal((await fetch(b.url + '/saude', { headers: { Authorization: 'Bearer segredo-testeX' } })).status, 401);
+    const grande = await fetch(b.url + '/tarefas', { method: 'POST', headers: cab, body: JSON.stringify({ modelo: 'silhuetas', vistas: [{ vista: 'frente', png: 'A'.repeat(400000) }] }) });
+    assert.equal(grande.status, 413, 'corpo gigante');
+    const muitas = await fetch(b.url + '/tarefas', { method: 'POST', headers: cab, body: JSON.stringify({ modelo: 'silhuetas', vistas: Array.from({ length: 13 }, (_, i) => ({ vista: 'v' + i, png: '' })) }) });
+    assert.equal(muitas.status, 400, 'fotos demais');
+    // PNG que diz ter 50000 × 50000 pixels (2,5 bilhões)
+    const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(50000, 0); ihdr.writeUInt32BE(50000, 4); ihdr[8] = 8; ihdr[9] = 6;
+    const ch = (t, d) => { const l = Buffer.alloc(4); l.writeUInt32BE(d.length); return Buffer.concat([l, Buffer.from(t), d, Buffer.alloc(4)]); };
+    const bomba = Buffer.concat([Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]), ch('IHDR', ihdr), ch('IEND', Buffer.alloc(0))]);
+    const rb = await fetch(b.url + '/tarefas', { method: 'POST', headers: cab, body: JSON.stringify({ modelo: 'silhuetas', vistas: [{ vista: 'frente', png: bomba.toString('base64') }] }) });
+    assert.ok(rb.status === 413 || rb.status === 400, 'imagem bomba: ' + rb.status);
+    assert.equal((await fetch(b.url + '/saude', { headers: cab })).status, 200, 'o servidor continua de pé');
+    // erro de foto não vaza detalhe interno do Python
+    const lixo = await fetch(b.url + '/tarefas', { method: 'POST', headers: cab, body: JSON.stringify({ modelo: 'silhuetas', vistas: [{ vista: 'frente', png: Buffer.from('não é imagem').toString('base64') }] }) });
+    assert.equal(lixo.status, 400);
+    assert.doesNotMatch(JSON.stringify(await lixo.json()), /BytesIO|0x[0-9a-f]{6}|Traceback|\/usr\//);
+    // força bruta no token: já houve 2 erros (a espera do servidor subir e o token errado lá em cima);
+    // mais 8 completam 10 e a próxima tentativa (mesmo com o token certo) espera
+    for (let i = 0; i < 8; i++) assert.equal((await fetch(b.url + '/saude', { headers: { Authorization: 'Bearer chute' + i } })).status, 401, 'tentativa ' + (i + 3));
+    const bloqueado = await fetch(b.url + '/saude', { headers: { ...cab, Origin: 'https://144lab.pages.dev' } });
+    assert.equal(bloqueado.status, 429, 'força bruta tem que travar');
+    assert.ok(bloqueado.headers.get('access-control-allow-origin'), 'a recusa leva CORS (o site mostra a mensagem)');
+  } finally { b.srv.kill(); }
+});
+
 test('SERVIDOR self-hosted: saúde, token, fila, cancelamento e geração pelo provedor HTTP', { skip: semServidor, timeout: 120000 }, async () => {
   const porta = 18000 + Math.floor(Math.random() * 2000), url = 'http://127.0.0.1:' + porta;
   const srv = spawn('python3', ['-m', 'uvicorn', 'app:app', '--host', '127.0.0.1', '--port', String(porta)], { cwd: path.join(raiz, 'servidor-ia'), env: { ...process.env, IA_TOKEN: 'segredo-teste' }, stdio: 'pipe' });

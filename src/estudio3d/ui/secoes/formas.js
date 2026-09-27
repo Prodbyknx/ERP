@@ -108,10 +108,33 @@ export function montarFormas(est) {
       o.partes = [{ ...o.partes[0], malha }];
     });
   }
+  // o painel é redesenhado a cada mudança da cena: o que a pessoa está
+  // digitando numa medida não pode sumir (nem o cursor sair do campo)
+  function campoEmEdicao(box) {
+    const a = document.activeElement;
+    if (!a || !box.contains(a) || a.tagName !== 'INPUT' || (a.dataset.p == null && a.dataset.op == null)) return null;
+    return { obj: box.dataset.obj, sel: a.dataset.p != null ? '[data-p="' + a.dataset.p + '"]' : '[data-op="' + a.dataset.op + '"]', valor: a.value, mudou: a.value !== a.defaultValue, ini: a.selectionStart, fim: a.selectionEnd };
+  }
+  function devolverEdicao(box, c) {
+    const n = c && c.obj === box.dataset.obj && box.querySelector(c.sel);
+    if (!n) return;
+    if (c.mudou && n.value === n.defaultValue) { n.value = c.valor; n.dataset.pendente = '1'; }
+    n.focus();
+    try { n.setSelectionRange(c.ini, c.fim); } catch (e) { /* ok */ }
+  }
+  // confirma a medida: pelo "change" normal ou, se o valor foi devolvido
+  // depois de um redesenho (o navegador não dispara "change"), ao sair do campo
+  function aoConfirmar(inp, fn) {
+    inp.addEventListener('change', () => { delete inp.dataset.pendente; fn(); });
+    inp.addEventListener('blur', () => { if (inp.dataset.pendente && inp.value !== inp.defaultValue) { delete inp.dataset.pendente; fn(); } });
+    inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); inp.blur(); } });
+  }
   function render() {
     const o = est.objetoAtual();
     const box = q('props');
+    const editando = campoEmEdicao(box);
     box.innerHTML = '';
+    box.dataset.obj = o ? String(o.id) : '';
     if (!o) return;
     const cab = el('div', { class: 'e3d-props' });
     const f = o.forma && formaPorId(o.forma.id);
@@ -126,11 +149,10 @@ export function montarFormas(est) {
       const grade = el('div', { class: 'e3d-l2' });
       for (const p of f.params) {
         const inp = el('input', { type: 'text', value: fmt(o.forma.params[p.k], p.inteiro ? 0 : 2).replace(/\./g, ''), 'data-p': p.k });
-        inp.addEventListener('change', () => {
+        aoConfirmar(inp, () => {
           const v = lerNumero(inp.value, o.forma.params[p.k]);
           refazer(o, { ...o.forma, params: { ...o.forma.params, [p.k]: v } });
         });
-        inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); inp.blur(); } });
         grade.appendChild(el('div', null, el('label', null, p.rot + (p.unid ? ' (' + p.unid + ')' : '')), inp));
       }
       cab.appendChild(grade);
@@ -151,8 +173,7 @@ export function montarFormas(est) {
           linha.appendChild(el('span', null, (i + 1) + '. ' + NOME_OP[op.tipo] + (op.tipo === 'espelhar' ? ' (' + 'XYZ'[op.eixo] + (op.unir ? ', unido' : '') + ')' : '')));
           if (op.valor != null) {
             const inp = el('input', { type: 'text', value: fmt(op.valor, 2).replace(/\./g, ''), 'data-op': i });
-            inp.addEventListener('change', () => { const v = lerNumero(inp.value, op.valor); refazer(o, o.forma, o.operacoes.map((x, k) => k === i ? { ...x, valor: v } : x)); });
-            inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); inp.blur(); } });
+            aoConfirmar(inp, () => { const v = lerNumero(inp.value, op.valor); refazer(o, o.forma, o.operacoes.map((x, k) => k === i ? { ...x, valor: v } : x)); });
             linha.appendChild(inp);
             linha.appendChild(el('span', { class: 'u' }, 'mm'));
           }
@@ -163,6 +184,7 @@ export function montarFormas(est) {
       }
     } else cab.appendChild(el('p', { class: 'u', style: 'margin:4px 0 0' }, 'Peça aberta de arquivo: medidas e giro ficam em Ajustar.'));
     box.appendChild(cab);
+    devolverEdicao(box, editando);
   }
   est.on('selecao', () => { if (d.open) render(); });
   est.on('mudou', () => { if (d.open) render(); });

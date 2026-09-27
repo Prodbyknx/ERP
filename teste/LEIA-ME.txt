@@ -615,6 +615,17 @@ sem ele o Estúdio 3D não abre (o resto do sistema funciona normal).
 Os arquivos config.js, cloud.js e supabase.min.js de lá são os seus,
 sem mudança.
 
+Nesta versão (segurança) mudaram 4 arquivos da pasta de subir:
+app.js, estudio3d.js, html2pdf.bundle.min.js (biblioteca de PDF sem as
+falhas conhecidas) e _headers (cabeçalhos de segurança). Suba os 8 de novo.
+
+
+SEGURANÇA (20 ITENS)
+A pasta "seguranca" daqui tem o relatório (LEIA-ME-SEGURANCA.txt) e um
+kit pra você conferir o Supabase: uma página (verificar-supabase.html)
+e um SQL só de leitura (auditoria-supabase.sql). A página é a ÚNICA
+coisa desta pasta que fala com o Supabase de verdade — e só lê.
+
 ATENÇÃO: NÃO suba os arquivos desta pasta de teste pro Cloudflare.
 O index.html daqui tem o teste.js no lugar do cloud.js e não conecta
 no Supabase.

@@ -504,6 +504,12 @@ async function main() {
   await secaoArgola({ b, teste, novaPagina, passo });
   const { secaoNFC } = await import('./nfc.mjs');
   await secaoNFC({ b, teste, tmp, novaPagina, passo });
+  const { secaoCSP } = await import('./csp.mjs');
+  await secaoCSP({ b, teste, novaPagina, passo });
+  const { secaoXSS } = await import('./xss.mjs');
+  await secaoXSS({ b, teste, novaPagina, passo });
+  const { secaoSupabaseKit } = await import('./supabase-kit.mjs');
+  await secaoSupabaseKit({ b, novaPagina, passo, pagina: path.join(teste, 'seguranca', 'verificar-supabase.html'), empacotada: true });
 
   console.log('8) separar a mão do boneco (STL cru, com furos) pelo corte de uma parte');
   pg = await novaPagina(b);
@@ -605,6 +611,18 @@ async function main() {
     if (await pg.locator('[data-sec=formas] .e3d-op').count() !== 2) throw new Error('lista de operações');
     await pg.keyboard.press('Control+z');
     await pg.waitForFunction(() => { const e = window.Estudio3D.estudio, c = e.cena.caixaExata(e.cena.objetos[0]); return Math.abs(c.max[0] - c.min[0] - 30) < 1e-6; }, null, { timeout: 20000 });
+  });
+  await passo(pg, 'medida digitada não some se o painel se redesenhar no meio (ex.: uma operação terminando)', async () => {
+    await abrirSecao(pg, 'formas'); await pg.waitForTimeout(200);
+    await pg.fill('[data-sec=formas] [data-p=altura]', '12');
+    // redesenha o painel com o campo ainda em edição
+    await pg.evaluate(() => document.querySelector('[data-sec=formas]').dispatchEvent(new Event('toggle')));
+    const v = await pg.evaluate(() => [document.activeElement.dataset.p, document.querySelector('[data-sec=formas] [data-p=altura]').value]);
+    if (v[0] !== 'altura' || v[1] !== '12') throw new Error('o valor digitado sumiu no redesenho: ' + JSON.stringify(v));
+    await pg.press('[data-sec=formas] [data-p=altura]', 'Enter');
+    await pg.waitForFunction(() => { const e = window.Estudio3D.estudio, c = e.cena.caixaExata(e.cena.objetos[0]); return Math.abs(c.max[2] - c.min[2] - 12) < 1e-6; }, null, { timeout: 90000 });
+    await pg.keyboard.press('Control+z');
+    await pg.waitForFunction(() => { const e = window.Estudio3D.estudio, c = e.cena.caixaExata(e.cena.objetos[0]); return Math.abs(c.max[2] - c.min[2] - 10) < 1e-6; }, null, { timeout: 20000 });
   });
   await passo(pg, 'caixa nova: medir borda (40 mm), simetria X pega as 2 verticais, puxar a face de cima +5', async () => {
     await abrirSecao(pg, 'formas');

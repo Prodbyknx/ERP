@@ -203,6 +203,8 @@ FORMAS — adicionar peças prontas (novo)
    Clique no cartão e a forma aparece na mesa, ao lado da peça escolhida.
    Em cima do painel ficam as medidas da forma escolhida (em mm): mude e
    a peça é refeita na hora, no mesmo lugar. Tipo: Sólido ou Furo.
+   Se a peça atualizar enquanto você digita (uma operação terminando),
+   o número digitado e o cursor ficam no campo (antes podiam sumir).
    3D: cubo, caixa (com canto arredondado), esfera, cilindro, cone,
    pirâmide, prisma, tubo, anel, cápsula, meia esfera, placa.
    Planas com espessura: círculo, quadrado, retângulo, triângulo, estrela,

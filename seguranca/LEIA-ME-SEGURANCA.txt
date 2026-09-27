@@ -1,0 +1,167 @@
+144 LABORATÓRIO 3D — SEGURANÇA ANTES DE LANÇAR (20 ITENS)
+===========================================================
+Auditoria de 27/09/2026. Cada item diz: o que eu encontrei, a prova e o que
+falta VOCÊ fazer (o que depende do painel do Supabase ou do Cloudflare).
+
+RESUMO
+  Corrigido no código e testado ........ 7 itens (7, 11, 14, 16, 18, 19, 20)
+  Já estava certo (conferido) .......... 7 itens (1, 2, 5, 10, 13, 15, 17)
+  Depende do painel do Supabase ........ 5 itens (3, 4, 6, 8, 12) -> use o kit abaixo
+  Não se aplica ........................ 1 item  (9: o sistema não usa cookies)
+
+  Eu NÃO consegui entrar no seu Supabase daqui: a rede do ambiente onde eu
+  trabalho bloqueia o endereço do projeto. Por isso deixei um kit que VOCÊ roda
+  (5 minutos). Me mande o resultado que eu escrevo o SQL de correção exato.
+
+O QUE FAZER (NESTA ORDEM)
+  1. Abra verificar-supabase.html (esta pasta) e clique "Verificar".
+     Depois repita com o e-mail e a senha de uma conta de VENDEDOR.
+     Os testes só leem; os com vendedor gravam o MESMO valor que já está lá.
+  2. Supabase > SQL Editor > New query > cole auditoria-supabase.sql > Run.
+     Só lê o banco. Mostra FALHA / ATENÇÃO / INFO / OK, tabela por tabela.
+  3. No painel do Supabase:
+     - Authentication > Sign In / Providers: DESLIGUE "Allow new users to sign up"
+       (só o administrador cria contas, pela tela Usuários).
+     - Authentication > Rate Limits: deixe os limites padrão (ou menores).
+     - Authentication > Attack Protection: ligue a proteção de senha vazada,
+       se o seu plano tiver.
+     - Edge Functions > erp-users: "Verify JWT" LIGADO, e o código tem que
+       conferir perfil = ADMIN antes de criar/editar/apagar/trocar senha.
+  4. Depois de subir o site, confira os cabeçalhos em securityheaders.com.
+
+OS 20 ITENS
+-----------
+ 1. Esconder API keys ..................................... OK
+    O site só tem o endereço do Supabase e a chave PUBLICÁVEL (config.js).
+    A chave do Tripo e o token do servidor de IA ficam fora do site.
+    Prova: varredura de chaves no pacote SUBIR-NO-CLOUDFLARE: nenhuma secreta.
+
+ 2. Limpar secrets do git ................................. OK
+    Varri os 33 commits (chave secreta do Supabase, service_role, OpenAI,
+    Anthropic, GitHub, Google, AWS, Slack, Tripo, chave privada): nada.
+    Único alarme ("AKIA...") é um pedaço do motor 3D (WASM) em base64:
+    conferi que a sequência está dentro do arquivo do Manifold. Falso alarme.
+
+ 3. Public key do banco ................................... CONFERIR (kit)
+    A chave publicável PODE ficar no site — ela é feita pra isso — mas só é
+    segura se o RLS estiver certo (item 4). A página do kit confere que a
+    chave do site é a pública e não a secreta.
+
+ 4. Ativar RLS ............................................ CONFERIR (kit)
+    O repositório não tem o SQL do banco, então não dá pra ver daqui.
+    O auditoria-supabase.sql lista TODAS as tabelas, as políticas, as views
+    (que furam o RLS) e o tempo real. A página tenta ler erp_records,
+    erp_deleted e profiles SEM login: tem que voltar vazio.
+
+ 5. Criptografia dos dados ................................ OK
+    O Supabase guarda criptografado e só fala por HTTPS. O site agora obriga
+    HTTPS (item 19). Cuidado: o BACKUP que você exporta (.json) sai aberto —
+    guarde em lugar seguro, não mande por WhatsApp.
+
+ 6. Autenticação no servidor .............................. CONFERIR (kit)
+    O login é do Supabase (servidor), ok. Mas duas travas de ADMIN estão só
+    na TELA (cloud.js: "Requer ADMIN" em usuários e em importar backup).
+    Alguém que saiba mexer no navegador passa por elas. O servidor PRECISA
+    repetir a trava:
+      - função erp-users: conferir perfil = ADMIN;
+      - função erp_commit_sync com restore = true: conferir perfil = ADMIN.
+    O SQL aponta "restore sem ADMIN"; a página testa a erp-users com a
+    conta de vendedor (pedindo pra apagar um usuário que NÃO existe).
+
+ 7. Restringir acessos .................................... CORRIGIDO
+    Servidor de IA: sem IA_TOKEN ele não atende ninguém (antes atendia
+    todo mundo); token comparado em tempo constante. MCP: só lê a sua pasta
+    de usuário e pastas liberadas, só grava na pasta de trabalho.
+    Supabase: o SQL mostra o que o visitante (anon) pode fazer em cada tabela
+    e função, com o comando pra tirar.
+
+ 8. Bloquear mass assignment .............................. CONFERIR (kit)
+    O risco real aqui: a tabela profiles tem a coluna "perfil". Se a política
+    deixa o usuário editar o próprio perfil, um vendedor vira ADMIN sozinho.
+    O SQL e a página testam isso (a página grava o mesmo perfil — não muda
+    nada). No código: o servidor de IA só lê os campos que conhece; o MCP
+    valida cada campo.
+
+ 9. Proteger cookies ...................................... NÃO SE APLICA
+    O sistema não cria cookie nenhum. A sessão do Supabase fica guardada no
+    navegador (localStorage). O risco equivalente é XSS — tratado nos itens
+    14 e 18.
+
+10. Hash nas senhas ....................................... OK
+    As senhas vão direto pro Supabase Auth (guarda com bcrypt). O ERP não
+    guarda senha em lugar nenhum; a tela exige no mínimo 8 caracteres.
+
+11. Rate limit ............................................ CORRIGIDO
+    Login: o Supabase já limita tentativas (Authentication > Rate Limits).
+    Servidor de IA: fila limitada (fila cheia = 429) e, NOVO, quem erra o
+    token 10 vezes em 10 minutos fica bloqueado (429). Testado.
+
+12. Proteção contra bots .................................. CONFERIR (painel)
+    O principal é o cadastro público DESLIGADO (a página confere). CAPTCHA
+    (Cloudflare Turnstile) no login exige mudar o cloud.js, que eu não mexo
+    sem você pedir. Com cadastro fechado + limite de tentativas, dá pra
+    lançar; se quiser o CAPTCHA, me peça.
+
+13. Queries parametrizadas ................................ OK
+    O site não monta SQL com texto: todas as consultas passam pela
+    biblioteca do Supabase. No banco, o SQL aponta qualquer função que monte
+    SQL com texto (EXECUTE) pra você conferir.
+
+14. Validação dos inputs .................................. CORRIGIDO
+    Teste novo: coloca código malicioso em TODO campo de texto (produto,
+    cliente, venda, orçamento, consignado, CRM, filamento, despesa, usuário…)
+    e abre as 15 abas, 16 fichas/edições e os PDFs. Achou UMA falha: a foto
+    do produto (um valor adulterado rodava código). Corrigida: agora só
+    entra imagem de verdade. O teste falha na versão antiga e passa na nova.
+    Servidor de IA: limita quantidade, tamanho e pixels das fotos.
+
+15. Não vazar conteúdo .................................... OK
+    O ERP pede do perfil só id, nome, login e perfil. O servidor de IA não
+    devolve mais detalhe interno do Python nas mensagens de erro
+    (corrigido). O tempo real só entrega o que o RLS deixa (o SQL confere).
+    Obs.: o cloud.js expõe funções internas (Cloud._test) no navegador. Elas
+    só fazem o que o próprio usuário logado já pode — quem manda é o
+    servidor (itens 4, 6 e 8). Não mexi no cloud.js.
+
+16. Restringir uploads .................................... CORRIGIDO
+    O ERP não sobe arquivo pro Supabase (a foto do produto vira uma imagem
+    pequena dentro dos dados — e agora só imagem de verdade). Servidor de IA:
+    pedido gigante recusado antes de ler (413), foto "bomba" recusada.
+    MCP: só STL/3MF/OBJ (até 300 MB) e PNG/JPG (até 25 MB, 40 MP).
+    O SQL confere se algum bucket do Storage está público ou sem limite.
+
+17. Respostas de API enxutas .............................. OK
+    As consultas pedem só as colunas necessárias; o servidor de IA devolve
+    só id, estado e o arquivo.
+
+18. Cabeçalhos de segurança ............................... CORRIGIDO
+    site/_headers (Cloudflare) agora tem: Content-Security-Policy (só
+    carrega script do próprio site; fala só com o Supabase), HSTS,
+    Cross-Origin-Opener-Policy, Permissions-Policy (sem câmera, microfone,
+    localização), além dos que já tinha (X-Frame-Options, nosniff, Referrer).
+    Teste: o site servido com esses cabeçalhos abre as 15 abas, gera PDF,
+    modo escuro, Estúdio 3D, gerador de chaveiro e exportar SEM bloqueio; e
+    script de outro site é BLOQUEADO.
+    Limite: a CSP ainda precisa de 'unsafe-inline' (62 botões com onclick no
+    HTML) e 'unsafe-eval' (o motor 3D). Tirar isso = reescrever essas partes.
+
+19. Forçar HTTPS .......................................... CORRIGIDO
+    O Cloudflare Pages já só serve HTTPS; agora também HSTS (1 ano) e
+    upgrade-insecure-requests. Se usar domínio próprio, ligue "Always Use
+    HTTPS" no Cloudflare.
+
+20. Scan de dependências .................................. CORRIGIDO
+    A biblioteca de PDF embutida era html2pdf 0.10.1, com jsPDF 2.3.1 e
+    DOMPurify 2.3.0 dentro: 2 falhas críticas e 1 alta conhecidas. Trocada
+    por html2pdf 0.14.0 + jsPDF 4.2.1 + DOMPurify 3.4.16 (nenhuma conhecida),
+    gerada pelo tools/pdf.mjs. Os PDFs saem iguais (orçamento, venda e
+    relatório: mesmas páginas, mesmo tamanho, mesmo conteúdo).
+    Supabase no site: 2.57.4, sem falha conhecida. npm audit: 0.
+    Servidor de IA (Python): as versões mínimas permitiam Pillow e Starlette
+    com falhas; pisos subidos (Pillow 12.3, Starlette 1.3.1): 0 conhecidas.
+    Não auditado: os extras de GPU (PyTorch/Hunyuan), que não instalei aqui.
+
+ARQUIVOS DESTA PASTA
+  verificar-supabase.html   teste de fora (visitante e vendedor)
+  auditoria-supabase.sql    teste de dentro (SQL Editor, só leitura)
+  LEIA-ME-SEGURANCA.txt     este arquivo

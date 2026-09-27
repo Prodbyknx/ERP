@@ -46,4 +46,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(im
   // laboratório Fotos -> 3D: só vai no pacote de teste
   const l = await construir({ minificar: !dev, entrada: 'src/estudio3d/lab/fotos3d.js', saida: 'teste/laboratorio-fotos-3d.js' });
   console.log('gerado', path.relative(raiz, l.destino), (l.bytes / 1024 / 1024).toFixed(2) + ' MB');
+  // biblioteca de PDF (html2pdf + jsPDF + DOMPurify) nas versões do package.json
+  const { construirPDF } = await import('./pdf.mjs');
+  const p = await construirPDF();
+  console.log('gerado', path.relative(raiz, p.saida), (p.bytes / 1024).toFixed(0) + ' KB', '(' + p.libs.join(', ') + ')');
 }

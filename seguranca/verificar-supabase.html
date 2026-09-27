@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verificar segurança do Supabase — 144 Lab</title>
+<style>
+  :root { --bg:#f6f4ef; --card:#fff; --ink:#17140f; --dim:#6b665c; --line:#e3ded3; --ok:#15803d; --warn:#b45309; --bad:#b91c1c; --info:#1d4ed8; --acc:#e8590c; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141210; --card:#1e1b17; --ink:#f3efe7; --dim:#a39d91; --line:#34302a; --ok:#4ade80; --warn:#fbbf24; --bad:#f87171; --info:#93c5fd; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width:900px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:16px; margin:0 0 10px; }
+  p { margin:0 0 10px; color:var(--dim); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin:16px 0; }
+  label { display:block; font-size:13px; color:var(--dim); margin:8px 0 4px; }
+  input { width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink); font:inherit; }
+  .linha { display:grid; grid-template-columns:1fr 1fr; gap:10px; } @media (max-width:600px) { .linha { grid-template-columns:1fr; } }
+  button { margin-top:12px; padding:10px 16px; border:0; border-radius:8px; background:var(--acc); color:#fff; font:600 15px system-ui, sans-serif; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  td { padding:8px 6px; border-top:1px solid var(--line); vertical-align:top; }
+  td.st { font-weight:700; white-space:nowrap; width:1%; }
+  .FALHA { color:var(--bad); } .ATENCAO { color:var(--warn); } .OK { color:var(--ok); } .INFO { color:var(--info); }
+  #resumo { font-weight:600; margin-top:10px; }
+  code { font-size:13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Verificar a segurança do Supabase</h1>
+  <p>Esta página testa o seu projeto do Supabase <b>de fora</b>, do jeito que um estranho testaria: só com o endereço e a chave pública que já estão no site. Os testes sem login <b>só leem</b>. Nada é apagado nem alterado.</p>
+
+  <div class="card">
+    <h2>1. Teste sem login (visitante)</h2>
+    <label for="url">Endereço do projeto (Project URL)</label>
+    <input id="url" value="__SUPABASE_URL__" autocomplete="off" spellcheck="false">
+    <label for="chave">Chave pública (publishable / anon) — a mesma do config.js do site</label>
+    <input id="chave" value="__SUPABASE_CHAVE__" autocomplete="off" spellcheck="false">
+    <button id="testar">Verificar</button>
+  </div>
+
+  <div class="card">
+    <h2>2. Teste com uma conta de VENDEDOR (opcional)</h2>
+    <p>Entre com uma conta que <b>não</b> é administradora. A página tenta coisas que um vendedor não pode fazer, mas de um jeito que não muda nada: grava no seu perfil o mesmo valor que já está lá e pede pra apagar um usuário que não existe. Se o servidor aceitar, é falha.</p>
+    <div class="linha">
+      <div><label for="email">E-mail do vendedor</label><input id="email" type="email" autocomplete="off"></div>
+      <div><label for="senha">Senha</label><input id="senha" type="password" autocomplete="off"></div>
+    </div>
+    <button id="testar_login">Verificar com esta conta</button>
+  </div>
+
+  <div class="card">
+    <h2>Resultado</h2>
+    <table><tbody id="res"><tr><td>Clique em Verificar.</td></tr></tbody></table>
+    <div id="resumo"></div>
+  </div>
+  <p>Depois rode também o <code>auditoria-supabase.sql</code> (SQL Editor do Supabase): ele olha por dentro o que esta página não enxerga de fora.</p>
+</main>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var NADA = '00000000-0000-0000-0000-000000000000';
+
+  function linha(status, item, detalhe) {
+    var tr = document.createElement('tr');
+    var a = document.createElement('td'); a.className = 'st ' + status.replace('Ç', 'C').replace('Ã', 'A'); a.textContent = status;
+    var b = document.createElement('td'); var s = document.createElement('b'); s.textContent = item; b.appendChild(s);
+    b.appendChild(document.createElement('br')); b.appendChild(document.createTextNode(detalhe));
+    tr.appendChild(a); tr.appendChild(b); $('res').appendChild(tr);
+    return status;
+  }
+  function base() { return $('url').value.trim().replace(/\/+$/, ''); }
+  function cab(token, extra) {
+    var h = { apikey: $('chave').value.trim() };
+    if (token) h.Authorization = 'Bearer ' + token;
+    for (var k in extra || {}) h[k] = extra[k];
+    return h;
+  }
+  // devolve { status, json, texto } ou { erro } (rede/CORS)
+  async function pedir(caminho, opt) {
+    try {
+      var r = await fetch(base() + caminho, opt);
+      var texto = await r.text(), json = null;
+      try { json = JSON.parse(texto); } catch (e) { }
+      return { status: r.status, json: json, texto: texto.slice(0, 200) };
+    } catch (e) { return { erro: String(e && e.message || e) }; }
+  }
+  function resumo(lista) {
+    var n = function (s) { return lista.filter(function (x) { return x === s; }).length; };
+    $('resumo').textContent = n('FALHA') + ' falha(s), ' + n('ATENÇÃO') + ' ponto(s) de atenção, ' + n('OK') + ' ok.';
+    $('resumo').className = n('FALHA') ? 'FALHA' : n('ATENÇÃO') ? 'ATENCAO' : 'OK';
+  }
+  function jwt(t) { try { return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch (e) { return null; } }
+
+  async function tabela(nome, token) {
+    var r = await pedir('/rest/v1/' + nome + '?select=*&limit=3', { headers: cab(token) });
+    var quem = token ? 'um vendedor' : 'um visitante sem login';
+    if (r.erro) return linha('ATENÇÃO', 'Tabela ' + nome, 'Não consegui perguntar (' + r.erro + ').');
+    if (r.status === 200 && Array.isArray(r.json) && r.json.length) return token
+      ? linha('INFO', 'Tabela ' + nome, 'Vendedor logado lê esta tabela (' + r.json.length + '+ linhas). Esperado num sistema da mesma empresa.')
+      : linha('FALHA', 'Tabela ' + nome + ' (itens 4 e 15)', 'Um visitante SEM LOGIN leu dados desta tabela. Ligue o RLS e crie políticas só para usuário logado.');
+    if (r.status === 200) return linha('OK', 'Tabela ' + nome, 'Resposta vazia para ' + quem + ': o RLS escondeu os dados.');
+    if (r.status === 401 || r.status === 403 || r.status === 404) return linha('OK', 'Tabela ' + nome, 'Recusado para ' + quem + ' (HTTP ' + r.status + ').');
+    return linha('ATENÇÃO', 'Tabela ' + nome, 'Resposta inesperada HTTP ' + r.status + ': ' + (r.texto || ''));
+  }
+
+  async function semLogin() {
+    var st = [], chave = $('chave').value.trim();
+    // chave: tem que ser a pública
+    var p = jwt(chave);
+    if (/^sb_secret_/.test(chave) || (p && p.role === 'service_role')) st.push(linha('FALHA', 'Chave do site (itens 1 e 3)', 'Esta é a chave SECRETA (service_role). Ela passa por cima de todo o RLS. Tire do site e gere uma nova no painel (Settings > API Keys).'));
+    else if (/^sb_publishable_/.test(chave) || (p && p.role === 'anon')) st.push(linha('OK', 'Chave do site (itens 1 e 3)', 'É a chave pública (publishable/anon). Pode ficar no site, desde que o RLS esteja certo.'));
+    else st.push(linha('ATENÇÃO', 'Chave do site', 'Não reconheci o formato da chave.'));
+
+    // cadastro aberto?
+    var s = await pedir('/auth/v1/settings', { headers: cab() });
+    if (s.erro || !s.json) st.push(linha('ATENÇÃO', 'Cadastro público (itens 6 e 12)', 'Não consegui ler a configuração de login (' + (s.erro || 'HTTP ' + s.status) + '). Confira no painel: Authentication > Sign In / Providers > "Allow new users to sign up" desligado.'));
+    else if (s.json.disable_signup) st.push(linha('OK', 'Cadastro público (itens 6 e 12)', 'Desligado: só o administrador cria contas (pela tela Usuários).'));
+    else st.push(linha('FALHA', 'Cadastro público (itens 6 e 12)', 'LIGADO: qualquer pessoa cria uma conta' + (s.json.mailer_autoconfirm ? ' (sem confirmar e-mail)' : '') + ' e, logada, passa a ver os dados da empresa. Desligue em Authentication > Sign In / Providers > "Allow new users to sign up".'));
+
+    for (var t of ['erp_records', 'erp_deleted', 'profiles']) st.push(await tabela(t));
+
+    // função de leitura das mudanças
+    var c = await pedir('/rest/v1/rpc/erp_changes', { method: 'POST', headers: cab(null, { 'Content-Type': 'application/json' }), body: JSON.stringify({ since_revision: 0 }) });
+    if (c.erro) st.push(linha('ATENÇÃO', 'Função erp_changes', 'Não consegui perguntar (' + c.erro + ').'));
+    else if (c.status >= 200 && c.status < 300) st.push(linha('FALHA', 'Função erp_changes (itens 6 e 7)', 'Um visitante SEM LOGIN recebeu as mudanças do sistema. A função precisa recusar quem não está logado e: revoke execute on function public.erp_changes from anon, public;'));
+    else st.push(linha('OK', 'Função erp_changes', 'Recusada para visitante (HTTP ' + c.status + ').'));
+
+    // arquivos
+    var b = await pedir('/storage/v1/bucket', { headers: cab() });
+    if (!b.erro && b.status === 200 && Array.isArray(b.json) && b.json.length) st.push(linha('ATENÇÃO', 'Storage (item 16)', 'Um visitante lista ' + b.json.length + ' bucket(s): ' + b.json.map(function (x) { return x.id + (x.public ? ' (PÚBLICO)' : ''); }).join(', ') + '.'));
+    else if (!b.erro) st.push(linha('OK', 'Storage (item 16)', 'Visitante não lista buckets (HTTP ' + b.status + ').'));
+
+    // função de usuários sem login
+    var u = await pedir('/functions/v1/erp-users', { method: 'POST', headers: cab(null, { 'Content-Type': 'application/json' }), body: JSON.stringify({ action: 'delete', id: NADA }) });
+    if (u.erro) st.push(linha('INFO', 'Função erp-users', 'O navegador não deixou testar daqui (bloqueio de origem, normal para página aberta do disco). Use o teste com a conta de vendedor ou confira no painel que a função exige login (Verify JWT ligado).'));
+    else if (u.status === 401 || u.status === 403) st.push(linha('OK', 'Função erp-users (item 6)', 'Recusada sem login (HTTP ' + u.status + ').'));
+    else st.push(linha('FALHA', 'Função erp-users (item 6)', 'Sem login, a função respondeu HTTP ' + u.status + ' em vez de recusar: ' + (u.texto || '') + '. Ela precisa conferir o login E que quem chamou é ADMIN.'));
+    return st;
+  }
+
+  async function comLogin() {
+    var st = [];
+    var r = await pedir('/auth/v1/token?grant_type=password', { method: 'POST', headers: cab(null, { 'Content-Type': 'application/json' }), body: JSON.stringify({ email: $('email').value.trim(), password: $('senha').value }) });
+    $('senha').value = '';
+    if (r.erro || !r.json || !r.json.access_token) { st.push(linha('ATENÇÃO', 'Login do vendedor', 'Não entrou: ' + (r.erro || (r.json && (r.json.error_description || r.json.msg)) || 'HTTP ' + r.status))); return st; }
+    var token = r.json.access_token, uid = (jwt(token) || {}).sub;
+    try {
+      var p = await pedir('/rest/v1/profiles?select=id,perfil&id=eq.' + encodeURIComponent(uid), { headers: cab(token) });
+      var perfil = p.json && p.json[0] && p.json[0].perfil;
+      if (!perfil) { st.push(linha('ATENÇÃO', 'Perfil do vendedor', 'Esta conta não tem perfil no sistema.')); return st; }
+      if (perfil === 'ADMIN') { st.push(linha('ATENÇÃO', 'Conta usada', 'Esta conta é ADMIN — use uma conta de vendedor para este teste.')); return st; }
+      st.push(linha('INFO', 'Conta usada', 'Perfil ' + perfil + '.'));
+
+      for (var t of ['erp_records', 'profiles']) st.push(await tabela(t, token));
+
+      // mass assignment: grava o MESMO perfil (não muda nada)
+      var m = await pedir('/rest/v1/profiles?id=eq.' + encodeURIComponent(uid), { method: 'PATCH', headers: cab(token, { 'Content-Type': 'application/json', Prefer: 'return=representation' }), body: JSON.stringify({ perfil: perfil }) });
+      if (!m.erro && m.status >= 200 && m.status < 300 && Array.isArray(m.json) && m.json.length) st.push(linha('FALHA', 'Virar ADMIN sozinho (item 8)', 'O servidor aceitou que o vendedor grave o próprio campo "perfil" (gravei o mesmo valor, nada mudou). Trocando para ADMIN, ele viraria administrador. Corrija: revoke update (perfil) on public.profiles from authenticated;'));
+      else st.push(linha('OK', 'Virar ADMIN sozinho (item 8)', 'O servidor não deixa o vendedor gravar o campo "perfil" (' + (m.erro || 'HTTP ' + m.status + (Array.isArray(m.json) ? ', 0 linhas' : '')) + ').'));
+
+      // função de usuários: pedido de ADMIN vindo de vendedor (usuário que não existe)
+      var u = await pedir('/functions/v1/erp-users', { method: 'POST', headers: cab(token, { 'Content-Type': 'application/json' }), body: JSON.stringify({ action: 'delete', id: NADA }) });
+      if (u.erro) st.push(linha('INFO', 'Função erp-users com vendedor', 'O navegador não deixou testar daqui (' + u.erro + '). Confira no código da função que ela recusa quem não é ADMIN.'));
+      else if (u.status === 401 || u.status === 403 || /admin/i.test(u.texto || '')) st.push(linha('OK', 'Função erp-users com vendedor (item 6)', 'Recusou o pedido de administrador (HTTP ' + u.status + ').'));
+      else st.push(linha('FALHA', 'Função erp-users com vendedor (item 6)', 'Não recusou por falta de permissão (HTTP ' + u.status + ': ' + (u.texto || '') + '). Um vendedor pode criar, apagar ou promover usuários. A função precisa conferir perfil = ADMIN no servidor.'));
+    } finally {
+      await pedir('/auth/v1/logout', { method: 'POST', headers: cab(token) });
+    }
+    return st;
+  }
+
+  async function rodar(qual, botao) {
+    if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(base()) && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(base())) { alert('Endereço do projeto inválido (ex.: https://abcd.supabase.co).'); return; }
+    $('res').textContent = ''; $('resumo').textContent = 'Verificando…'; botao.disabled = true;
+    try { resumo(await qual()); } catch (e) { linha('ATENÇÃO', 'Erro', String(e && e.message || e)); $('resumo').textContent = ''; }
+    finally { botao.disabled = false; }
+  }
+  $('testar').onclick = function () { rodar(semLogin, this); };
+  $('testar_login').onclick = function () { rodar(comLogin, this); };
+})();
+</script>
+</body>
+</html>
