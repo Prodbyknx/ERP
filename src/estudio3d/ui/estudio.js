@@ -232,6 +232,8 @@ export class Estudio {
     const d1 = this.secoes.diagnostico.el;
     if (d1.open) this.mostrarCabecalho('diag');
     this.abrirFerramenta(this.cena.objetos.length ? 'diag' : 'inicio');
+    // botão direito no Estúdio: menu do sistema (quando o ERP oferece; o laboratório não tem)
+    if (window.MenuContexto) window.MenuContexto.registrar(this.raiz, ev => this.menuDaArea(ev));
   }
 
   /* ------------------------------------------------------------ trilho / painel */
@@ -394,6 +396,7 @@ export class Estudio {
     cv.addEventListener('pointerup', ev => { if (soltarCorte(ev)) ev.stopImmediatePropagation(); }, true);
     cv.addEventListener('pointerdown', ev => {
       ini = { x: ev.clientX, y: ev.clientY, b: ev.button };
+      if (ev.button === 2) this._direitoEm = performance.now();
       // Desenhar: pegar um ponto já marcado pra arrastar
       if (ev.button === 0 && this.ferramenta === 'desenhar' && !this.previaAtiva && this.secoes.desenhar.segurar(ev)) {
         this.arrastandoPonto = true;
@@ -439,11 +442,18 @@ export class Estudio {
       if (!ini) return;
       const moveu = Math.hypot(ev.clientX - ini.x, ev.clientY - ini.y);
       if (moveu < 5 && ini.b === 0 && !this.visor.gizmo.dragging) this.clique(ev);
+      // botão direito sem arrastar (arrastar com ele move a câmera): menu do Estúdio
+      else if (moveu < 5 && ini.b === 2) this.abrirMenuContexto(ev);
       ini = null;
     };
     cv.addEventListener('pointerup', fim);
     cv.addEventListener('pointerleave', () => { const pin = this.alvoPincel(); if (pin) pin.cursorPincel(null); });
-    cv.addEventListener('contextmenu', ev => ev.preventDefault());
+    cv.addEventListener('contextmenu', ev => {
+      ev.preventDefault();
+      // clique direito do mouse: o menu abre ao SOLTAR (acima), igual em Windows, Mac e Linux
+      if (this._direitoEm && performance.now() - this._direitoEm < 5000) { this._direitoEm = 0; return; }
+      this.abrirMenuContexto(ev);   // tecla Menu / Shift+F10, ou Ctrl+clique no Mac
+    });
     // arrastar arquivo
     const p = this.palco;
     ['dragenter', 'dragover'].forEach(e => p.addEventListener(e, ev => { ev.preventDefault(); p.classList.add('sobre'); }));
@@ -650,7 +660,7 @@ export class Estudio {
     p.appendChild(lista);
     if (!this.cena.objetos.length) return;
     for (const o of this.cena.objetos) {
-      const box = el('div', { class: 'e3d-obj' + (o.id === sel.objeto ? ' sel' : this.cena.multi.includes(o.id) ? ' multi' : '') + (o.papel === 'furo' ? ' furo' : '') });
+      const box = el('div', { class: 'e3d-obj' + (o.id === sel.objeto ? ' sel' : this.cena.multi.includes(o.id) ? ' multi' : '') + (o.papel === 'furo' ? ' furo' : ''), 'data-obj': o.id });
       const c = this.cena.caixaExata(o);
       const cabO = el('div', { class: 'e3d-obj-cab', title: 'Clique pra escolher · duplo clique renomeia' },
         o.papel === 'furo' ? el('span', { class: 'e3d-tag-furo', title: 'Furo: tira material de quem atravessa' }, 'furo') : el('span', { class: 'e3d-bola', style: 'background:' + (o.partes[0] ? o.partes[0].cor : '#999') }),
@@ -999,6 +1009,66 @@ export class Estudio {
     if (!o || o.papel === 'furo') return;
     const f = this.furados.get(o.id);
     if (f && f.chave === this.chaveFuros(o) && f.malhas.size) this.aplicarFurosAgora([o.id]);
+  }
+
+  /* ------------------------------------------------------------ menu do botão direito */
+  // No 3D: em cima de uma peça, ela é escolhida e o menu mostra o que fazer com ela;
+  // no vazio, as ações da cena. As ações são as mesmas dos botões e atalhos.
+  abrirMenuContexto(ev) {
+    const M = window.MenuContexto;
+    if (!M || this.previaAtiva) return;
+    const teclado = M.porTeclado ? M.porTeclado() : !ev.clientX && !ev.clientY;
+    const hit = teclado ? null : this.visor.intersectar(ev);
+    if (hit && !this.cena.objetosSel().some(o => o.id === hit.objeto)) this.cena.selecionar(hit.objeto, hit.parte);
+    const r = this.visor.renderer.domElement.getBoundingClientRect();
+    const deObjeto = hit || (teclado && this.cena.objetoSel());
+    M.abrir(deObjeto ? this.itensObjeto() : this.itensCena(), teclado ? r.left + r.width / 2 : ev.clientX, teclado ? r.top + r.height / 2 : ev.clientY, { teclado });
+  }
+  // fora do 3D (lista de objetos, painel): a lista mostra o menu da peça; o resto, o da cena
+  menuDaArea(ev) {
+    if (ev.target === this.visor.renderer.domElement) return 'proprio';
+    if (this.previaAtiva) return [];
+    const linha = ev.target.closest && ev.target.closest('.e3d-obj[data-obj]');
+    if (linha) {
+      const o = this.cena.objetos.find(x => String(x.id) === linha.dataset.obj);
+      if (o && !this.cena.objetosSel().includes(o)) this.cena.selecionar(o.id, o.partes.length === 1 ? o.partes[0].id : null);
+      return this.itensObjeto();
+    }
+    return this.itensCena();
+  }
+  itensObjeto() {
+    const sel = this.cena.objetosSel(), o = this.cena.objetoSel(), varios = sel.length > 1;
+    if (!sel.length) return this.itensCena();
+    return [
+      { rot: 'Duplicar', atalho: 'Ctrl+D', fn: () => this.duplicarSelecao() },
+      { rot: 'Renomear…', desativado: varios || !o, fn: () => this.renomear(o) },
+      { rot: 'Esconder', fn: () => this.cena.aplicar(varios ? 'Esconder ' + sel.length + ' peças' : 'Esconder objeto', () => { sel.forEach(x => { x.visivel = false; }); }) },
+      { rot: 'Enquadrar', atalho: 'F', fn: () => this.enquadrar() },
+      '-',
+      ...(varios ? [{ rot: 'Unir em uma peça', fn: () => this.combinarSelecao('unir') }] : []),
+      { rot: 'Cortar com encaixe…', desativado: varios, fn: () => this.abrirFerramenta('corte') },
+      { rot: 'Separar um detalhe…', desativado: varios, fn: () => this.abrirFerramenta('sep') },
+      { rot: 'Separar por cor…', desativado: varios, fn: () => this.executarTarefa('porCor') },
+      { rot: 'Cor e medidas…', desativado: varios, fn: () => this.abrirFerramenta('transf') },
+      { rot: 'Preparar pra imprimir', fn: () => prepararParaImpressao(this) },
+      '-',
+      { rot: varios ? 'Excluir ' + sel.length + ' peças' : 'Excluir', atalho: 'Delete', perigo: true, fn: () => this.removerSelecao() }
+    ];
+  }
+  itensCena() {
+    const tem = this.cena.objetos.length > 0, escondidos = this.cena.objetos.filter(o => !o.visivel);
+    return [
+      { rot: 'Desfazer', atalho: 'Ctrl+Z', desativado: !this.cena.podeDesfazer(), fn: () => this.desfazer() },
+      { rot: 'Refazer', atalho: 'Ctrl+Y', desativado: !this.cena.podeRefazer(), fn: () => this.refazer() },
+      '-',
+      { rot: 'Selecionar tudo', atalho: 'Ctrl+A', desativado: !tem, fn: () => this.cena.selecionarTodos() },
+      { rot: 'Enquadrar tudo', atalho: 'F', desativado: !tem, fn: () => { this.cena.selecionar(null, null); this.enquadrar(); } },
+      ...(escondidos.length ? [{ rot: 'Mostrar ' + (escondidos.length > 1 ? 'as ' + escondidos.length + ' escondidas' : 'a peça escondida'), fn: () => this.cena.aplicar('Mostrar peças', () => { escondidos.forEach(x => { x.visivel = true; }); }) }] : []),
+      { rot: 'Organizar mesa', desativado: !tem, fn: () => this.organizarMesa() },
+      '-',
+      { rot: 'Adicionar forma…', fn: () => this.abrirFerramenta('formas') },
+      { rot: 'Abrir arquivo…', fn: () => this.inputArquivo.click() }
+    ];
   }
 
   desfazer() { if (this.previaAtiva) this.cancelarPrevia(); const r = this.cena.desfazer(); if (r) avisar('Desfeito: ' + r); }

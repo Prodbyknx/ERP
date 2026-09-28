@@ -512,6 +512,8 @@ async function main() {
   await secaoSupabaseKit({ b, novaPagina, passo, pagina: path.join(teste, 'seguranca', 'verificar-supabase.html'), empacotada: true });
   const { secaoNuvem } = await import('./nuvem.mjs');
   await secaoNuvem({ chromium, passo });
+  const { secaoMenu } = await import('./menu.mjs');
+  await secaoMenu({ b, teste, novaPagina, passo, abrirEstudio, abrirSecao });
 
   console.log('8) separar a mão do boneco (STL cru, com furos) pelo corte de uma parte');
   pg = await novaPagina(b);

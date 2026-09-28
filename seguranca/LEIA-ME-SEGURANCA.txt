@@ -98,9 +98,9 @@ OS 20 ITENS
 
 12. Proteção contra bots .................................. CONFERIR (painel)
     O principal é o cadastro público DESLIGADO (a página confere). CAPTCHA
-    (Cloudflare Turnstile) no login exige mudar o cloud.js, que eu não mexo
-    sem você pedir. Com cadastro fechado + limite de tentativas, dá pra
-    lançar; se quiser o CAPTCHA, me peça.
+    (Cloudflare Turnstile) no login exige mudar a tela de login no cloud.js
+    e ligar no painel do Supabase. Com cadastro fechado + limite de
+    tentativas, dá pra lançar; se quiser o CAPTCHA, me peça.
 
 13. Queries parametrizadas ................................ OK
     O site não monta SQL com texto: todas as consultas passam pela
@@ -121,7 +121,12 @@ OS 20 ITENS
     (corrigido). O tempo real só entrega o que o RLS deixa (o SQL confere).
     Obs.: o cloud.js expõe funções internas (Cloud._test) no navegador. Elas
     só fazem o que o próprio usuário logado já pode — quem manda é o
-    servidor (itens 4, 6 e 8). Não mexi no cloud.js.
+    servidor (itens 4, 6 e 8).
+    Atualização: o cloud.js agora não faz nenhuma chamada sem a sua sessão
+    (antes, com a sessão encerrada, saíam chamadas anônimas que o banco
+    recusava com 401) e o menu do botão direito do sistema substitui o do
+    navegador dentro da aplicação — o que NÃO é proteção: o DevTools
+    continua acessível pelo navegador; quem protege os dados é o servidor.
 
 16. Restringir uploads .................................... CORRIGIDO
     O ERP não sobe arquivo pro Supabase (a foto do produto vira uma imagem

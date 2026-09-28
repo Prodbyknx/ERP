@@ -188,6 +188,15 @@ COMO A TELA É ORGANIZADA
   Girar: arrastar · Mover a vista: botão direito · Zoom: rodinha
   F enquadra · G R S mover/girar/escalar · Ctrl+Z / Ctrl+Y · Esc volta
 
+  BOTÃO DIREITO (clicar sem arrastar; arrastar continua movendo a vista)
+    Em cima de uma peça: ela é escolhida e aparecem Duplicar, Renomear,
+    Esconder, Enquadrar, Cortar com encaixe, Separar um detalhe, Separar
+    por cor, Cor e medidas, Preparar pra imprimir e Excluir (com várias
+    peças escolhidas: Unir em uma peça).
+    No vazio: Desfazer, Refazer, Selecionar tudo, Enquadrar tudo, Mostrar
+    as peças escondidas, Organizar mesa, Adicionar forma, Abrir arquivo.
+    Na lista de Objetos: o menu da peça daquela linha.
+
 AS TAREFAS (trilho da esquerda)
 
 INÍCIO — "O que você quer fazer?"
@@ -448,7 +457,8 @@ CHECKLIST DA VERSÃO 8 — auditoria geral + curva 3D, editar, vincar, quina
                  abas e dados IDÊNTICOS, antes e depois de usar o Estúdio;
                  o teste pega até 0,1% de diferença num preço (conferido
                  plantando o erro de propósito). Arquivos de produção
-                 cloud.js, config.js e _headers iguais ao original; o
+                 config.js igual ao original (cloud.js mudou só na sessão
+                 e no tempo real — ver NUVEM); o
                  Estúdio só carrega quando é aberto; CSS só no Estúdio
    QUINA         texto da frente pro topo da caixa: volume 102 (teórico
                  102), 1 mm nas duas faces; degrau (quina pra dentro):
@@ -567,6 +577,27 @@ MATRIZ DE MATURIDADE (evidência = teste que roda, não impressão)
    Abrir/Analisar    sim                      —                           1 milhão: 0,3 s /     PRONTA
                                                                           3,3 s
    Nenhuma ferramenta QUEBRADA conhecida. INCOMPLETAS: ver "O que ainda não faz".
+
+BOTÃO DIREITO NO SISTEMA
+   Dentro do sistema o botão direito abre o menu do SISTEMA (Voltar pra
+   aba anterior, Atualizar visualização, Modo claro/escuro; no Estúdio,
+   as ações da peça ou da cena). Campo de texto, texto selecionado e
+   link continuam com o menu do navegador (copiar, colar, abrir link).
+   Teclado: tecla Menu ou Shift+F10 abre, setas escolhem, Enter executa,
+   Esc fecha e volta pro lugar. Não é proteção: quem protege os dados é
+   o servidor (login + RLS), não esconder o "Inspecionar".
+
+NUVEM (SUPABASE)
+   Nenhuma chamada sai sem a sua sessão: se a sessão acabar no servidor,
+   a sincronização para e aparece "Sessão encerrada" (antes saíam chamadas
+   anônimas, recusadas com erro 401, a cada foco e a cada 5 min). Uma
+   gravação pendente nessa hora fica guardada e volta depois de entrar.
+   Tempo real: o canal agora entra com o seu login, então mudanças de
+   outro computador chegam na hora. Ao sair da página a conexão fecha e,
+   ao voltar (botão voltar do navegador), reabre uma vez e sincroniza —
+   sem o aviso "Page entered Back-Forward Cache" e sem recarregar tudo.
+   Testado com um Supabase de mentira (tests/e2e/nuvem.mjs): 1 conexão e
+   1 canal sempre, 1 consulta por volta, memória estável em 30 voltas.
 
 MCP DO 144 LAB (Claude usando as ferramentas no seu computador)
    Pacote separado: dist/144lab-mcp.zip (NÃO sobe pro Cloudflare).

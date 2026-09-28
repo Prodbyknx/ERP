@@ -346,6 +346,18 @@ let currentQuoteToSale = null;   // orçamento aguardando escolha de pagamento
 /* ---------- navegação por abas ---------- */
 let previousTab = null;   // {g,t} da ÚNICA aba anterior — sempre SUBSTITUI, nunca empilha
 let isGoingBack = false;
+let historicoAbas = [], voltandoAba = false;   // abas visitadas, para o "Voltar" do botão direito
+function podeVoltarAba(){ const atual = (document.querySelector('.view.active') || {}).id; return historicoAbas.some(t => 'view-'+t !== atual && tabPermitida(t)); }
+function voltarAba(){
+  const atual = (document.querySelector('.view.active') || {}).id;
+  while(historicoAbas.length){
+    const t = historicoAbas.pop();
+    if('view-'+t === atual || !tabPermitida(t)) continue;
+    voltandoAba = true;
+    try{ showTab(t); } finally{ voltandoAba = false; }
+    return;
+  }
+}
 
 function pushHistory() {
   if (isGoingBack) return;
@@ -443,6 +455,9 @@ function showGroup(gid){ showTab(primeiraTab(gid)); }
 function showTab(tid){
   // Bloqueio de segurança extra (evita acesso forçado via console)
   if(!tabPermitida(tid)) return;
+  // histórico das abas (o "Voltar" do botão direito)
+  const abaAtual = document.querySelector('.view.active');
+  if(!voltandoAba && abaAtual && abaAtual.id !== 'view-'+tid){ historicoAbas.push(abaAtual.id.slice(5)); if(historicoAbas.length > 20) historicoAbas.shift(); }
 
   $('nav-subtabs').querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.t===tid));
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
@@ -2309,6 +2324,129 @@ function abrirMenuMais(botao, q){
     window.addEventListener('resize', fecharMenuMais);
   }, 0);
 }
+
+/* ---------- menu do botão direito (do sistema, no lugar do menu do navegador) ----------
+   Dentro da aplicação o botão direito abre ESTE menu, com as ações do lugar clicado
+   (o do navegador, com "Inspecionar", não aparece). Não é segurança: as ferramentas do
+   navegador continuam acessíveis e a proteção dos dados é no servidor (login + RLS).
+   Campo de texto, texto selecionado e link mantêm o menu do navegador (copiar, colar,
+   abrir link). Um único ouvinte fica ligado; os de teclado, clique fora, rolagem e
+   redimensionar só existem enquanto o menu está aberto.
+   Uma área com menu próprio se registra: MenuContexto.registrar(raiz, fn), com
+   fn(evento) devolvendo os itens, 'proprio' (a área abre o menu sozinha) ou null
+   (vale o menu da área de fora). Item: { rot, fn, atalho?, desativado?, perigo? } ou '-'. */
+const MenuContexto = (() => {
+  const areas = [];
+  let aberto = null;   // { el, antes }
+  // pela tecla Menu / Shift+F10 o navegador manda a posição do elemento em foco, não 0,0:
+  // o que diferencia é não ter havido clique/toque logo antes
+  let ultimoPonteiro = -1e9;
+  const marcarPonteiro = () => { ultimoPonteiro = performance.now(); };
+  document.addEventListener('pointerdown', marcarPonteiro, { capture: true, passive: true });
+  document.addEventListener('pointerup', marcarPonteiro, { capture: true, passive: true });
+  const porTeclado = () => performance.now() - ultimoPonteiro > 600;
+  const nativo = alvo => !!alvo.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"], a[href], [data-menu-nativo]') ||
+    (() => { const s = window.getSelection(); return !!(s && !s.isCollapsed && String(s).trim() && s.containsNode(alvo, true)); })();
+  function fechar(devolverFoco){
+    if(!aberto) return;
+    const { el, antes } = aberto;
+    aberto = null;
+    document.removeEventListener('pointerdown', foraDoMenu, true);
+    document.removeEventListener('keydown', teclado, true);
+    document.removeEventListener('scroll', aoRolar, true);
+    window.removeEventListener('resize', fecharSemFoco);
+    window.removeEventListener('blur', fecharSemFoco);
+    el.remove();
+    if(devolverFoco && antes && antes.isConnected){ try{ antes.focus({ preventScroll:true }); }catch(e){} }
+  }
+  const fecharSemFoco = () => fechar(false);
+  const foraDoMenu = e => { if(aberto && !aberto.el.contains(e.target)) fechar(false); };
+  const aoRolar = e => { if(aberto && !aberto.el.contains(e.target)) fechar(false); };
+  const ativos = () => [...aberto.el.querySelectorAll('button:not([aria-disabled="true"])')];
+  function teclado(e){
+    if(!aberto) return;
+    if(e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); fechar(true); return; }
+    if(e.key === 'Tab'){ fechar(true); return; }
+    const lista = ativos(), n = lista.length, i = lista.indexOf(document.activeElement);
+    if(!n) return;
+    if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+      e.preventDefault(); e.stopPropagation();
+      const d = e.key === 'ArrowDown' ? 1 : -1;
+      lista[i < 0 ? (d > 0 ? 0 : n - 1) : (i + d + n) % n].focus();
+    } else if(e.key === 'Home' || e.key === 'End'){ e.preventDefault(); e.stopPropagation(); lista[e.key === 'Home' ? 0 : n - 1].focus(); }
+  }
+  function abrir(itens, x, y, opc = {}){
+    fechar(false);
+    // sem separador sobrando no começo, no fim ou repetido
+    itens = (itens || []).filter((it, i, a) => it !== '-' || (i > 0 && i < a.length - 1 && a[i - 1] !== '-'));
+    if(!itens.some(it => it !== '-')) return;
+    const el = document.createElement('div');
+    el.className = 'mais-pop menu-ctx';
+    el.setAttribute('role', 'menu');
+    el.tabIndex = -1;
+    for(const it of itens){
+      if(it === '-'){ const s = document.createElement('div'); s.className = 'sep'; s.setAttribute('role', 'separator'); el.appendChild(s); continue; }
+      const b = document.createElement('button');
+      b.type = 'button'; b.tabIndex = -1; b.setAttribute('role', 'menuitem');
+      if(it.perigo) b.className = 'perigo';
+      if(it.desativado) b.setAttribute('aria-disabled', 'true');
+      const r = document.createElement('span'); r.textContent = it.rot; b.appendChild(r);
+      if(it.atalho){ const a = document.createElement('span'); a.className = 'atalho'; a.textContent = it.atalho; b.appendChild(a); }
+      b.addEventListener('click', () => { if(it.desativado) return; fechar(false); try{ it.fn(); }catch(e){ console.error(e); } });
+      el.appendChild(b);
+    }
+    // em tela cheia (Estúdio) só aparece o que está dentro do elemento em tela cheia
+    (document.fullscreenElement || document.body).appendChild(el);
+    const w = el.offsetWidth, h = el.offsetHeight;
+    el.style.left = Math.max(8, Math.min(x, window.innerWidth - w - 8)) + 'px';
+    el.style.top = Math.max(8, Math.min(y, window.innerHeight - h - 8)) + 'px';
+    aberto = { el, antes: document.activeElement };
+    document.addEventListener('pointerdown', foraDoMenu, true);
+    document.addEventListener('keydown', teclado, true);
+    document.addEventListener('scroll', aoRolar, true);
+    window.addEventListener('resize', fecharSemFoco);
+    window.addEventListener('blur', fecharSemFoco);
+    // pelo teclado já entra no 1º item; pelo mouse, no menu (as setas escolhem)
+    const primeiro = ativos()[0];
+    (opc.teclado && primeiro ? primeiro : el).focus({ preventScroll:true });
+  }
+  document.addEventListener('contextmenu', ev => {
+    const alvo = ev.target;
+    if(aberto && aberto.el.contains(alvo)){ ev.preventDefault(); return; }
+    if(!(alvo instanceof Element) || nativo(alvo) || alvo.closest('[inert]')){ fechar(false); return; }
+    // a área mais de dentro responde primeiro
+    const doLugar = areas.filter(a => a.raiz.contains(alvo)).sort((a, b) => a.raiz.contains(b.raiz) ? 1 : -1);
+    for(const a of doLugar){
+      const r = a.fn(ev);
+      if(r == null) continue;
+      ev.preventDefault();
+      if(r === 'proprio') return;
+      // pela tecla Menu / Shift+F10: abre junto do elemento em foco
+      const teclado = porTeclado(), q = alvo.getBoundingClientRect();
+      abrir(r, teclado ? q.left + 8 : ev.clientX, teclado ? q.top + Math.min(q.height, 32) : ev.clientY, { teclado });
+      return;
+    }
+    fechar(false);
+  });
+  return {
+    registrar(raiz, fn){ const a = { raiz, fn }; areas.push(a); return () => { const i = areas.indexOf(a); if(i >= 0) areas.splice(i, 1); }; },
+    abrir,
+    porTeclado,
+    fechar: () => fechar(false),
+    aberto: () => !!aberto
+  };
+})();
+window.MenuContexto = MenuContexto;
+// área geral do sistema: voltar à aba anterior, redesenhar a tela e o tema
+MenuContexto.registrar($('app-wrapper'), () => {
+  const escuro = document.documentElement.getAttribute('data-tema') === 'escuro';
+  return [
+    { rot: 'Voltar', desativado: !podeVoltarAba(), fn: voltarAba },
+    { rot: 'Atualizar visualização', fn: () => atualizarTudo() },
+    '-',
+    { rot: escuro ? 'Modo claro' : 'Modo escuro', fn: () => window.alternarTema() }
+  ];
+});
 
 function renderQuoteList(){
   const el=$('q_list'), pager=$('q_list_pager');

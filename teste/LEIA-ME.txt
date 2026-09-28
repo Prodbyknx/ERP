@@ -612,12 +612,17 @@ DEPOIS DO TESTE
 Se estiver tudo certo, use a outra pasta (SUBIR-NO-CLOUDFLARE) e suba
 os 8 arquivos dela pro Cloudflare. O arquivo NOVO é o estudio3d.js —
 sem ele o Estúdio 3D não abre (o resto do sistema funciona normal).
-Os arquivos config.js, cloud.js e supabase.min.js de lá são os seus,
-sem mudança.
+Os arquivos config.js e supabase.min.js de lá são os seus, sem mudança.
 
-Nesta versão (segurança) mudaram 4 arquivos da pasta de subir:
-app.js, estudio3d.js, html2pdf.bundle.min.js (biblioteca de PDF sem as
-falhas conhecidas) e _headers (cabeçalhos de segurança). Suba os 8 de novo.
+Nesta versão (nuvem + botão direito) mudaram 4 arquivos da pasta de subir:
+  cloud.js       fim do erro 401 (nada sai sem a sua sessão), tempo real
+                 que agora entrega as mudanças ao vivo, e a conexão fecha
+                 ao sair da página e volta sozinha ao voltar (sem o aviso
+                 "Page entered Back-Forward Cache")
+  app.js         menu do botão direito do sistema
+  index.html     visual do menu (o mesmo do menu ⋯)
+  estudio3d.js   menu do botão direito no Estúdio 3D
+Suba os 8 de novo.
 
 
 SEGURANÇA (20 ITENS)

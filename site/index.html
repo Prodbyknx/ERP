@@ -509,6 +509,14 @@
   .mais-pop button.perigo{ color:var(--red) }
   .mais-pop button.perigo:hover{ background:#fef2f2 }
   .mais-pop .sep{ height:1px; background:var(--line); margin:5px 8px }
+  /* menu do botão direito: mesmo visual do menu ⋯ */
+  .menu-ctx{ z-index:25000; max-height:calc(100vh - 16px); overflow-y:auto }
+  .menu-ctx:focus, .menu-ctx:focus-visible{ outline:none }
+  .menu-ctx button{ display:flex; justify-content:space-between; align-items:center; gap:22px }
+  .menu-ctx button:focus{ outline:none; background:var(--panel-2) }
+  .menu-ctx button:focus-visible{ outline:2px solid var(--amber); outline-offset:-2px }
+  .menu-ctx button[aria-disabled="true"]{ opacity:.42; cursor:default; background:none }
+  .menu-ctx .atalho{ font:500 11px var(--mono); color:var(--ink-dim) }
   .grid2-campos{ display:grid; grid-template-columns:1fr 1fr; gap:0 14px }
   @media (max-width:560px){ .grid2-campos{ grid-template-columns:1fr } }
 
