@@ -111,7 +111,7 @@ async function gerar() {
     else { arq = v.nome + '.' + v.formato; dados = await rasterizar(svgDe(l, { trocarCor: v.trocarCor || null }), w, h, v.formato, v.qualidade || 0.9, v.fundo || null); }
     fs.writeFileSync(path.join(destino, arq), dados);
     const m = manifesto.find(x => x.nome === v.de);
-    manifesto.push({ nome: v.nome, arquivo: arq, w, h, cores: l.cores, verdade: m.verdade, escalaVerdade: k, fundo: v.fundo || null });
+    manifesto.push({ nome: v.nome, arquivo: arq, w, h, cores: l.cores, verdade: v.trocarCor ? m.verdade.map(x => ({ ...x, cor: v.trocarCor })) : m.verdade, escalaVerdade: k, fundo: v.fundo || null });
   }
   fs.writeFileSync(path.join(destino, 'logos.json'), JSON.stringify(manifesto, null, 1));
   await b.close();

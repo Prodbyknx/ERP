@@ -15,6 +15,10 @@ import { executar } from '../src/estudio3d/motor/operacoes.js';
 import { pecasDoGerador } from '../src/estudio3d/core/pecasGerador.js';
 import { validar } from '../src/estudio3d/core/validador.js';
 import { carregarManifold } from '../tests/util/manifold.mjs';
+import { analisar } from '../src/gerador/analise.js';
+import { construir } from '../src/gerador/chaveiro.js';
+import { criar } from '../src/estudio3d/core/malha.js';
+import { manifold } from '../src/estudio3d/core/solidos.js';
 
 const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pastaLogos = path.join(raiz, 'tests', 'fixtures', 'logos');
@@ -120,6 +124,35 @@ export async function rodarGeradorAtual(logo, fluxo = 'padrao', { tamanhoMM = 50
     camadas: peca.camadas.map(c => ({ cor: c.cor, grupos: c.grupos })), furo: peca.furo, escala: peca.escala };
 }
 
+// ---------- o motor NOVO (src/gerador): análise automática + geometria no Manifold
+export async function rodarMotorNovo(logo, { tamanhoMM = 50, bico = 0.4, cfg = {} } = {}) {
+  const arq = path.join(pastaLogos, logo.arquivo);
+  if (/\.svg$/.test(arq)) return { pulado: 'SVG: a tela rasteriza no navegador (no Node não há decodificador de SVG)' };
+  const img = lerImagem(new Uint8Array(fs.readFileSync(arq)), arq);
+  const tempos = {};
+  let t = performance.now();
+  const an = analisar({ px: img.px, w: img.largura, h: img.altura });
+  tempos.analise = performance.now() - t; tempos.imagem = 0;
+  if (an.erro) return { erro: an.erro, tempos };
+  t = performance.now();
+  const r = construir(an, { tamanhoMM, bicoMM: bico, ...cfg });
+  tempos.construir = performance.now() - t; tempos.solidos = 0;
+  if (r.erro) return { erro: r.erro, tempos };
+  const { CrossSection } = manifold(), { esc, tx, ty } = r.transformada;
+  const logoCS = new CrossSection(r.logoMM, 'Positive'), areaLogo = logoCS.area();
+  const camadas = [];
+  for (const v of r.vista) {
+    const c = new CrossSection(v.poligonos, 'Positive'), k = c.intersect(logoCS);
+    if (k.area() >= areaLogo * 0.01) camadas.push({ cor: hexRGB(v.cor), grupos: k.toPolygons().map(p => ({ externo: p, furos: [] })) });
+    c.delete(); k.delete();
+  }
+  logoCS.delete();
+  return { r, an, tempos, modoRec: an.modo, fatorImg: an.fatorImg, escala: esc, camadas,
+    paraImagem: ([X, Y]) => [(X - tx) / esc, -(Y - ty) / esc],
+    partes: r.partes.map(p => ({ nome: p.nome, malha: criar(Float64Array.from(p.malha.pos), p.malha.idx) })),
+    furo: r.argola ? { x: r.argola.xMM, y: r.argola.yMM, rAlca: r.argola.alcaMM / esc } : null };
+}
+
 // ---------- medidas contra o gabarito (serve pra qualquer gerador que devolva camadas em px da imagem)
 export function medir(logo, r, { bico = 0.4 } = {}) {
   const verd = logo.verdade.map(v => ({ cor: hexRGB(v.cor), m: pngMascara(path.join(pastaLogos, v.arquivo)) }));
@@ -171,19 +204,94 @@ export function medir(logo, r, { bico = 0.4 } = {}) {
   return res;
 }
 
+// ---------- medidas do motor NOVO: a peça inteira vista de cima (base + cores)
+// comparada com o gabarito DENTRO da logo verdadeira (fora dela é borda/base).
+export function medirNovo(logo, r, { bico = 0.4 } = {}) {
+  const verd = logo.verdade.map(v => ({ cor: hexRGB(v.cor), m: pngMascara(path.join(pastaLogos, v.arquivo)) }));
+  const W = verd[0].m.w, H = verd[0].m.h, n = W * H;
+  const dono = new Int8Array(n).fill(-1);
+  for (let i = 0; i < n; i++) for (let k = verd.length - 1; k >= 0; k--) if (verd[k].m.d[i]) { dono[i] = k; break; }
+  const k0 = (logo.escalaVerdade || 1) * r.fatorImg, s = 2 / k0;
+  const mapa = p => { const q = r.paraImagem(p); return [q[0] * s, q[1] * s]; };
+  // cor da peça em cada pixel (pinta na ordem: base, depois as cores)
+  const saida = new Int16Array(n).fill(-1), paleta = [];
+  for (const v of r.r.vista) {
+    const m = rasterizarGrupos(v.poligonos.map(p => ({ externo: p, furos: [] })), W, H, mapa);
+    const id = paleta.length; paleta.push(hexRGB(v.cor));
+    for (let i = 0; i < n; i++) if (m[i]) saida[i] = id;
+  }
+  const mmPorPx = r.escala / s;
+  let nSil = 0, cobre = 0, certo = 0;
+  const porCor = verd.map(() => ({ n: 0, ok: 0 }));
+  const usadas = new Map();
+  for (let i = 0; i < n; i++) {
+    const k = dono[i]; if (k < 0) continue;
+    nSil++; porCor[k].n++;
+    const o = saida[i]; if (o < 0) continue;
+    cobre++; usadas.set(o, (usadas.get(o) || 0) + 1);
+    if (deltaE(paleta[o], verd[k].cor) < 12) { certo++; porCor[k].ok++; }
+  }
+  // cores iguais no gabarito (branco do selo = branco do fundo) contam uma vez
+  const reais = []; verd.forEach(v => { if (!reais.some(c => deltaE(c, v.cor) < 3)) reais.push(v.cor); });
+  // cores achadas = as reais que a peça acertou (cor parecida cobrindo metade ou
+  // mais daquela cor) + cor sobrando (que não é de ninguém, 3% ou mais da logo)
+  const acertadas = reais.filter(c => { let tot = 0, ok = 0; verd.forEach((v, k) => { if (deltaE(v.cor, c) < 3) { tot += porCor[k].n; ok += porCor[k].ok; } }); return tot && ok >= tot * 0.5; });
+  // (a base aparecendo na beirada da letra não é cor nova: é a base; a exatidão já mede)
+  const sobrando = [...usadas].filter(([o, c]) => r.r.vista[o].nome !== 'Base' && c >= nSil * 0.03 && !reais.some(rc => deltaE(rc, paleta[o]) < 12));
+  const achadas = [...acertadas, ...sobrando.map(([o]) => paleta[o])];
+  const res = {
+    coberturaPct: 100 * cobre / nSil,
+    exatidaoPct: 100 * certo / nSil,
+    erroBordaMM: (nSil - certo) / Math.max(1, perimetroCores(dono, W, H)) * mmPorPx,
+    coresReais: reais.length, coresAchadas: achadas.length,
+    piorCorPct: Math.min(...porCor.filter(c => c.n).map(c => 100 * c.ok / c.n)),
+    deltaEMax: Math.max(...reais.map(c => Math.min(...[...usadas.keys()].map(o => deltaE(paleta[o], c)))))
+  };
+  if (r.furo) {
+    const [fx, fy] = mapa([r.furo.x, r.furo.y]), rr = r.furo.rAlca * s;
+    let dentro = 0;
+    for (let y = Math.max(0, Math.floor(fy - rr)); y < Math.min(H, Math.ceil(fy + rr)); y++) for (let x = Math.max(0, Math.floor(fx - rr)); x < Math.min(W, Math.ceil(fx + rr)); x++) if (dono[y * W + x] >= 0 && (x - fx) ** 2 + (y - fy) ** 2 <= rr * rr) dentro++;
+    res.argolaComeArtePct = 100 * dentro / nSil;
+  }
+  // traço fino (mais fino que o bico): aparece na cor certa?
+  const sil = new Uint8Array(n); for (let i = 0; i < n; i++) sil[i] = dono[i] >= 0 ? 1 : 0;
+  const rin = raioInscrito(sil, W, H), lim = (bico / 2) / mmPorPx;
+  let finos = 0, finosOk = 0;
+  for (let i = 0; i < n; i++) if (sil[i] && rin[i] <= lim) { finos++; const o = saida[i]; if (o >= 0 && deltaE(paleta[o], verd[dono[i]].cor) < 12) finosOk++; }
+  res.fracaoFinaPct = 100 * finos / nSil;
+  res.finosPreservadosPct = finos ? 100 * finosOk / finos : 100;
+  res.malha = r.partes.map(p => { const v = validar(p.malha, { completo: true }); return { nome: p.nome, tris: p.malha.idx.length / 3, fechada: v.fechada, cruzamentos: v.autoInterseccoes, degeneradas: v.facesDegeneradas, componentes: v.componentes }; });
+  res.tempos = r.tempos;
+  return res;
+}
+function perimetroCores(dono, W, H) { let p = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const v = dono[y * W + x]; if (x + 1 < W && v !== dono[y * W + x + 1]) p++; if (y + 1 < H && v !== dono[(y + 1) * W + x]) p++; } return p; }
+
 async function principal() {
   const args = process.argv.slice(2), fluxo = args.includes('--fluxo') ? args[args.indexOf('--fluxo') + 1] : 'padrao';
+  const novo = args.includes('--novo');
   const saidaJson = args.includes('--json') ? args[args.indexOf('--json') + 1] : null;
   await carregarManifold(); gerador();
   const logos = JSON.parse(fs.readFileSync(path.join(pastaLogos, 'logos.json'), 'utf8'));
   const tabela = [];
   for (const l of logos) {
-    const r = await rodarGeradorAtual(l, fluxo);
+    const r = novo ? await rodarMotorNovo(l) : await rodarGeradorAtual(l, fluxo);
     if (r.pulado || r.erro) { tabela.push({ logo: l.nome, obs: r.pulado || r.erro }); continue; }
-    tabela.push({ logo: l.nome, recorte: r.modoRec, ...medir(l, r) });
+    tabela.push({ logo: l.nome, recorte: r.modoRec, ...(novo ? medirNovo(l, r) : medir(l, r)) });
+  }
+  if (novo) {
+    const f = (v, c = 1) => v == null ? '—' : v.toFixed(c);
+    console.log('motor NOVO (dentro da logo verdadeira: cor certa em cada pixel)');
+    console.log('logo'.padEnd(26), 'recorte', 'cobre %', 'cor certa %', 'pior cor %', 'borda mm', 'cores', 'ΔE máx', 'argola %', 'finos ok %', 'malha', 'ms (análise+construir)', 'tris');
+    for (const t of tabela) {
+      if (t.obs) { console.log(t.logo.padEnd(26), '—', t.obs); continue; }
+      const malhaOk = t.malha.every(m => m.fechada && !m.cruzamentos && !m.degeneradas);
+      console.log(t.logo.padEnd(26), t.recorte.padEnd(7), f(t.coberturaPct).padStart(7), f(t.exatidaoPct).padStart(11), f(t.piorCorPct).padStart(10), f(t.erroBordaMM, 3).padStart(8), (t.coresReais + '/' + t.coresAchadas).padStart(5), f(t.deltaEMax).padStart(6), f(t.argolaComeArtePct, 2).padStart(8), (f(t.finosPreservadosPct, 0) + ' (' + f(t.fracaoFinaPct) + '% fino)').padStart(18), (malhaOk ? 'ok' : 'FALHA').padStart(5), (t.tempos.analise.toFixed(0) + '+' + t.tempos.construir.toFixed(0)).padStart(12), t.malha.reduce((a, m) => a + m.tris, 0));
+    }
+    if (saidaJson) fs.writeFileSync(saidaJson, JSON.stringify(tabela, null, 1));
+    return tabela;
   }
   const f = (v, c = 2) => v == null ? '—' : typeof v === 'number' ? v.toFixed(c) : v;
-  console.log('fluxo:', fluxo);
+  console.log(novo ? 'motor NOVO' : 'fluxo: ' + fluxo);
   console.log('logo'.padEnd(26), 'recorte', 'silh.IoU', 'borda mm', 'cores(real/achou)', 'pior cor IoU', 'ΔE máx', 'argola come %', 'finos ok %', 'malha', 'tempo ms (análise+img+construir+sólidos)');
   for (const t of tabela) {
     if (t.obs) { console.log(t.logo.padEnd(26), '—', t.obs); continue; }
@@ -225,6 +333,38 @@ export async function folha(logos, fluxo, arqSaida) {
   // empilha
   const LW = Math.max(...paineis.map(p => p.w)), LH = paineis.reduce((a, p) => a + p.h + 8, 0);
   const out = new Uint8Array(LW * LH * 4).fill(235);
+  let y0 = 0;
+  for (const p of paineis) { for (let y = 0; y < p.h; y++) out.set(p.px.subarray(y * p.w * 4, (y + 1) * p.w * 4), ((y0 + y) * LW) * 4); y0 += p.h + 8; }
+  fs.writeFileSync(arqSaida, escreverPNG(out, LW, LH));
+}
+
+// Folha do motor novo: original | peça vista de cima (base, cores e furo da argola)
+export async function folhaNova(logos, arqSaida, opc = {}) {
+  const { escreverPNG } = await import('../mcp/imagem.mjs');
+  const A = 300, paineis = [];
+  for (const l of logos) {
+    const r = await rodarMotorNovo(l, opc);
+    if (r.pulado || r.erro) continue;
+    const img = lerImagem(new Uint8Array(fs.readFileSync(path.join(pastaLogos, l.arquivo))), l.arquivo);
+    const ki = A / img.altura, wi = Math.round(img.largura * ki);
+    const { largura, altura } = r.r.medidas, km = (A - 10) / Math.max(altura, largura * A / 420), wp = Math.round(largura * km) + 10;
+    const W = wi + 12 + wp, px = new Uint8Array(W * A * 4).fill(255);
+    for (let y = 0; y < A; y++) for (let x = wi + 12; x < W; x++) { const o = (y * W + x) * 4; px[o] = px[o + 1] = px[o + 2] = 150; }
+    for (let y = 0; y < A; y++) for (let x = 0; x < wi; x++) {
+      const j = (Math.min(img.altura - 1, Math.floor(y / ki)) * img.largura + Math.min(img.largura - 1, Math.floor(x / ki))) * 4, a = img.px[j + 3] / 255, o = (y * W + x) * 4;
+      for (let c = 0; c < 3; c++) px[o + c] = img.px[j + c] * a + 238 * (1 - a);
+    }
+    const x0 = wi + 12 + 5, y0 = 5 + (A - 10 - altura * km) / 2;
+    for (const v of r.r.vista) {
+      const m = rasterizarGrupos(v.poligonos.map(p => ({ externo: p, furos: [] })), wp, A, ([X, Y]) => [X * km + 5, (altura - Y) * km + y0 - 0]);
+      const c = hexRGB(v.cor);
+      for (let y = 0; y < A; y++) for (let x = 0; x < wp - 5; x++) if (m[y * wp + x]) { const o = (y * W + x0 - 5 + x) * 4; px[o] = c[0]; px[o + 1] = c[1]; px[o + 2] = c[2]; }
+    }
+    // contorno fino de cada cor (dá pra ver base branca no fundo branco)
+    paineis.push({ w: W, h: A, px });
+  }
+  const LW = Math.max(...paineis.map(p => p.w)), LH = paineis.reduce((a, p) => a + p.h + 8, 0);
+  const out = new Uint8Array(LW * LH * 4).fill(200);
   let y0 = 0;
   for (const p of paineis) { for (let y = 0; y < p.h; y++) out.set(p.px.subarray(y * p.w * 4, (y + 1) * p.w * 4), ((y0 + y) * LW) * 4); y0 += p.h + 8; }
   fs.writeFileSync(arqSaida, escreverPNG(out, LW, LH));
