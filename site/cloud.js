@@ -56,7 +56,14 @@
     }
     return result;
   }
-  async function rpc(name,args){const {data,error}=await client.rpc(name,args);if(error)throw error;return data;}
+  // Toda chamada ao banco vai com a sessão do usuário. Sem sessão válida (encerrada,
+  // ou o login não respondeu ao renovar o token), o cliente do Supabase mandaria a
+  // chamada como ANÔNIMA e o banco responderia 401: aqui ela não sai, e o motivo aparece.
+  async function rpc(name,args){
+    const {data:{session}}=await client.auth.getSession();
+    if(!session){const e=Error(sessionEnded?'Sessão encerrada. Entre novamente.':'Não foi possível confirmar sua sessão agora. Tentando de novo…');e.noSession=true;throw e;}
+    const {data,error,status}=await client.rpc(name,args);if(error){error.status=status;throw error;}return data;
+  }
   function keyOf(r){return JSON.stringify([r.collection,String(r.id)]);}
   function enqueue(r,deleted=false){
     if(!r||!collections.includes(r.collection)||r.id==null||r.sync_revision==null)return false;
@@ -102,7 +109,7 @@
       cursor=String(packet.cursor);lastReconcile=Date.now();reconcileRequested=false;
       applyIncoming(force);notice('Nuvem sincronizada');
     })();
-    try{await refreshing;}catch(e){notice('Sem sincronização — '+(e.message||e));throw e;}
+    try{await refreshing;}catch(e){reconcileRequested=true;notice('Sem sincronização — '+(e.message||e));throw e;}
     finally{refreshing=null;}
   }
   function realtime(payload){
@@ -117,9 +124,13 @@
   async function showFailure(error){
     sending=false;notice('Alteração ainda não confirmada');
     clearTimeout(busyTimer);busyTimer=null;
-    const rejected=!pending.confirmed&&!!error.code && !['','PGRST000','PGRST001','PGRST002','PGRST003'].includes(error.code);
+    // Falta de sessão ou token recusado não é o servidor recusando a alteração: não oferece descartar.
+    const authError=!!error.noSession||error.status===401||/^PGRST30/.test(error.code||'');
+    const rejected=!pending.confirmed&&!!error.code&&!authError&& !['','PGRST000','PGRST001','PGRST002','PGRST003'].includes(error.code);
     pending.rejected=rejected;await persist().catch(()=>{});
     const actions=[['Verificar / tentar novamente',()=>send()],['Baixar alteração pendente',()=>download(pending,'144lab-alteracao-pendente.json')]];
+    // Sessão encerrada: a alteração já está guardada nesta aba e volta depois de entrar de novo.
+    if(error.noSession&&sessionEnded)actions.unshift(['Entrar novamente',()=>location.reload()]);
     if(rejected)actions.push(['Descartar e atualizar',async()=>{try{await refresh(true);await clearPending();dirty.clear();lastToast=null;applyIncoming(true);unblock();}catch(e){showFailure(e);}}]);
     block('A gravação não foi confirmada. '+(error.message||String(error))+' Seus dados pendentes foram preservados nesta aba.',actions);
   }
@@ -225,6 +236,58 @@
     // Senhas e usuários legados nunca entram no payload da nuvem.
     return values;
   }
+  // Sincronização em segundo plano: um timer, três ouvintes e o canal do tempo real.
+  // Liga uma vez depois do login e desliga quando a sessão acaba (sem sessão, tudo
+  // isso só geraria chamadas recusadas e reconexões inúteis).
+  let syncTimer=null, channel=null, sessionEnded=false, realtimeGen=0;
+  const resume=()=>{if(reconcileRequested||Date.now()-lastReconcile>=RECONCILE_MS)refresh().catch(()=>{});};
+  const onVisible=()=>{if(document.visibilityState==='visible')resume();};
+  const onOnline=()=>{reconcileRequested=true;refresh().catch(()=>{});};
+  async function subscribeRealtime(){
+    const gen=++realtimeGen;
+    // O token do usuário precisa estar no Realtime ANTES de entrar no canal: a biblioteca
+    // monta o pedido de entrada antes de o token chegar e, sem isto, o canal entra como
+    // anônimo e (com RLS) não recebe nenhuma mudança.
+    await client.realtime.setAuth().catch(()=>{});
+    if(gen!==realtimeGen)return; // saiu da página ou a sessão acabou enquanto esperava
+    channel=client.channel('144erp')
+      .on('postgres_changes',{event:'*',schema:'public',table:'erp_records'},realtime)
+      .on('postgres_changes',{event:'*',schema:'public',table:'erp_deleted'},realtime)
+      .subscribe(state=>{
+        if(state==='SUBSCRIBED'){
+          // Fecha a janela entre o bootstrap e a inscrição, e recupera reconexões.
+          reconcileRequested=true;refresh().catch(()=>{});notice('Nuvem conectada');
+        }else if(state==='CHANNEL_ERROR'||state==='TIMED_OUT')notice('Reconectando sincronização…');
+      });
+  }
+  // Sair da página com o WebSocket aberto impede o BFCache (a página recarrega ao
+  // voltar) ou faz o navegador derrubar a conexão ("Page entered Back-Forward Cache").
+  // Fecha canal e socket ao sair; ao voltar do cache, reabre uma vez e sincroniza.
+  function unsubscribeRealtime(){
+    realtimeGen++;
+    if(channel){const c=channel;channel=null;client.removeChannel(c).catch(()=>{});}
+    client.realtime.disconnect();
+  }
+  const onPageHide=()=>unsubscribeRealtime();
+  const onPageShow=e=>{if(e.persisted){reconcileRequested=true;subscribeRealtime();}};
+  function startSync(){
+    subscribeRealtime();
+    syncTimer=setInterval(()=>{if(document.visibilityState==='visible')refresh().catch(()=>{});},RECONCILE_MS);
+    window.addEventListener('focus',resume);
+    document.addEventListener('visibilitychange',onVisible);
+    window.addEventListener('online',onOnline);
+    window.addEventListener('pagehide',onPageHide);
+    window.addEventListener('pageshow',onPageShow);
+  }
+  function stopSync(){
+    clearInterval(syncTimer);syncTimer=null;
+    window.removeEventListener('focus',resume);
+    document.removeEventListener('visibilitychange',onVisible);
+    window.removeEventListener('online',onOnline);
+    window.removeEventListener('pagehide',onPageHide);
+    window.removeEventListener('pageshow',onPageShow);
+    unsubscribeRealtime();
+  }
   async function start(){
     if(started||startup)return;startup=true;el('btn_login').disabled=true;
     try{
@@ -245,21 +308,13 @@
       el('login_pass').value='';el('login-screen').classList.remove('active');el('login-screen').style.display='none';el('app-wrapper').style.display='block';
       if(recovered){pending=recovered;block('Existe uma gravação pendente desta aba. Verifique antes de continuar.',[['Verificar gravação',()=>send()],['Baixar alteração pendente',()=>download(pending,'144lab-alteracao-pendente.json')]]);}
       else window.ERP_APP.afterLogin();
-      client.channel('144erp')
-        .on('postgres_changes',{event:'*',schema:'public',table:'erp_records'},realtime)
-        .on('postgres_changes',{event:'*',schema:'public',table:'erp_deleted'},realtime)
-        .subscribe(state=>{
-          if(state==='SUBSCRIBED'){
-            // Fecha a janela entre o bootstrap e a inscrição, e recupera reconexões.
-            reconcileRequested=true;refresh().catch(()=>{});notice('Nuvem conectada');
-          }else if(state==='CHANNEL_ERROR'||state==='TIMED_OUT')notice('Reconectando sincronização…');
-        });
-      setInterval(()=>{if(document.visibilityState==='visible')refresh().catch(()=>{});},RECONCILE_MS);
-      const resume=()=>{if(reconcileRequested||Date.now()-lastReconcile>=RECONCILE_MS)refresh().catch(()=>{});};
-      window.addEventListener('focus',resume);
-      document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')resume();});
-      window.addEventListener('online',()=>{reconcileRequested=true;refresh().catch(()=>{});});
-      client.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT'){el('app-wrapper').style.display='none';block('Sessão encerrada. Entre novamente.',[['Entrar',()=>location.reload()]]);}});
+      startSync();
+      client.auth.onAuthStateChange(event=>{
+        if(event==='SIGNED_OUT'){sessionEnded=true;stopSync();el('app-wrapper').style.display='none';block('Sessão encerrada. Entre novamente.',[['Entrar',()=>location.reload()]]);}
+        // Token renovado depois de uma falha: recupera o que ficou para trás (fora do
+        // callback, que o Supabase chama segurando a trava da sessão).
+        else if(event==='TOKEN_REFRESHED'&&reconcileRequested)setTimeout(()=>refresh().catch(()=>{}),0);
+      });
       notice('Nuvem conectada');
     }catch(e){notice(e.message||String(e));el('login_pass').value='';}
     finally{startup=false;el('btn_login').disabled=false;}

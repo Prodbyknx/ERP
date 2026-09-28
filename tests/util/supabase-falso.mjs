@@ -33,6 +33,8 @@ export async function supabaseFalso({ host = 'teste144.supabase.co', ttl = 3600,
   const st = {
     ttl, foraDoAr: false, revision: 0, ordem: 0,
     desvio: 0,                    // ms somados ao relógio do servidor (simula o tempo passando)
+    recusarWS: false,             // Realtime fora do ar: recusa conexões novas
+    tentativasWS: [],             // horário de cada tentativa de conexão WS
     usuarios: usuarios || [{ id: '00000000-0000-4000-8000-000000000001', email: 'dono@teste.com', senha: 'senha-certa', nome: 'Dono', login: 'dono@teste.com', perfil: 'ADMIN' }],
     refresh: new Map(),           // refresh_token -> { uid, usado, revogado }
     registros: new Map(),         // 'col|id' -> linha
@@ -175,6 +177,8 @@ export async function supabaseFalso({ host = 'teste144.supabase.co', ttl = 3600,
   });
   srv.on('upgrade', (req, sock) => {
     if (!req.url.startsWith('/realtime/v1/websocket')) { sock.destroy(); return; }
+    st.tentativasWS.push(Date.now());
+    if (st.recusarWS) { log('WS', '/realtime/v1/websocket', 503, 'ws'); sock.end('HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n'); return; }
     log('WS', '/realtime/v1/websocket', 101, 'ws');
     aceitarWS(req, sock);
   });
@@ -200,6 +204,8 @@ export async function supabaseFalso({ host = 'teste144.supabase.co', ttl = 3600,
     // (e sem passar pelo proxy da máquina, se houver)
     argsChromium: () => ['--host-resolver-rules=MAP ' + host + ' 127.0.0.1:' + srv.address().port, '--no-proxy-server', '--ignore-certificate-errors'],
     revogarTudo() { for (const t of st.refresh.values()) t.revogado = true; },
+    // derruba as conexões do tempo real abertas agora (queda do servidor)
+    derrubarWS() { for (const s of st.sockets) s.sock.destroy(); },
     pedidosDe: (filtro, desde = 0) => st.pedidos.filter(x => x.t >= desde && (!filtro || filtro(x))),
     socketsAbertos: () => st.sockets.size,
     topicosAbertos: () => [...st.sockets].reduce((n, s) => n + s.topicos.size, 0),
