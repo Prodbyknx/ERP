@@ -162,6 +162,7 @@ export function montarSeparar(est) {
   q('ir').onclick = separar;
   q('porCor').onclick = porCor;
   q('cascas').onclick = cascas;
-  d.addEventListener('toggle', () => { if (d.open && est.ferramenta === 'navegar') est.definirFerramenta('regiao'); });
-  return { el: d };
+  d.addEventListener('toggle', () => { if (d.open && est.ferramenta === 'navegar') est.definirFerramenta('auto'); });
+  // atalho da barra de seleção: "Separar" / "Separar com pino"
+  return { el: d, separar: (opc = {}) => { q('con').value = opc.conector || 'nenhum'; atualizarCon(); return separar(); } };
 }

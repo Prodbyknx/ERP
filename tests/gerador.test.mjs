@@ -160,3 +160,60 @@ test('mesa: peça maior que a impressora avisa', () => {
   const r = construir(an('texto-1cor'), { tamanhoMM: 200, impressora: 'A1MINI' });
   assert.ok(r.avisos.some(a => /não cabe na mesa/.test(a.texto)));
 });
+
+test('verso: texto colorido rente nas primeiras camadas (espelhado) ou gravado', () => {
+  // "L" feito de blocos (assimétrico: mostra se espelhou)
+  const w = 300, h = 200, alfa = new Uint8Array(w * h);
+  for (let y = 20; y < 180; y++) for (let x = 20; x < 70; x++) alfa[y * w + x] = 255;
+  for (let y = 130; y < 180; y++) for (let x = 20; x < 200; x++) alfa[y * w + x] = 255;
+  const a = an('sol-4cores');
+  const r = construir(a, { verso: { alfa, w, h, modo: 'cor', cor: '#FFFFFF', linhas: 1 } });
+  const v = r.partes.find(p => p.nome === 'Verso');
+  assert.ok(v && r.verso, 'tem verso');
+  assert.deepEqual(zDe(v), [0, 0.6]);
+  assert.ok(solida(v) && solida(r.partes.find(p => p.nome === 'Base')));
+  // espelhado: a haste do L (esquerda na imagem) fica à DIREITA no modelo
+  let sx = 0, n = 0, x0 = Infinity, x1 = -Infinity;
+  for (let i = 0; i < v.malha.pos.length; i += 3) { sx += v.malha.pos[i]; n++; x0 = Math.min(x0, v.malha.pos[i]); x1 = Math.max(x1, v.malha.pos[i]); }
+  assert.ok(sx / n > (x0 + x1) / 2, 'espelhado em X');
+  const sem = construir(a, {});
+  const vb = x => x.partes.find(p => p.nome === 'Base').volumeMM3;
+  assert.ok(Math.abs(vb(sem) - vb(r) - v.volumeMM3) < 1, 'o verso sai de dentro da base (rente)');
+  const g = construir(a, { verso: { alfa, w, h, modo: 'gravado' } });
+  assert.ok(!g.partes.some(p => p.nome === 'Verso') && vb(g) < vb(sem) - 5, 'gravado');
+  // sem AMS: vira gravado e avisa
+  const t = construir(a, { estrategia: 'troca', verso: { alfa, w, h, modo: 'cor' } });
+  assert.ok(!t.partes.some(p => p.nome === 'Verso') && t.dicas.some(d => /gravado/.test(d.texto)));
+});
+
+test('verso: QR code (quadradinhos exatos, cabe com margem, espelhado) e avisos de contraste', () => {
+  const a = an('escudo-3cores-jpg');   // base branca: QR preto contrasta
+  const r = construir(a, { tamanhoMM: 60, verso: { qr: 'https://instagram.com/144lab', modo: 'cor', cor: '#000000' } });
+  const v = r.partes.find(p => p.nome === 'Verso');
+  assert.ok(v && r.verso.qr, 'tem QR');
+  assert.equal(r.verso.qr.versao, 3);
+  assert.ok(r.verso.qr.moduloMM >= 0.95, 'módulo ' + r.verso.qr.moduloMM);
+  // logo baixa e larga: o QR não cabe grande -> avisa o tamanho do quadradinho
+  const p = construir(an('selo-2cores'), { tamanhoMM: 60, verso: { qr: 'https://instagram.com/144lab', modo: 'cor', cor: '#000000' } });
+  assert.ok(p.avisos.some(x => /quadradinhos/.test(x.texto)));
+  assert.deepEqual(zDe(v), [0, 0.6]);
+  assert.ok(solida(v));
+  assert.ok(!r.avisos.some(x => /QR/.test(x.texto)), JSON.stringify(r.avisos));
+  // QR branco em base branca: avisa contraste; gravado: avisa que não lê
+  const b = construir(a, { tamanhoMM: 60, verso: { qr: 'x', modo: 'cor', cor: '#FFFFFF' } });
+  assert.ok(b.avisos.some(x => /mais escura/.test(x.texto)));
+  const g = construir(a, { tamanhoMM: 60, verso: { qr: 'x', modo: 'gravado' } });
+  assert.ok(g.avisos.some(x => /gravado/.test(x.texto)));
+});
+
+test('QR: gerador segue a norma (tamanho por versão, padrões de posição e temporização)', async () => {
+  const { gerarQR } = await import('../src/gerador/qr.js');
+  const q = gerarQR('https://instagram.com/144lab');
+  assert.equal(q.tamanho, 29);
+  const m = q.modulos;
+  // padrão de posição (7x7) nos 3 cantos
+  for (const [x0, y0] of [[0, 0], [22, 0], [0, 22]]) for (let d = 0; d < 7; d++) { assert.ok(m[y0][x0 + d] && m[y0 + 6][x0 + d] && m[y0 + d][x0] && m[y0 + d][x0 + 6]); }
+  for (let i = 8; i < 21; i++) { assert.equal(m[6][i], i % 2 === 0); assert.equal(m[i][6], i % 2 === 0); }
+  assert.equal(gerarQR('a'.repeat(150)).versao, 8);
+  assert.throws(() => gerarQR('a'.repeat(400)));
+});

@@ -10,6 +10,7 @@ import { nomeDaCor, rgbDeHex, lab, dE } from './imagem.js';
 import { perfilDe, PLA_G_CM3 } from './perfis.js';
 import { criar } from '../estudio3d/core/malha.js';
 import { corrigirDegeneradas } from '../estudio3d/core/limpeza.js';
+import { gerarQR } from './qr.js';
 
 export const PADRAO = {
   modelo: 'chaveiro',          // chaveiro | medalha | placa | contorno
@@ -23,7 +24,10 @@ export const PADRAO = {
   engrossar: true,             // traço mais fino que o bico engrossa até imprimir
   impressora: 'A1', bicoMM: 0.4,
   argola: { ligada: true, posicao: 'topo', centro: true, ponto: null, furoMM: 4, paredeMM: 2.2 },
-  nfc: { ligado: false, diametroMM: 25, profundidadeMM: 0.9, modo: 'baixo', paredeMM: 1.6 }
+  nfc: { ligado: false, diametroMM: 25, profundidadeMM: 0.9, modo: 'baixo', paredeMM: 1.6 },
+  // verso: texto (telefone, @instagram, nome) na face de baixo, espelhado pra
+  // ler certo ao virar. alfa: máscara do texto (w*h, 0..255) desenhada pela tela
+  verso: { alfa: null, w: 0, h: 0, modo: 'cor', cor: '#FFFFFF', profundidadeMM: 0.6, nome: 'Verso' }
 };
 
 const segs = r => Math.max(24, Math.min(160, Math.ceil(2 * Math.PI * Math.abs(r) / 0.3)));
@@ -32,6 +36,7 @@ function mesclar(a, b) {
   const o = { ...a, ...(b || {}) };
   o.argola = { ...a.argola, ...((b && b.argola) || {}) };
   o.nfc = { ...a.nfc, ...((b && b.nfc) || {}) };
+  o.verso = { ...a.verso, ...((b && b.verso) || {}) };
   o.cores = { ...((b && b.cores) || {}) };
   return o;
 }
@@ -221,7 +226,7 @@ function montar(an, cfg, CrossSection, Manifold, G, t0) {
     let p = partes.find(x => x.hex === hex && x.nome === nome);
     if (p) p.man = G(p.man.add(s)); else partes.push({ nome, hex, man: s });
   };
-  let baseSolido = null, nfc = null;
+  let baseSolido = null, nfc = null, nfcCorte = null, versoParte = null, versoInfo = null;
   const zTopo = {};
   const trocas = [];     // sem AMS: onde trocar o filamento
   if (!temBase) {
@@ -231,9 +236,20 @@ function montar(an, cfg, CrossSection, Manifold, G, t0) {
     baseSolido = G(G(base.extrude(altBase)));
     if (cfg.nfc.ligado) {
       const r = bolsoNFC(base, cfg.nfc, altBase, perfil, CrossSection, G, avisos);
-      if (r) { baseSolido = G(baseSolido.subtract(r.corte)); nfc = r.info; }
+      if (r) { baseSolido = G(baseSolido.subtract(r.corte)); nfc = r.info; nfcCorte = r.corte; }
+    }
+    const v = cfg.verso;
+    if (v && ((v.alfa && v.w && v.h) || v.qr)) {
+      const r = textoDoVerso(base, v, argola, altBase, perfil, { ...cfg, _corBase: corBase }, CrossSection, G, avisos, dicas);
+      if (r) {
+        baseSolido = G(baseSolido.subtract(r.prisma));
+        if (nfc && nfcCorte) r.prisma = G(r.prisma.subtract(nfcCorte));
+        if (r.modo === 'cor') versoParte = { nome: v.nome || 'Verso', hex: (v.cor || '#FFFFFF').toUpperCase(), man: r.prisma };
+        versoInfo = r.info;
+      }
     }
     partes.push({ nome: 'Base', hex: corBase, man: baseSolido });
+    if (versoParte) partes.push(versoParte);
     const filhos = k => vivas.filter(j => paiDe(j) === k);
     // pegada = a cor + tudo que fica em cima dela; fechamento de 0,02 mm solda
     // o encosto de um ponto só entre as duas (senão a malha fica "beliscada")
@@ -307,7 +323,7 @@ function montar(an, cfg, CrossSection, Manifold, G, t0) {
     alturas: { base: altBase, arte: altArte, degrau },
     corBase, cracha, niveis: nivel,
     argola: argola ? { xMM: argola.xMM + tx, yMM: argola.yMM + ty, furoMM: argola.furoMM, alcaMM: argola.alcaMM, px: [argola.x, argola.y], u: (argola.x - cx.x0) / cx.w, v: (argola.y - cx.y0) / cx.h, noVao: !!argola.noVao } : null,
-    nfc, trocas: cfg.estrategia === 'troca' ? trocas : null,
+    nfc, verso: versoInfo, trocas: cfg.estrategia === 'troca' ? trocas : null,
     vista, logoMM,
     transformada: { esc, tx, ty },   // mm = (x_px*esc + tx, -y_px*esc + ty)
     qualidade: rel.qualidade, avisos: rel.avisos, dicas: rel.dicas, estimativa: rel.estimativa,
@@ -410,6 +426,88 @@ function colocarArgola(sil, W, H, pxMM, cfgA, cx, avisos) {
     if (d < qd) { qd = d; q = [x + 0.5, y + 0.5]; }
   }
   return { x: c[0], y: c[1], qx: q[0], qy: q[1], furoMM, alcaMM, noVao };
+}
+
+// Texto do verso: máscara (px da tela) -> contorno -> cabe no miolo da base
+// (longe da borda e da argola), espelhado em X (lê certo com a peça virada),
+// nas primeiras camadas. 'cor' = peça colorida rente (AMS); 'gravado' = vazio.
+function textoDoVerso(base, v, argola, altBase, perfil, cfg, CrossSection, G, avisos, dicas) {
+  let t, qr = null;
+  if (v.qr) {
+    // QR: quadradinhos exatos (sem arredondar canto), linha por linha
+    try { qr = gerarQR(v.qr); } catch (e) { avisos.push({ tipo: 'alerta', texto: e.message }); return null; }
+    const N = qr.tamanho, rets = [];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N;) {
+      if (!qr.modulos[y][x]) { x++; continue; }
+      let x2 = x; while (x2 < N && qr.modulos[y][x2]) x2++;
+      rets.push([[x, -y - 1], [x2, -y - 1], [x2, -y], [x, -y]]);
+      x = x2;
+    }
+    t = G(new CrossSection(rets, 'NonZero'));
+  } else {
+    const m = new Uint8Array(v.w * v.h);
+    for (let i = 0; i < m.length; i++) m[i] = v.alfa[i] >= 128 ? 1 : 0;
+    const pols = poligonosMM(m, v.w, v.h, 1, { tolMM: 0.35, areaMinMM2: 2 });
+    if (!pols.length) return null;
+    t = G(new CrossSection(pols, 'EvenOdd'));
+  }
+  // miolo: base menos a margem e menos a argola (com folga)
+  let miolo = G(base.offset(-Math.max(1.6, (cfg.bordaMM || 0) * 0.7), 'Round', 2, 48));
+  if (argola) miolo = G(miolo.subtract(G(G(CrossSection.circle(argola.alcaMM + 1.2, 64)).translate([argola.xMM, argola.yMM]))));
+  if (miolo.isEmpty()) { avisos.push({ tipo: 'alerta', texto: 'A peça é pequena demais pra texto no verso.' }); return null; }
+  const fundo = pontoMaisFundo(miolo);
+  const bi = miolo.bounds(), tb = t.bounds();
+  const tw = tb.max[0] - tb.min[0], th = tb.max[1] - tb.min[1];
+  const iw = bi.max[0] - bi.min[0], ih = bi.max[1] - bi.min[1];
+  // QR: o quadrado inteiro + 2 módulos de margem clara tem que caber
+  const tcx = (tb.min[0] + tb.max[0]) / 2, tcy = (tb.min[1] + tb.max[1]) / 2;
+  let k = qr ? (2 * fundo.raio * 0.7) / (qr.tamanho + 4) : Math.min(0.86 * iw / tw, 0.5 * ih / th, (2 * fundo.raio * 0.95) / th);
+  const cx = qr ? fundo.x : (bi.min[0] + bi.max[0]) / 2, cy = fundo.y;
+  let caber = null;
+  for (let it = 0; it < 14; it++) {
+    const c = G(G(G(G(t.translate([-tcx, -tcy])).mirror([1, 0])).scale(k)).translate([cx, cy]));   // espelha em X
+    const teste = qr ? G(G(CrossSection.square([(qr.tamanho + 4) * k, (qr.tamanho + 4) * k], true)).translate([cx, cy])) : c;
+    const dentro = G(teste.intersect(miolo));
+    if (dentro.area() >= teste.area() * 0.995) { caber = c; break; }
+    k *= qr ? 0.94 : 0.9;
+  }
+  if (!caber) { avisos.push({ tipo: 'alerta', texto: 'O texto do verso não coube: use menos letras ou aumente a peça.' }); return null; }
+  const alturaLetra = qr ? null : th * k / Math.max(1, v.linhas || 1);
+  if (alturaLetra != null && alturaLetra < 3) avisos.push({ tipo: 'alerta', texto: 'As letras do verso ficaram com ' + alturaLetra.toFixed(1).replace('.', ',') + ' mm: pode não dar pra ler. Encurte o texto ou aumente a peça.' });
+  if (qr && k < 0.8) avisos.push({ tipo: 'alerta', texto: 'O QR ficou com quadradinhos de ' + k.toFixed(2).replace('.', ',') + ' mm: o celular pode não ler. Aumente a peça ou use um link mais curto.' });
+  let modo = v.modo === 'gravado' ? 'gravado' : 'cor';
+  if (qr && modo === 'gravado') avisos.push({ tipo: 'alerta', texto: 'QR gravado (mesma cor) quase não lê no celular: use o verso colorido (AMS).' });
+  if (qr && modo === 'cor') {
+    const L = h => { const c = rgbDeHex(h) || [0, 0, 0]; return lab(c[0], c[1], c[2])[0]; };
+    if (L(v.cor || '#000000') > L(cfg._corBase || '#FFFFFF') - 35) avisos.push({ tipo: 'alerta', texto: 'Pro QR ler, a cor dele tem que ser bem mais escura que a base (ex.: preto numa base clara).' });
+  }
+  if (modo === 'cor' && cfg.estrategia === 'troca') {
+    modo = 'gravado';
+    dicas.push({ tipo: 'dica', texto: 'Sem AMS o verso sai gravado (texto colorido rente precisa trocar cor na mesma camada).' });
+  }
+  const prof = Math.max(2 * perfil.camada, Math.round(Math.min(v.profundidadeMM, altBase - 0.8) / perfil.camada) * perfil.camada);
+  const prisma = G(caber.extrude(prof));
+  return { prisma, modo, info: { modo, profundidade: prof, alturaLetraMM: alturaLetra, larguraMM: tw * k, qr: qr ? { versao: qr.versao, moduloMM: k, ladoMM: qr.tamanho * k } : null } };
+}
+
+// ponto mais longe da borda de uma área (CrossSection), rasterizando a 0,25 mm
+function pontoMaisFundo(cs) {
+  const b = cs.bounds(), res = 0.25;
+  const w = Math.ceil((b.max[0] - b.min[0]) / res) + 2, h = Math.ceil((b.max[1] - b.min[1]) / res) + 2;
+  const m = new Uint8Array(w * h);
+  const pols = cs.toPolygons();
+  for (let y = 0; y < h; y++) {
+    const Y = b.min[1] + (y + 0.5) * res, xs = [];
+    for (const p of pols) for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+      const a = p[j], c = p[i];
+      if ((a[1] > Y) !== (c[1] > Y)) xs.push(a[0] + (Y - a[1]) / (c[1] - a[1]) * (c[0] - a[0]));
+    }
+    xs.sort((u, v2) => u - v2);
+    for (let k = 0; k + 1 < xs.length; k += 2) for (let x = Math.max(0, Math.ceil((xs[k] - b.min[0]) / res - 0.5)); x <= Math.min(w - 1, Math.floor((xs[k + 1] - b.min[0]) / res - 0.5)); x++) m[y * w + x] = 1;
+  }
+  const d2 = M.distancia2(m, w, h, 0);
+  let bi = 0; for (let i = 0; i < w * h; i++) if (d2[i] > d2[bi]) bi = i;
+  return { x: b.min[0] + ((bi % w) + 0.5) * res, y: b.min[1] + (((bi / w) | 0) + 0.5) * res, raio: Math.sqrt(d2[bi]) * res };
 }
 
 // bolso da tag NFC no ponto mais "fundo" da base (mais longe da borda e do furo)

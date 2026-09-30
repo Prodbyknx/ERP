@@ -2361,7 +2361,16 @@ const MenuContexto = (() => {
   }
   const fecharSemFoco = () => fechar(false);
   const foraDoMenu = e => { if(aberto && !aberto.el.contains(e.target)) fechar(false); };
-  const aoRolar = e => { if(aberto && !aberto.el.contains(e.target)) fechar(false); };
+  // rolar fecha o menu (o que estava embaixo dele saiu do lugar) — mas não o
+  // ajuste de rolagem que o próprio clique provoca logo ao abrir, nem a rolagem
+  // de um painel que não tem nada a ver com o lugar do menu
+  const aoRolar = e => {
+    if(!aberto || aberto.el.contains(e.target)) return;
+    if(performance.now() - aberto.desde < 350) return;
+    const alvo = aberto.alvo;
+    const doc = e.target === document || e.target === document.documentElement || e.target === document.body;
+    if(doc || !alvo || (e.target.contains && e.target.contains(alvo))) fechar(false);
+  };
   const ativos = () => [...aberto.el.querySelectorAll('button:not([aria-disabled="true"])')];
   function teclado(e){
     if(!aberto) return;
@@ -2380,6 +2389,7 @@ const MenuContexto = (() => {
     // sem separador sobrando no começo, no fim ou repetido
     itens = (itens || []).filter((it, i, a) => it !== '-' || (i > 0 && i < a.length - 1 && a[i - 1] !== '-'));
     if(!itens.some(it => it !== '-')) return;
+    const alvo = opc.alvo || document.elementFromPoint(x, y);     // o que está embaixo do menu
     const el = document.createElement('div');
     el.className = 'mais-pop menu-ctx';
     el.setAttribute('role', 'menu');
@@ -2400,7 +2410,7 @@ const MenuContexto = (() => {
     const w = el.offsetWidth, h = el.offsetHeight;
     el.style.left = Math.max(8, Math.min(x, window.innerWidth - w - 8)) + 'px';
     el.style.top = Math.max(8, Math.min(y, window.innerHeight - h - 8)) + 'px';
-    aberto = { el, antes: document.activeElement };
+    aberto = { el, antes: document.activeElement, desde: performance.now(), alvo };
     document.addEventListener('pointerdown', foraDoMenu, true);
     document.addEventListener('keydown', teclado, true);
     document.addEventListener('scroll', aoRolar, true);
@@ -12920,22 +12930,20 @@ function ferModoFerramentas(modo) {
   var est = document.getElementById('ferr_estudio');
   var txt = document.getElementById('ferr_modo_texto');
   ferMarcarSeg('ferr_modo_seg', modo);
-  if (modo !== 'estudio') {
-    if (ger) ger.style.display = '';
-    if (est) est.style.display = 'none';
-    if (txt) txt.textContent = 'Transforma imagem, texto ou forma em peça pronta pra imprimir: chaveiro, medalha, placa ou só o contorno. Baixa em 3MF (com as cores), SVG e STL. Nada fica salvo — é só gerar e baixar.';
-    return Promise.resolve(null);
-  }
-  if (ger) ger.style.display = 'none';
-  if (est) est.style.display = '';
-  if (txt) txt.textContent = 'Abra um STL, OBJ ou 3MF (inclusive modelo feito por IA) e escolha o que quer fazer: consertar, cortar com encaixe, separar detalhe ou cor, pôr nome na frente e no verso e mandar pro Bambu com as cores certas. Nada fica salvo no sistema.';
-  if (est && !est.childNodes.length) est.innerHTML = '<div class="card"><p class="u">Carregando o Estúdio 3D…</p></div>';
+  var gerador = modo !== 'estudio';
+  if (ger) ger.style.display = gerador ? '' : 'none';
+  if (est) est.style.display = gerador ? 'none' : '';
+  if (txt) txt.textContent = gerador
+    ? 'Da logo ao chaveiro pronto pro Bambu em segundos: o gerador acha o fundo, as cores e o lugar da argola sozinho. Nada fica salvo — é só gerar e baixar.'
+    : 'Abra um STL, OBJ ou 3MF (inclusive modelo feito por IA) e escolha o que quer fazer: consertar, cortar com encaixe, separar detalhe ou cor, pôr nome na frente e no verso e mandar pro Bambu com as cores certas. Nada fica salvo no sistema.';
+  var alvo = gerador ? ger : est;
+  if (alvo && !alvo.childNodes.length) alvo.innerHTML = '<div class="card"><p class="u">Carregando ' + (gerador ? 'o gerador' : 'o Estúdio 3D') + '…</p></div>';
   return carregarEstudio().then(function (E) {
-    if (est && est.querySelector('.card') && !est.querySelector('.e3d')) est.innerHTML = '';
-    E.montar(est);
+    if (alvo && alvo.querySelector('.card') && !alvo.querySelector('.e3d')) alvo.innerHTML = '';
+    if (gerador) E.montarGerador(ger); else E.montar(est);
     return E;
   }).catch(function (e) {
-    if (est) est.innerHTML = '<div class="card"><div class="fer-erro" style="display:block">' + esc(e.message || String(e)) + ' Coloque o estudio3d.js junto com o app.js.</div></div>';
+    if (alvo) alvo.innerHTML = '<div class="card"><div class="fer-erro" style="display:block">' + esc(e.message || String(e)) + ' Coloque o estudio3d.js junto com o app.js.</div></div>';
     throw e;
   });
 }
@@ -13039,187 +13047,10 @@ function ferAtualizarCamposModelo() {
 }
 
 function renderFerramentas() {
-  if (FER.montado) {
-    ferAtualizarCamposModelo(); ferPintarTudo();
-    if (window.Estudio3D && window.Estudio3D.estudio) window.Estudio3D.estudio.visor.redimensionar();
-    return;
+  if (!FER.montado) {
+    FER.montado = true;
+    ferBindSeg('ferr_modo_seg', function (v) { ferModoFerramentas(v).catch(function () {}); });
   }
-  FER.montado = true;
-
-  // fontes disponíveis
-  var selF = document.getElementById('fer_fonte');
-  if (selF && !selF.options.length) {
-    selF.innerHTML = FER_FONTES.map(function (f) {
-      return '<option value="' + esc(f[1]) + '">' + esc(f[0]) + '</option>';
-    }).join('');
-  }
-  // formas
-  var boxF = document.getElementById('fer_formas');
-  if (boxF && !boxF.children.length) {
-    boxF.innerHTML = FER_FORMAS.map(function (f, i) {
-      return '<button type="button" class="fer-forma' + (i === 0 ? ' active' : '') +
-             '" data-f="' + f[0] + '" title="' + esc(f[1]) + '">' +
-             '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + f[2] + '"/></svg>' +
-             '<span>' + esc(f[1]) + '</span></button>';
-    }).join('');
-    boxF.onclick = function (ev) {
-      var b = ev.target.closest('.fer-forma');
-      if (!b) return;
-      boxF.querySelectorAll('.fer-forma').forEach(function (x) { x.classList.remove('active'); });
-      b.classList.add('active');
-      ferDesenharForma(b.dataset.f);
-    };
-  }
-
-  ferBindSeg('fer_entrada_seg', ferTrocarModo);
-  ferBindSeg('fer_modelo_seg', function () { ferAtualizarCamposModelo(); ferRecalcular(0); });
-  ferBindSeg('fer_argola_seg', function (v) {
-    // "Livre" sem ter arrastado ainda: começa de onde a argola está
-    if (v === 'livre' && !FER.argolaPonto && FER.peca && FER.peca.furo && FER.peca.arteCaixa) {
-      var c = FER.peca.arteCaixa;
-      FER.argolaPonto = { u: (FER.peca.furo.x - c.x0) / c.w, v: (FER.peca.furo.y - c.y0) / c.h };
-    }
-    ferAtualizarCamposModelo();
-    ferRecalcular(0);
-  });
-  ferBindSeg('fer_recorte_seg', function (v) {
-    if (v === 'auto') {
-      var sl = document.getElementById('fer_limiar');
-      if (sl && FER.limiarAuto != null) sl.value = FER.limiarAuto;
-    }
-    ferRecalcular(0);
-  });
-  ferBindSeg('fer_detalhe_seg', function () { ferAtualizarDetalhe(); ferRecalcular(0); });
-  ferBindSeg('fer_niveis_seg', function () { ferRecalcular(0); });
-  ferBindSeg('fer_nfc_seg', function () { ferRecalcular(0); });
-
-  // arquivo
-  var inp = document.getElementById('fer_arquivo');
-  if (inp) inp.onchange = function () { ferCarregarArquivo(this.files && this.files[0]); this.value = ''; };
-  var drop = document.getElementById('fer_drop');
-  if (drop) {
-    drop.onclick = function () { if (inp) inp.click(); };
-    ['dragenter', 'dragover'].forEach(function (e) {
-      drop.addEventListener(e, function (ev) {
-        ev.preventDefault(); drop.classList.add('sobre');
-      });
-    });
-    ['dragleave', 'drop'].forEach(function (e) {
-      drop.addEventListener(e, function (ev) {
-        ev.preventDefault(); drop.classList.remove('sobre');
-      });
-    });
-    drop.addEventListener('drop', function (ev) {
-      var f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
-      if (f) ferCarregarArquivo(f);
-    });
-  }
-
-  // colar imagem
-  if (!FER.colarLigado) {
-    FER.colarLigado = true;
-    document.addEventListener('paste', function (ev) {
-      var view = document.getElementById('view-ferr');
-      if (!view || !view.classList.contains('active')) return;
-      if (FER.modo !== 'imagem') return;
-      var it = (ev.clipboardData && ev.clipboardData.items) || [];
-      for (var i = 0; i < it.length; i++) {
-        if (it[i].type && it[i].type.indexOf('image') === 0) {
-          ferCarregarArquivo(it[i].getAsFile());
-          ev.preventDefault();
-          return;
-        }
-      }
-    });
-  }
-
-  // campos que recalculam
-  ['fer_limiar', 'fer_suavizar', 'fer_sujeira', 'fer_tamanho', 'fer_altbase',
-   'fer_altarte', 'fer_borda', 'fer_furo', 'fer_parede', 'fer_canto', 'fer_bico',
-   'fer_nfc_diam', 'fer_nfc_prof']
-  .forEach(function (id) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    el.oninput = function () {
-      var eco = document.getElementById(id + '_eco');
-      if (eco) eco.textContent = el.value;
-      ferRecalcular();
-    };
-  });
-  ['fer_inverter', 'fer_argola', 'fer_argola_meio', 'fer_vazada', 'fer_nfc',
-   'fer_relevo_inv', 'fer_fundo_dentro'].forEach(function (id) {
-    var el = document.getElementById(id);
-    if (el) el.onchange = function () { ferAtualizarCamposModelo(); ferRecalcular(0); };
-  });
-  var txt = document.getElementById('fer_texto');
-  if (txt) txt.oninput = function () { clearTimeout(FER.tTexto); FER.tTexto = setTimeout(ferDesenharTexto, 140); };
-  var fnt = document.getElementById('fer_fonte');
-  if (fnt) fnt.onchange = ferDesenharTexto;
-
-  var bs = document.getElementById('fer_svg'); if (bs) bs.onclick = ferBaixarSVG;
-  var bEst = document.getElementById('fer_estudio'); if (bEst) bEst.onclick = ferAbrirNoEstudio;
-  ferBindSeg('ferr_modo_seg', function (v) { ferModoFerramentas(v).catch(function () {}); });
-  var bt = document.getElementById('fer_stl'); if (bt) bt.onclick = ferBaixarSTL;
-  var b3 = document.getElementById('fer_3mf'); if (b3) b3.onclick = ferBaixar3MF;
-
-  // girar o 3D com o mouse / dedo (e arrastar a argola, no 3D e no 2D)
-  var cv3 = document.getElementById('fer_cv3d'), cv2 = document.getElementById('fer_cv2d');
-  if (cv3) {
-    var pegar = function (ev) {
-      var t = ev.touches ? ev.touches[0] : ev;
-      return { x: t.clientX, y: t.clientY };
-    };
-    var comecar = function (ev) {
-      if (ferComecarArgola(cv3, pegar(ev))) return;     // pegou a argola: move ela
-      FER.girando = pegar(ev);
-      FER.girando.rx = FER.vista.rx; FER.girando.rz = FER.vista.rz;
-    };
-    var mover = function (ev) {
-      if (FER.arrastoArgola) { ferMoverArgola(pegar(ev)); if (ev.cancelable) ev.preventDefault(); return; }
-      // em cima da argola: mãozinha de mover
-      if (!FER.girando && !ev.touches && (ev.target === cv3 || ev.target === cv2)) {
-        ev.target.style.cursor = ferNaArgola(ev.target, pegar(ev)) ? 'move' : '';
-      }
-      if (!FER.girando) return;
-      var p = pegar(ev);
-      FER.vista.rz = FER.girando.rz + (p.x - FER.girando.x) * 0.012;
-      FER.vista.rx = Math.max(0, Math.min(1.5708,
-        FER.girando.rx + (p.y - FER.girando.y) * 0.012));
-      ferPintar3D();
-      if (ev.cancelable) ev.preventDefault();
-    };
-    var parar = function () { FER.girando = null; ferSoltarArgola(); };
-    cv3.addEventListener('mousedown', comecar);
-    window.addEventListener('mousemove', mover);
-    window.addEventListener('mouseup', parar);
-    cv3.addEventListener('touchstart', comecar, { passive: true });
-    cv3.addEventListener('touchmove', mover, { passive: false });
-    cv3.addEventListener('touchend', parar);
-    // vista de cima (2D): só arrastar a argola
-    if (cv2) {
-      var pegarArgola = function (ev) { if (ferComecarArgola(cv2, pegar(ev)) && ev.cancelable) ev.preventDefault(); };
-      cv2.addEventListener('mousedown', pegarArgola);
-      cv2.addEventListener('touchstart', pegarArgola, { passive: false });
-      cv2.addEventListener('touchmove', mover, { passive: false });
-      cv2.addEventListener('touchend', parar);
-    }
-    cv3.addEventListener('wheel', function (ev) {
-      FER.vista.zoom = Math.max(0.35, Math.min(4, FER.vista.zoom * (ev.deltaY > 0 ? 0.9 : 1.1)));
-      ferPintar3D();
-      ev.preventDefault();
-    }, { passive: false });
-  }
-
-  ferBindSeg('fer_vista_seg', function (v) { ferTrocarVisor(v); });
-  var vt = document.getElementById('fer_vista_topo');
-  if (vt) vt.onclick = function () { FER.vista.rx = 0; FER.vista.rz = 0; ferPintar3D(); };
-  var vl = document.getElementById('fer_vista_lado');
-  if (vl) vl.onclick = function () { FER.vista.rx = 0.95; FER.vista.rz = -0.42; ferPintar3D(); };
-
-  ferTrocarVisor('3d');
-  ferTrocarModo('imagem');
-  ferAtualizarDetalhe();
-  ferAtualizarCamposModelo();
-  ferPintarTudo();
+  ferModoFerramentas(ferSeg('ferr_modo_seg') || 'gerador').catch(function () {});
 }
 

@@ -103,7 +103,7 @@ export function comparar(a, b, rot) {
 async function usarEstudio(pg) {
   await pg.evaluate(() => showTab('ferr'));
   await pg.click('#ferr_modo_seg button[data-v=estudio]');
-  await pg.waitForFunction(() => document.querySelector('.e3d-motor span')?.textContent.includes('pronto'), null, { timeout: 60000 });
+  await pg.waitForFunction(() => document.querySelector('#ferr_estudio .e3d-motor span')?.textContent.includes('pronto'), null, { timeout: 60000 });
   await pg.evaluate(async () => {
     const e = window.Estudio3D.estudio;
     const d = document.querySelector('[data-sec=formas]'); d.open = true; d.dispatchEvent(new Event('toggle'));

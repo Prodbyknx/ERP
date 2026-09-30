@@ -1,166 +1,129 @@
-ABA FERRAMENTAS — imagem vira peça 3D
-=====================================
+ABA FERRAMENTAS — GERADOR DE CHAVEIRO (logo vira chaveiro pronto pro Bambu)
+===========================================================================
 
 O QUE FAZ
-Pega uma imagem, um texto ou uma forma pronta e devolve o arquivo
-pronto pra imprimir: chaveiro, medalha, placa ou só o contorno.
-Baixa em SVG (pra abrir no Fusion, Inkscape, Illustrator) e em STL
-(pra jogar direto no Bambu Studio / Orca e fatiar).
+Você solta a logo (ou escreve um nome, ou escolhe uma forma) e em
+segundos tem o chaveiro 3D pronto: fundo tirado, cores separadas, base,
+argola e alturas decididas. Baixa o 3MF e o Bambu Studio abre com as
+cores certas. Medalha, placa e "só o contorno" também.
 
-Roda tudo dentro do navegador. A imagem NÃO sobe pra lugar nenhum,
-não passa pelo Supabase e não ocupa espaço. Você gera, baixa e acabou
-— não fica nada salvo pra limpar depois.
+Roda tudo no navegador (no motor 3D, em segundo plano: a tela não trava).
+A imagem NÃO sobe pra lugar nenhum e nada fica salvo.
 
 
-A TELA EM 2 PASSOS
+O FLUXO (1 clique)
 ------------------
-1. O DESENHO   de onde vem e como ele lê
-2. A PEÇA      o que fazer com ele
+LOGO -> ANÁLISE -> CHAVEIRO -> (personalizar, se quiser) -> BAIXAR 3MF
+Em cima aparece em que passo você está: Logo ✓  Chaveiro ✓  Imprimir ✓.
 
-O que aparece de cara é só o que você mexe toda hora. O resto está em
-AJUSTES FINOS, no rodapé de cada quadro. Clica e abre.
+A TELA (mesma cara do Estúdio 3D)
+  No meio, grande: a PRÓPRIA peça em 3D (a mesma malha que vai pro
+  arquivo). Arraste pra girar, rodinha pra aproximar.
+  Embaixo: 3D · De cima · De lado (mostra as alturas) · Verso ·
+  COMPARAR (a imagem original por cima da peça, alinhada: arraste a
+  linha laranja pra ver original × chaveiro).
+  Canto de cima: o selo de qualidade ("Qualidade excelente · 3 cores ·
+  fundo transparente"). Clique nele: mostra tudo que o gerador conferiu.
+  À direita: PADRÃO · PERSONALIZAR · AVANÇADO.
 
 
-1. O DESENHO
+O QUE ELE DESCOBRE SOZINHO
+--------------------------
+FUNDO
+  PNG transparente   usa a transparência.
+  Fundo liso (JPG)   acha a cor da borda e mede o ruído do JPG pra não
+                     comer a logo nem deixar chuvisco.
+  Sem fundo liso     separa por claro/escuro (e avisa pra conferir).
+CORES (1 a 4)
+  Agrupa as cores como o olho vê (espaço Lab), só com os pixels LISOS:
+  a borda suavizada da logo (antialias) e o ruído do JPG NÃO viram cor
+  nova. Pixel de borda fica com a cor vizinha mais parecida. Logo com
+  mais tons: junta os parecidos em 4 e avisa.
+BASE
+  Fundo liso na imagem  -> a base tem a cor do fundo (a peça fica igual
+                           à imagem; a faixa branca de um escudo em JPG
+                           aparece branca).
+  Logo "crachá"         -> a cor de fora da logo (círculo azul, escudo
+                           verde) vira a base: uma cor a menos pra trocar.
+  Senão                 -> branco ou preto, o que contrastar.
+  A base é UMA peça só: partes soltas da logo (pontos, letras separadas)
+  são unidas pela base.
+ALTURAS (em degraus)
+  O que está dentro de outra cor fica um degrau acima (ex.: "FC" preto
+  em cima da faixa branca, em cima do escudo). "Tudo na mesma altura"
+  em Personalizar. Alturas sempre em múltiplos da camada do bico.
+ARGOLA
+  No topo, no meio, e NUNCA em cima do desenho (fica fora da arte, com
+  folga), presa na peça por uma aba de reforço. Se o meio for um vão
+  (entre letras, "U"), ela vai pra ponta de fora e avisa.
+  ARRASTE a argola na prévia pra pôr onde quiser.
+TRAÇO FINO
+  Traço mais fino que o bico some no fatiador. O gerador engrossa só o
+  necessário, no mesmo lugar, e diz quantos engrossou — e o tamanho de
+  chaveiro em que eles sairiam sem engrossar.
+
+
+PADRÃO
+------
+CORES (FILAMENTOS)  uma linha por filamento: Base + cada cor da logo.
+  Clique na bolinha: paleta PLA Basic da Bambu (ou qualquer cor).
+  "⋯": juntar com outra cor, deixar na base (não sobe), voltar à cor
+  da logo.
+TAMANHO             maior lado da peça, em mm (arraste ou digite).
+FORMATO             Chaveiro · Medalha · Placa · Só contorno.
+IMPRESSORA          A1, A1 mini, P1S, P1P, X1C + bico 0,2 / 0,4 / 0,6.
+  Muda a mesa, a camada (0,1 no bico 0,2) e o traço mínimo.
+TENHO AMS           desligado = cor por ALTURA: cada cor ganha a sua
+  faixa e ele diz em que CAMADA trocar o filamento no Bambu Studio.
+Resumo: tamanho, peso (g) e tempo estimado; no rodapé da prévia, as
+trocas de cor estimadas.
+
+PERSONALIZAR
 ------------
-IMAGEM  arrasta o arquivo, clica pra escolher, ou cola com Ctrl+V.
-TEXTO   escreve o nome e escolhe a fonte. Vira chaveiro de nome.
-FORMA   círculo, quadrado, coração, estrela, escudo, hexágono, flor
-        e gota — pra quando você não tem imagem nenhuma.
+ARGOLA   Topo · Esquerda · Direita · Canto · Sem; "no meio"; furo (mm).
+VERSO    TEXTO (até 2 linhas): @instagram, telefone, nome.
+         QR CODE: link do Instagram, WhatsApp (wa.me/55…) ou site.
+           Quadradinhos exatos, com margem clara em volta, no maior
+           tamanho que cabe. Avisa se o quadradinho ficar < 0,8 mm ou se
+           a cor não contrastar com a base (QR escuro em base clara).
+           Conferido: o QR da prévia é lido por leitor de QR.
+         COLORIDO RENTE (AMS): sai nas primeiras camadas, colado na mesa,
+         liso, na cor que você escolher (aparece em Cores).
+         GRAVADO (só texto): rebaixado no fundo, sem trocar filamento.
+         Sai espelhado no modelo pra ler certo com a peça virada; o botão
+         "Verso" mostra como fica. Letras menores que 3 mm: ele avisa.
+ALTURAS  Em degraus · Tudo na mesma altura; base e relevo (mm).
+BORDA    em volta da logo (mm). Canto da placa.
 
-RECORTE (a barra)
-Ele descobre sozinho como separar o desenho do fundo e escreve na
-própria barra o que está fazendo:
-  "usando a transparência do PNG"     → PNG já recortado
-  "tirando o fundo de uma cor só"     → logo em fundo branco ou liso
-  "separando por claro e escuro"      → foto e imagem sem fundo liso
-A barra ajusta o quanto ele tira. Se comeu demais, diminui; se sobrou
-fundo, aumenta. Em Ajustes finos dá pra forçar o método na mão.
-
-O fundo de uma cor é tirado igual varinha mágica: só o fundo LIGADO na
-borda sai. Branco de dentro do desenho (letra, brilho) fica.
-
-DETALHE DO DESENHO — é o que muda tudo
-  CHAPADO    uma altura só. Bom pra logo e desenho de traço.
-  POR COR    separa nas cores da própria imagem, até 4, todas na mesma
-             altura. Cada cor vira um arquivo pra você imprimir com
-             troca de filamento ou AMS.
-  EM RELEVO  lê os TONS da imagem e vira degraus de altura, até 6.
-             O tom mais claro fica no nível mais alto. É assim que sai
-             medalha, brasão e troféu com o desenho em relevo. Dá pra
-             inverter (escuro mais alto) nos ajustes.
-
-
-2. A PEÇA
----------
-CHAVEIRO      a base acompanha o contorno do desenho.
-MEDALHA       base redonda com o desenho no meio.
-PLACA         base retangular de canto arredondado.
-SÓ O CONTORNO sem base: recorta a silhueta e extruda. Serve pra
-              letreiro e pra peça vazada de uma cor só.
-
-TAMANHO é o maior lado em mm. ALTURA DA BASE é a espessura do fundo.
-ALTURA DO RELEVO é o quanto o desenho sobe. BORDA é a moldura em volta.
-
-FURO PRA ARGOLA já sai com parede em volta e nunca fica solto da peça,
-mesmo em formato torto. Escolhe o lado: em cima, esquerda, direita ou
-canto. CENTRALIZAR (vem ligado) põe a argola no meio da peça — no
-coração cai no "v" de cima; se o meio for um vão (letra U), ela vai pro
-ponto mais pra fora e avisa. Desligado: vai pro ponto mais alto (ou mais
-pro lado). LIVRE: arraste a argola na prévia (3D ou vista de cima) e
-solte onde quiser; solta longe da peça, ela encosta na borda mais perto.
-O lugar fica guardado mesmo trocando o tamanho.
-
-ESPAÇO PRA TAG NFC abre um bolso redondo dentro da peça:
-  ABERTO POR BAIXO    imprime normal e cola a tag no final.
-  FECHADO POR DENTRO  a tag fica lacrada dentro. O sistema calcula e
-                      mostra em que altura Z pausar a impressão pra
-                      encaixar a tag antes de fechar.
-Ele põe o bolso no ponto mais "fundo" da peça, longe da borda e do
-furo da argola. Se a tag não couber, ele avisa e diz que tamanho de
-tag caberia ali.
-O bolso sai de verdade no 3MF e no STL (conferido cortando a peça em
-fatias, como o fatiador faz). Aberto por baixo fica VIRADO PRA MESA: no
-fatiador aparece olhando a peça por baixo ou nas primeiras camadas.
-
-
-AS CORES
+AVANÇADO
 --------
-Embaixo da prévia tem uma bolinha por peça. Clica e escolhe a cor.
-Serve pra ver como vai ficar antes de imprimir e pra mostrar pro
-cliente. Quando você separa por cor, elas já vêm com a cor real que
-ele achou na imagem.
+Engrossar traço fino (liga/desliga), degrau entre cores, parede da
+argola, bolso da TAG NFC (por baixo ou fechada dentro, com a camada da
+pausa), o que a análise achou e "Voltar tudo ao automático".
 
+ARQUIVOS
+--------
+3MF   botão principal. Um objeto com uma parte por cor, cada uma com a
+      cor exata; o Bambu Studio cria os filamentos com essas cores.
+STL   um arquivo por cor (zip).
+SVG   vista de cima em mm, com as cores (pra CAD/corte).
+ABRIR NO ESTÚDIO 3D  leva a peça com as cores pro Estúdio (cortar,
+      juntar, mais texto…).
 
-OS ARQUIVOS
------------
-3MF   é o botão principal, e é o que você quer na maioria das vezes.
-      Um arquivo só, com TODAS as partes já montadas no lugar, cada uma
-      com a cor EXATA que aparece na tela (o mesmo código, ex. #E54C00).
-      No Bambu Studio aparece a janela de cores do arquivo: dê OK e ele
-      já cria os filamentos com essas cores, um por parte. Acabou de
-      importar 5 STL e alinhar na mão.
-      (Antes a cor não chegava no Bambu: o arquivo guardava a cor num
-      formato que o Bambu não lê. Explicação completa no fim deste texto.)
-SVG   sai com a medida REAL em mm — importa já no tamanho certo, sem
-      precisar escalar no olho. É pra editar em CAD, não pra fatiar.
-STL   continua disponível no link embaixo dos botões. Em várias partes
-      vem num zip, um arquivo por cor; desmarcando "um arquivo por cor"
-      sai um STL único, tudo grudado.
+GARANTIAS (testadas a cada entrega: tests/gerador.test.mjs)
+  - a peça cobre 100% da logo; cor certa em 96–99,9% da logo (10 logos
+    de teste com gabarito: 1 a 4 cores, texto fino, pontinhos, JPG com
+    fundo, fundo preto, imagem pequena);
+  - cores achadas = cores reais, ΔE ≤ 6;
+  - argola em cima da arte: 0%;
+  - toda parte é sólido fechado, sem cruzamento nem triângulo degenerado;
+  - base numa peça só; alturas em múltiplos da camada.
+  Benchmark: node tools/bench-chaveiro.mjs --novo
 
-MIOLO DA COR DO FUNDO
-Logo em fundo branco costuma ter branco DENTRO do desenho — o miolo do
-"o", o vão do "a". Isso é fundo aparecendo, não peça, então ele tira.
-Mas tem arte em que o branco é parte do desenho (letra branca dentro de
-um selo escuro). Quando ele tira algo grande, avisa embaixo da prévia
-com um "traga de volta": um clique e o branco volta a ser peça.
-
-SOBRE A MALHA
-O contorno é calculado com precisão de sub-pixel (campo de distância
-com sinal), não pixel a pixel. Por isso curva sai lisa de verdade e não
-facetada. Cada parte sai fechada, com volume positivo e sem aresta
-solta — o fatiador não pede reparo.
-
-
-O QUE FUNCIONA BEM E O QUE NÃO FUNCIONA
----------------------------------------
-SAI ÓTIMO   logo, desenho de traço, símbolo, texto, PNG recortado e
-            arte de cor chapada (tipo a medalha 144LAB RUN).
-CUIDADO     foto de pessoa e paisagem. Em CHAPADO vira mancha preta —
-            não é defeito, é o que silhueta é. Use EM RELEVO, ou tire
-            o fundo antes.
-
-
-DETALHES QUE EVITAM DOR DE CABEÇA
----------------------------------
-- A base sai sempre SÓLIDA. Buraquinho de letra ("o", "a", "e") não
-  vira furo na base — só buraco grande de propósito, tipo miolo de
-  anel, continua vazado.
-- O desenho nunca invade a argola.
-- DESENHO VAZADO transforma o desenho em furo passante, tipo estêncil.
-- O campo BICO (ajustes finos) não muda a peça: serve só pra avisar
-  quando o traço ficou fino demais pra sua impressora.
-- Trocar de Imagem / Texto / Forma não perde o que você já tinha em
-  cada um. Volta e está lá.
-
-AVISOS AMARELOS
-Quando aparece um aviso, ele é literal: relevo raso demais, base fina
-demais, parede da argola fraca, traço fino demais pro bico, peça que
-saiu em pedaços soltos, tag que não cabe. Todos são coisas que dão
-problema na hora de imprimir, não frescura.
-
-
-O VISOR
-Uma tela só, grande, com dois botões em cima: EM 3D e VISTA DE CIMA.
-No 3D a peça aparece em cima da mesa da impressora, com sombra — dá
-pra ver peça de cor clara sem ela sumir no fundo. Arraste pra girar,
-rodinha pra aproximar, e os botões De lado / De cima voltam pro
-ângulo padrão.
-
-ABRIR NO ESTÚDIO 3D
-Botão embaixo dos downloads. Leva a peça gerada, com as cores, pro
-Estúdio 3D (abaixo) pra cortar, separar, pôr texto no verso etc.
-
+LIMITES
+  - Foto (rosto, paisagem) não é logo: vira manchas de até 4 cores.
+  - SVG é desenhado em alta resolução antes de analisar (não lê os
+    caminhos do SVG direto).
 
 =====================================================================
 ESTÚDIO 3D — preparar qualquer STL / OBJ / 3MF pra imprimir
@@ -577,6 +540,20 @@ MATRIZ DE MATURIDADE (evidência = teste que roda, não impressão)
    Abrir/Analisar    sim                      —                           1 milhão: 0,3 s /     PRONTA
                                                                           3,3 s
    Nenhuma ferramenta QUEBRADA conhecida. INCOMPLETAS: ver "O que ainda não faz".
+
+PEGAR UM OLHO, UMA ORELHA… NUM CLIQUE (e separar)
+-------------------------------------------------
+Selecionar -> AUTOMÁTICO (vem ligado; Separar também usa):
+  1. Passe o mouse: a parte que o clique vai pegar ACENDE EM AZUL.
+  2. Clique: pega ela inteira.
+     - detalhe com dobra (olho, botão, símbolo): até a dobra;
+     - parte orgânica sem dobra (orelha, mão, chifre): até o ponto mais
+       fino (a base/pulso/pescoço).
+     Shift soma outra parte, Alt tira.
+  3. Em cima do 3D aparece a barra "Parte selecionada ~12 mm":
+     SEPARAR (corte plano na base, as duas peças fechadas) ou
+     SEPARAR COM PINO (pino na parte, furo na peça, pra encaixar de
+     volta). Prévia -> Confirmar. Ctrl+Z desfaz.
 
 BOTÃO DIREITO NO SISTEMA
    Dentro do sistema o botão direito abre o menu do SISTEMA (Voltar pra

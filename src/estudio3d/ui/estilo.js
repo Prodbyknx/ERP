@@ -293,6 +293,13 @@ html[data-tema=escuro] .e3d{ --e3d-fundo-a:#20242b; --e3d-fundo-b:#121418;
 .e3d-tag-furo{ font:700 9.5px var(--sans); text-transform:uppercase; letter-spacing:.05em; color:#fff; background:#e5484d; border-radius:6px; padding:2px 5px }
 @media (max-width:900px){ .e3d-multi{ bottom:62px } .e3d-formas{ grid-template-columns:repeat(4, 1fr) } }
 .ferr-modos{ margin-bottom:14px }
+.e3d-acaosel{ position:absolute; left:50%; top:64px; transform:translateX(-50%); z-index:6; padding:7px 8px 7px 14px; display:flex; gap:8px; align-items:center;
+  font:600 13px var(--sans); max-width:calc(100% - 24px); white-space:nowrap; animation:e3dentra .22s var(--ease) }
+.e3d-acaosel .tit{ display:inline-flex; align-items:center; gap:6px; color:var(--green) }
+.e3d-acaosel .tit b{ color:var(--ink) } .e3d-acaosel .tit .u{ font:500 11.5px var(--mono); color:var(--ink-dim) }
+.e3d-acaosel .btn{ height:34px; padding:0 12px; border-radius:10px; font-size:12.5px }
+.e3d-acaosel .btn.so-ico{ width:34px; padding:0; display:inline-flex; align-items:center; justify-content:center }
+@media (max-width:900px){ .e3d-acaosel{ max-width:calc(100% - 24px) } }
 `;
 
 export function injetarCSS() {

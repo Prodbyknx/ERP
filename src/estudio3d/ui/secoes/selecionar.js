@@ -6,6 +6,7 @@ import { corDeRotulo } from './diagnostico.js';
 import * as M4 from '../../core/mat4.js';
 
 const MODOS = [
+  ['auto', 'Automático', 'Passe o mouse: a parte que o clique vai pegar acende em azul. Clique: pega o detalhe inteiro (olho, botão, símbolo) ou, se não tiver dobra, a parte até o ponto mais fino (orelha, mão, chifre). Depois é só Separar.'],
   ['membro', 'Parte (até o ponto fino)', 'Clique numa mão, orelha, chifre, cabeça…: seleciona ela inteira até o ponto mais fino (pulso, base, pescoço). Bom pra modelo orgânico, sem dobras marcadas.'],
   ['regiao', 'Região inteligente', 'Clique numa parte: a seleção cresce até encontrar uma dobra (onde uma peça encontra a outra).'],
   ['pincel', 'Pincel', 'Pinte arrastando sobre a peça. Começando fora da peça, arrastar gira a vista.'],
@@ -48,7 +49,7 @@ export function montarSelecionar(est) {
     </div>
   </div>`;
   const q = s => d.querySelector('[data-a="' + s + '"]');
-  let modo = 'regiao';
+  let modo = 'auto';
   let pincelTirar = false;
   let tracoAntes = null;
 
@@ -56,7 +57,7 @@ export function montarSelecionar(est) {
     modo = m;
     q('modos').querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === m));
     q('dica').textContent = (MODOS.find(x => x[0] === m) || [])[2] || '';
-    q('optRegiao').style.display = m === 'regiao' ? '' : 'none';
+    q('optRegiao').style.display = m === 'regiao' || m === 'auto' ? '' : 'none';
     q('optPincel').style.display = m === 'pincel' ? '' : 'none';
     if (d.open) est.definirFerramenta(m);
   }
@@ -68,7 +69,14 @@ export function montarSelecionar(est) {
   });
   q('ang').addEventListener('input', () => { q('angv').textContent = q('ang').value + '°'; });
   q('raio').addEventListener('input', () => { q('raiov').textContent = fmt(+q('raio').value, 1); });
-  d.addEventListener('toggle', () => { if (d.open) est.definirFerramenta(modo); else if (est.ferramenta !== 'navegar' && MODOS.some(m => m[0] === est.ferramenta)) est.definirFerramenta('navegar'); });
+  // fechou Selecionar: volta a navegar — a não ser que o Separar esteja aberto
+  // (ele usa a mesma seleção automática)
+  d.addEventListener('toggle', () => {
+    if (d.open) { est.definirFerramenta(modo); return; }
+    const separarAberto = est.painel && est.painel.querySelector('details[data-sec=sep][open]');
+    if (separarAberto) { if (est.ferramenta === 'navegar') est.definirFerramenta('auto'); return; }
+    if (est.ferramenta !== 'navegar' && MODOS.some(m => m[0] === est.ferramenta)) est.definirFerramenta('navegar');
+  });
 
   const parte = () => est.parteAtual();
   const mascaraAtual = p => est.visor.selecao(p.id) || new Uint8Array(p.malha.idx.length / 3);
@@ -84,11 +92,52 @@ export function montarSelecionar(est) {
     return nova;
   }
 
+  // AUTOMÁTICO: o detalhe até a dobra (olho, botão) se ele for um pedaço
+  // pequeno da peça; senão, a parte até o ponto mais fino (orelha, mão)
+  const LIMITE_DETALHE = 0.35;
+  function detalheNoPonto(p, face) {
+    const reg = crescerRegiao(p.malha, est.adj(p.malha), face, { anguloVizinho: +q('ang').value, detalhe: true });
+    const n = contar(reg), nt = p.malha.idx.length / 3;
+    return n >= 3 && n <= nt * LIMITE_DETALHE ? reg : null;
+  }
+  let realce = null, pedidoRealce = 0;
+  const cv = est.visor.renderer.domElement;
+  cv.addEventListener('pointermove', ev => {
+    if (est.ferramenta !== 'auto' || ev.buttons || est.previaAtiva) return;
+    if (pedidoRealce) return;
+    pedidoRealce = requestAnimationFrame(() => {
+      pedidoRealce = 0;
+      const hit = est.visor.intersectar(ev);
+      const o = hit && est.cena.objeto(hit.objeto), p = o && o.partes.find(x => x.id === hit.parte);
+      if (!p) { if (realce) { est.visor.limparRealce(); realce = null; } return; }
+      if (realce && realce.parte === p.id && realce.mask[hit.face]) return;      // ainda na mesma parte
+      const reg = detalheNoPonto(p, hit.face);
+      realce = reg ? { parte: p.id, mask: reg } : { parte: p.id, mask: new Uint8Array(p.malha.idx.length / 3) };
+      est.visor.definirRealce(p.id, reg);
+      cv.title = reg ? 'Clique pra pegar este detalhe' : 'Clique: acho a parte até o ponto mais fino (orelha, mão…)';
+    });
+  });
+  cv.addEventListener('pointerleave', () => { if (realce) { est.visor.limparRealce(); realce = null; } });
+  est.on('ferramenta', f => { if (f !== 'auto' && realce) { est.visor.limparRealce(); realce = null; cv.title = ''; } });
+
+  est.on('clique', async ({ hit, ev }) => {
+    if (est.ferramenta !== 'auto') return;
+    const o = est.cena.objeto(hit.objeto); if (!o) return;
+    const p = o.partes.find(x => x.id === hit.parte); if (!p) return;
+    est.visor.limparRealce(); realce = null;
+    const reg = detalheNoPonto(p, hit.face);
+    if (reg) { definir(p, combinar(p, reg, ev), 'detalhe'); return; }
+    await pegarMembro(o, p, hit, ev);
+  });
+
   // parte orgânica até o ponto mais fino (o motor acha o pulso/base/pescoço)
   est.on('clique', async ({ hit, ev }) => {
     if (est.ferramenta !== 'membro') return;
     const o = est.cena.objeto(hit.objeto); if (!o) return;
     const p = o.partes.find(x => x.id === hit.parte); if (!p) return;
+    await pegarMembro(o, p, hit, ev);
+  });
+  async function pegarMembro(o, p, hit, ev) {
     const G = M4.inverter(o.transform);
     const ponto = M4.aplicarPonto(G, hit.ponto.x, hit.ponto.y, hit.ponto.z);
     q('info').textContent = 'Procurando onde essa parte termina…';
@@ -98,7 +147,7 @@ export function montarSelecionar(est) {
     const nova = parteAlemDoPlano(p.malha, est.adj(p.malha), hit.face, r.plano);
     if (!contar(nova)) { q('info').textContent = 'Não achei a parte nesse ponto. Tente clicar mais no meio dela.'; return; }
     definir(p, combinar(p, nova, ev), 'parte até o ponto fino');
-  });
+  }
 
   est.on('clique', ({ hit, ev }) => {
     if (!d.open && !['regiao', 'casca', 'cor', 'parte'].includes(est.ferramenta)) return;
@@ -218,7 +267,7 @@ export function montarSelecionar(est) {
 
   est.on('selecao', () => { info(); renderLista(); });
   est.on('mudou', () => { info(); renderLista(); });
-  ativarModo('regiao');
+  ativarModo('auto');
   void tracoAntes;
   return { el: d, pincel, cursorPincel, fimPincel, info };
 }

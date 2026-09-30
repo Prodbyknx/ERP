@@ -56,7 +56,7 @@ export async function secaoCSP({ b, teste, novaPagina, passo }) {
     await passo(pg, 'CSP: Estúdio 3D (WASM + worker blob:) liga, cria peça e exporta 3MF', async () => {
       await pg.evaluate(() => showTab('ferr'));
       await pg.click('#ferr_modo_seg button[data-v=estudio]');
-      await pg.waitForFunction(() => document.querySelector('.e3d-motor span')?.textContent.includes('pronto'), null, { timeout: 60000 });
+      await pg.waitForFunction(() => document.querySelector('#ferr_estudio .e3d-motor span')?.textContent.includes('pronto'), null, { timeout: 60000 });
       await pg.evaluate(() => { const d = document.querySelector('[data-sec=formas]'); d.open = true; d.dispatchEvent(new Event('toggle')); document.querySelector('[data-forma=esfera]').click(); });
       await pg.waitForFunction(() => window.Estudio3D.estudio.cena.objetos.length === 1, null, { timeout: 30000 });
       await pg.evaluate(() => { const d = document.querySelector('[data-sec=exp]'); d.open = true; d.dispatchEvent(new Event('toggle')); });
@@ -66,10 +66,11 @@ export async function secaoCSP({ b, teste, novaPagina, passo }) {
     });
     await passo(pg, 'CSP: gerador de chaveiro (texto) mostra a prévia e baixa o 3MF', async () => {
       await pg.click('#ferr_modo_seg button[data-v=gerador]');
-      await pg.click('#fer_entrada_seg button[data-v=texto]');
-      await pg.fill('#fer_texto', 'MARIA');
-      await pg.waitForFunction(() => document.getElementById('fer_acoes').style.display !== 'none', null, { timeout: 20000 });
-      const [dl] = await Promise.all([pg.waitForEvent('download', { timeout: 60000 }), pg.click('#fer_3mf')]);
+      await pg.waitForSelector('.e3g-vazio [data-b=nome]', { timeout: 60000 });
+      await pg.fill('.e3g-vazio [data-b=nome]', 'MARIA');
+      await pg.click('.e3g-vazio [data-b=usarNome]');
+      await pg.waitForFunction(() => window.Estudio3D.gerador && window.Estudio3D.gerador.res, null, { timeout: 30000 });
+      const [dl] = await Promise.all([pg.waitForEvent('download', { timeout: 60000 }), pg.click('.e3g [data-b=baixar3mf]')]);
       if (!(await dl.path())) throw new Error('3MF não baixou');
       await semBloqueio();
     });

@@ -26,6 +26,7 @@ export class Visor {
     this.grupos = new Map();          // objeto.id -> THREE.Group
     this.itens = new Map();           // parte.id -> item
     this.selecaoFaces = new Map();    // parte.id -> Uint8Array
+    this.realceFaces = new Map();     // parte.id -> Uint8Array (o que o clique vai pegar, passando o mouse)
     this.mapas = new Map();           // parte.id -> Float32Array(3*nT) cores linear por face (modo de análise)
     this.modo = 'cores';
     this.arame = false;
@@ -342,6 +343,8 @@ export class Visor {
     const c = attr.array;
     let sel = this.selecaoFaces.get(parteId);
     if (sel && sel.length !== nt) sel = null;
+    let real = this.realceFaces.get(parteId);
+    if (real && real.length !== nt) real = null;
     let fonte = it.base;
     let mapa = this.mapas.get(parteId);
     if (mapa && mapa.length !== nt * 3) mapa = null;        // mapa de outra geometria (ex.: prévia dos furos)
@@ -353,6 +356,7 @@ export class Visor {
       if (normais) { r = azulClaro[0]; g = azulClaro[1]; b = azulClaro[2]; }
       else { r = fonte[t * 3]; g = fonte[t * 3 + 1]; b = fonte[t * 3 + 2]; }
       if (sel && sel[t]) { r = r * 0.3 + VERDE[0] * 0.7; g = g * 0.3 + VERDE[1] * 0.7; b = b * 0.3 + VERDE[2] * 0.7; }
+      else if (real && real[t]) { r = r * 0.45 + AZUL[0] * 0.55; g = g * 0.45 + AZUL[1] * 0.55; b = b * 0.45 + AZUL[2] * 0.55; }
       const o = t * 9;
       c[o] = c[o + 3] = c[o + 6] = r; c[o + 1] = c[o + 4] = c[o + 7] = g; c[o + 2] = c[o + 5] = c[o + 8] = b;
     }
@@ -378,6 +382,13 @@ export class Visor {
     if (mask) this.selecaoFaces.set(parteId, mask); else this.selecaoFaces.delete(parteId);
     this.pintar(parteId);
   }
+  definirRealce(parteId, mask) {
+    const tinha = this.realceFaces.has(parteId);
+    for (const id of [...this.realceFaces.keys()]) if (id !== parteId) { this.realceFaces.delete(id); this.pintar(id); }
+    if (mask) this.realceFaces.set(parteId, mask); else this.realceFaces.delete(parteId);
+    if (mask || tinha) this.pintar(parteId);
+  }
+  limparRealce() { for (const id of [...this.realceFaces.keys()]) { this.realceFaces.delete(id); this.pintar(id); } }
   limparSelecoes() { const ids = [...this.selecaoFaces.keys()]; this.selecaoFaces.clear(); ids.forEach(id => this.pintar(id)); }
 
   /* ------------------------------------------------ câmera */

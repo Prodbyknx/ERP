@@ -71,7 +71,7 @@ export class Estudio {
     this.raiz = raiz;
     this.opcoes = opcoes;
     this.cena = new Cena();
-    this.motor = new Motor();
+    this.motor = opcoes.motor || new Motor();   // o gerador de chaveiro usa o mesmo motor (mesmos workers)
     this.ferramenta = 'navegar';
     this.adjCache = new WeakMap();
     this.diag = new Map();          // parte.id -> { rel, malha }
@@ -166,6 +166,9 @@ export class Estudio {
     this.previaEl = el('div', { class: 'e3d-previa e3d-vidro', style: 'display:none' });
     this.multiEl = el('div', { class: 'e3d-multi e3d-vidro', style: 'display:none' });
     this.palco.append(this.multiEl);
+    // parte selecionada (olho, orelha…): as ações ficam logo ali, em cima do 3D
+    this.acaoSelEl = el('div', { class: 'e3d-acaosel e3d-vidro', style: 'display:none', role: 'toolbar', 'aria-label': 'Parte selecionada' });
+    this.palco.append(this.acaoSelEl);
     this.placasEl = el('div', { class: 'e3d-placas e3d-vidro' });
     this.palco.append(this.vazio, this.objetosEl, this.saudeEl, this.vistasEl, this.hud, this.dica, this.ocupadoEl, this.previaEl, this.placasEl);
 
@@ -216,6 +219,9 @@ export class Estudio {
     this.cena.on('selecao', () => this.aoSelecionar());
     this.visor.on('gizmo-fim', g => this.fimGizmo(g));
     this.visor.on('gizmo-mudou', () => this.atualizarHud());
+    this.on('faces', ({ parte, n }) => this.renderAcaoSel(parte, n));
+    this.on('previa-fim', () => { const p = this.parteAtual(); const m = p && this.visor.selecao(p.id); this.renderAcaoSel(p, m && m.length === p.malha.idx.length / 3 ? m.reduce((a, v) => a + v, 0) : 0); });
+    this.cena.on('mudou', () => { const p = this.parteAtual(); const m = p && this.visor.selecao(p.id); if (!m || m.length !== p.malha.idx.length / 3) { this.acaoSelEl.style.display = 'none'; this.dica.style.visibility = ''; } });
     this.on('analisou', () => { this.renderSaude(); if (this.painel.classList.contains('inicio')) this.renderInicio(); });
     // tema claro/escuro do sistema
     new MutationObserver(() => this.visor.definirTema(document.documentElement.dataset.tema === 'escuro'))
@@ -1141,6 +1147,35 @@ export class Estudio {
     if (cfg.notas && cfg.notas.length) this.previaEl.appendChild(el('div', { style: 'flex-basis:100%;font-size:11.5px;color:var(--warn)' }, cfg.notas.join(' · ')));
     this.previaEl.style.display = 'flex';
     this.multiEl.style.display = 'none';
+    this.acaoSelEl.style.display = 'none';
+    this.dica.style.visibility = '';
+  }
+
+  // barra da parte selecionada: tamanho + Separar / com pino / limpar
+  renderAcaoSel(parte, n) {
+    const b = this.acaoSelEl;
+    const mask = parte && this.visor.selecao(parte.id);
+    if (!n || !mask || this.previaAtiva || mask.length !== parte.malha.idx.length / 3) { b.style.display = 'none'; this.dica.style.visibility = ''; return; }
+    this.dica.style.visibility = 'hidden';     // a barra fica no lugar da dica
+    const pos = parte.malha.pos, idx = parte.malha.idx;
+    let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+    for (let t = 0; t < mask.length; t++) {
+      if (!mask[t]) continue;
+      for (let k = 0; k < 3; k++) {
+        const v = idx[t * 3 + k] * 3;
+        if (pos[v] < x0) x0 = pos[v]; if (pos[v] > x1) x1 = pos[v];
+        if (pos[v + 1] < y0) y0 = pos[v + 1]; if (pos[v + 1] > y1) y1 = pos[v + 1];
+        if (pos[v + 2] < z0) z0 = pos[v + 2]; if (pos[v + 2] > z1) z1 = pos[v + 2];
+      }
+    }
+    const tam = Math.max(x1 - x0, y1 - y0, z1 - z0);
+    b.innerHTML = '';
+    b.append(
+      el('span', { class: 'tit', html: icone('check', 15) + ' <b>Parte selecionada</b> <span class="u">~' + fmt(tam, 1) + ' mm · ' + fmtInt(n) + ' faces</span>' }),
+      el('button', { type: 'button', class: 'btn primary', 'data-a': 'separar', onclick: () => { this.abrirFerramenta('sep'); this.secoes.separar.separar({}); } }, 'Separar'),
+      el('button', { type: 'button', class: 'btn', 'data-a': 'pino', title: 'Separa com pino e furo pra encaixar de volta', onclick: () => { this.abrirFerramenta('sep'); this.secoes.separar.separar({ conector: 'cilindrico' }); } }, 'Separar com pino'),
+      el('button', { type: 'button', class: 'btn so-ico', 'aria-label': 'Limpar seleção', title: 'Limpar seleção (Esc)', html: icone('x', 14), onclick: () => { this.visor.definirSelecao(parte.id, null); this.emitir('faces', { parte, n: 0 }); } }));
+    b.style.display = 'flex';
   }
   confirmarPrevia() {
     const cfg = this.previaAtiva;

@@ -26,6 +26,18 @@ import { melhorGiro, normalizar, avaliar } from '../core/ia/avaliacao.js';
 import { BufferGeometry, BufferAttribute } from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 import { progresso } from '../core/progresso.js';
+import { analisar as analisarLogo } from '../../gerador/analise.js';
+import { construir as construirChaveiro } from '../../gerador/chaveiro.js';
+import { criar } from '../core/malha.js';
+
+// GERADOR DE CHAVEIRO: a análise (máscaras grandes) fica aqui no worker; a
+// tela só recebe o resumo e manda construir de novo a cada ajuste
+const analises = new Map();
+function resumoAnalise(id, an) {
+  const { W, H, fatorImg, modo, fundo, cores, coresBrutas, caixa, ruido, sugestao, ms } = an;
+  return { id, W, H, fatorImg, modo, fundo, coresBrutas, caixa, ruido, sugestao, ms,
+    cores: cores.map(c => ({ id: c.id, hex: c.hex, nome: c.nome, fracao: c.fracao, pai: c.pai, nivel: c.nivel })) };
+}
 
 // operações cujo resultado não vai pra tela como peça
 export const SEM_RENDER = new Set(['analisar', 'bvh', 'exportar3MF', 'exportarSTL', 'medidas', 'sugerirSeparacao', 'adjacencia']);
@@ -37,6 +49,23 @@ function resumoValidacao(v) {
 }
 
 export const OPERACOES = {
+  geradorAnalisar({ id, px, w, h }) {
+    progresso(0.1, 'Analisando a logo');
+    const an = analisarLogo({ px, w, h });
+    if (an.erro) return { erro: an.erro };
+    analises.set(id, an);
+    while (analises.size > 3) analises.delete(analises.keys().next().value);
+    return resumoAnalise(id, an);
+  },
+  geradorConstruir({ id, cfg }) {
+    const an = analises.get(id);
+    if (!an) { const e = new Error('A análise da logo não está mais no motor.'); e.codigo = 'sem-analise'; throw e; }
+    const r = construirChaveiro(an, cfg);
+    if (r.erro) return { erro: r.erro };
+    r.partes = r.partes.map(p => ({ ...p, malha: criar(p.malha.pos, p.malha.idx) }));
+    return r;
+  },
+
   importar({ nome, bytes, extras }) { return importarArquivo(nome, bytes, extras || {}); },
 
   analisar({ parte, opc }) {

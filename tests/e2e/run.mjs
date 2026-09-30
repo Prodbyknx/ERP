@@ -73,7 +73,7 @@ async function passo(pg, nome, fn) {
     console.log('  ok    ' + nome + ' (' + (Date.now() - t0) + ' ms)');
   } catch (e) {
     falhas++;
-    console.log('  FALHA ' + nome + ': ' + String(e.message).split('\n')[0]);
+    console.log('  FALHA ' + nome + ': ' + String(e.message).split('\n')[0] + (pg.erros.length ? ' | erros da página: ' + pg.erros.join(' | ').slice(0, 400) : ''));
     pg.erros.length = 0;
     try { await pg.screenshot({ path: path.join(tmp, 'falha-' + nome.replace(/\W+/g, '_') + '.png') }); } catch (x) { /* ok */ }
   }
@@ -89,7 +89,7 @@ async function abrirEstudio(pg, url) {
   await pg.waitForTimeout(1200);
   await pg.evaluate(() => showTab('ferr'));
   await pg.click('#ferr_modo_seg button[data-v=estudio]');
-  await pg.waitForFunction(() => document.querySelector('.e3d-motor span')?.textContent.includes('pronto'), null, { timeout: 60000 });
+  await pg.waitForFunction(() => document.querySelector('#ferr_estudio .e3d-motor span')?.textContent.includes('pronto'), null, { timeout: 60000 });
 }
 
 async function main() {
@@ -480,30 +480,8 @@ async function main() {
   await pg.context().close();
 
   console.log('6) gerador de chaveiro');
-  pg = await novaPagina(b);
-  await pg.goto('file://' + teste + '/index.html');
-  await pg.waitForTimeout(1200);
-  await pg.evaluate(() => showTab('ferr'));
-  await passo(pg, 'gerador: 3MF com cor que o Bambu lê', async () => {
-    await pg.click('#fer_entrada_seg button[data-v=texto]');
-    await pg.fill('#fer_texto', 'MARIA');
-    await pg.waitForFunction(() => document.getElementById('fer_acoes').style.display !== 'none', null, { timeout: 20000 });
-    const [dl] = await Promise.all([pg.waitForEvent('download', { timeout: 60000 }), pg.click('#fer_3mf')]);
-    const arq = path.join(tmp, 'gerador.3mf');
-    await dl.saveAs(arq);
-    const s = simular(arq);
-    const vols = s.objetos.flatMap(o => o.volumes);
-    if (vols.length !== 2 || vols.some(v => !v.cor_volume)) throw new Error(JSON.stringify(vols));
-  });
-  await passo(pg, 'gerador: Abrir no Estúdio 3D', async () => {
-    await pg.click('#fer_estudio');
-    await pg.waitForFunction(() => window.Estudio3D && window.Estudio3D.estudio && window.Estudio3D.estudio.cena.objetos.length === 1, null, { timeout: 60000 });
-  });
-  await pg.context().close();
-  const { secaoArgola } = await import('./argola.mjs');
-  await secaoArgola({ b, teste, novaPagina, passo });
-  const { secaoNFC } = await import('./nfc.mjs');
-  await secaoNFC({ b, teste, tmp, novaPagina, passo });
+  const { secaoGerador } = await import('./gerador.mjs');
+  await secaoGerador({ b, teste, tmp, raiz, novaPagina, passo, simular });
   const { secaoCSP } = await import('./csp.mjs');
   await secaoCSP({ b, teste, novaPagina, passo });
   const { secaoXSS } = await import('./xss.mjs');
@@ -514,6 +492,10 @@ async function main() {
   await secaoNuvem({ chromium, passo });
   const { secaoMenu } = await import('./menu.mjs');
   await secaoMenu({ b, teste, novaPagina, passo, abrirEstudio, abrirSecao });
+
+  console.log('7b) pegar olho/orelha num clique (passar o mouse acende) e separar pela barra');
+  const { secaoParte } = await import('./parte.mjs');
+  await secaoParte({ b, teste, tmp, novaPagina, passo, abrirEstudio, abrirSecao });
 
   console.log('8) separar a mão do boneco (STL cru, com furos) pelo corte de uma parte');
   pg = await novaPagina(b);

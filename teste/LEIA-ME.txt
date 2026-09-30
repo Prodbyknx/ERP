@@ -17,6 +17,36 @@ COMO USAR
    de exemplo: Gabriel (admin) e Ana (vendedora).
 
 
+NOVIDADES DESTA VERSÃO (11) — GERADOR DE CHAVEIRO NOVO
+-------------------------------------------------------
+Ferramentas -> Gerar chaveiro. Detalhes em FERRAMENTAS.txt.
+- Mesma cara do Estúdio 3D: a peça em 3D grande no meio, painel
+  Padrão / Personalizar / Avançado, selo de qualidade, "Comparar"
+  (imagem original por cima da peça, alinhada).
+- Solta a logo: ele acha o fundo (transparente, liso ou claro/escuro),
+  as cores (1 a 4, sem confundir borda suavizada com cor nova), a cor
+  da base, as alturas e o lugar da argola. Em ~2 s o chaveiro está
+  pronto; a tela não trava (tudo roda no motor, em segundo plano).
+- Argola nunca em cima da arte; arraste ela na prévia.
+- Traço mais fino que o bico é engrossado (e ele diz quantos).
+- Impressora (A1, A1 mini, P1S, P1P, X1C) e bico mudam camada, mesa e
+  traço mínimo. Sem AMS: diz em que camada trocar cada filamento.
+- Verso: @instagram/telefone/nome (colorido rente ou gravado) ou QR code
+  (link do Instagram/WhatsApp/site) — o QR da prévia é lido pelo celular.
+- 3MF com uma parte por cor, que o Bambu Studio abre com as cores.
+Antes x agora (10 logos de teste com gabarito):
+  logo de 2 a 4 cores: saía de 1 cor (acerto por cor 1–16%) -> 4 cores,
+  96–99,9% de cor certa; JPG do escudo: faixa branca sumia e o escudo
+  partia em dois -> 99% certo, uma peça; argola comia até 13% da arte ->
+  0%; letras e pontinhos sumiam -> 100% cobertos.
+
+ESTÚDIO: PEGAR OLHO/ORELHA NUM CLIQUE
+- Selecionar -> Automático: passe o mouse, a parte acende em azul;
+  clique e ela é selecionada inteira (olho até a dobra, orelha até o
+  ponto mais fino). A barra "Parte selecionada" separa na hora (ou com
+  pino pra encaixar de volta).
+
+
 NOVIDADES DESTA VERSÃO (9) — VÁRIAS PLACAS
 -------------------------------------------
 
@@ -614,14 +644,13 @@ os 8 arquivos dela pro Cloudflare. O arquivo NOVO é o estudio3d.js —
 sem ele o Estúdio 3D não abre (o resto do sistema funciona normal).
 Os arquivos config.js e supabase.min.js de lá são os seus, sem mudança.
 
-Nesta versão (nuvem + botão direito) mudaram 4 arquivos da pasta de subir:
-  cloud.js       fim do erro 401 (nada sai sem a sua sessão), tempo real
-                 que agora entrega as mudanças ao vivo, e a conexão fecha
-                 ao sair da página e volta sozinha ao voltar (sem o aviso
-                 "Page entered Back-Forward Cache")
-  app.js         menu do botão direito do sistema
-  index.html     visual do menu (o mesmo do menu ⋯)
-  estudio3d.js   menu do botão direito no Estúdio 3D
+Nesta versão (gerador de chaveiro novo + pegar parte no Estúdio) mudaram
+3 arquivos da pasta de subir:
+  estudio3d.js   o gerador de chaveiro novo (motor + tela) e o "pegar
+                 olho/orelha num clique" do Estúdio
+  app.js         a aba Ferramentas abre o gerador novo
+  index.html     a aba Ferramentas (o gerador é montado pelo estudio3d.js)
+(cloud.js não mudou nesta versão.)
 Suba os 8 de novo.
 
 

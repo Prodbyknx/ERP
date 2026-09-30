@@ -1,5 +1,6 @@
 // Entrada do bundle site/estudio3d.js. Expõe window.Estudio3D pro app.js.
 import { Estudio } from './estudio.js';
+import { Gerador } from './gerador.js';
 import { Motor } from '../motor/cliente.js';
 import { pecasDoGerador } from '../core/pecasGerador.js';
 import * as M4 from '../core/mat4.js';
@@ -7,12 +8,13 @@ import { baixar, nomeArquivo } from './util.js';
 
 /* global __VERSAO_ESTUDIO__ */
 let estudio = null;
-let motorAvulso = null;
+let gerador = null;
+let motorComum = null;
 
+// um motor só (dois workers) pro Estúdio, pro gerador e pras exportações
 function motor() {
-  if (estudio) return estudio.motor;
-  if (!motorAvulso) motorAvulso = new Motor();
-  return motorAvulso;
+  if (!motorComum) motorComum = new Motor();
+  return motorComum;
 }
 
 window.Estudio3D = {
@@ -25,10 +27,24 @@ window.Estudio3D = {
     }
     const raiz = document.createElement('div');
     elemento.appendChild(raiz);
-    estudio = new Estudio(raiz);
+    estudio = new Estudio(raiz, { motor: motor() });
     return estudio;
   },
   get estudio() { return estudio; },
+
+  // gerador de chaveiro (mesma casca/visor do Estúdio)
+  montarGerador(elemento) {
+    if (gerador) {
+      if (gerador.raiz.parentNode !== elemento) elemento.appendChild(gerador.raiz);
+      gerador.redimensionar();
+      return gerador;
+    }
+    const raiz = document.createElement('div');
+    elemento.appendChild(raiz);
+    gerador = new Gerador(raiz, motor());
+    return gerador;
+  },
+  get gerador() { return gerador; },
 
   // peças do gerador (triângulos soltos por peça) -> sólidos unidos no motor
   async pecasDoGerador(pecas) {
