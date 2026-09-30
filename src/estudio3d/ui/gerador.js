@@ -111,6 +111,15 @@ export const CSS_GERADOR = `
 .e3g-check input{ accent-color:var(--brand); width:16px; height:16px }
 .e3g-trocas{ margin-top:8px; font-size:12px; color:var(--ink-soft); line-height:1.5 }
 .e3g-trocas b{ color:var(--ink) }
+.e3g-pausas{ margin-top:12px; padding:12px; border-radius:12px; border:1px solid var(--line); background:var(--panel-2); font-size:12px; color:var(--ink-soft); line-height:1.5 }
+.e3g-pausas p{ margin:0 0 8px }
+.e3g-pausas b{ color:var(--ink) }
+.e3g-pausas ol{ margin:0 0 10px; padding-left:18px }
+.e3g-pausas li span{ color:var(--ink-soft) }
+.e3g-pausas .bolinha{ display:inline-block; width:10px; height:10px; border-radius:50%; margin:0 4px -1px 2px; box-shadow:0 0 0 1px rgba(0,0,0,.2) }
+.e3g-pausas .jeito{ margin:8px 0 }
+.e3g-pausas .e3g-soltar{ border-style:dashed }
+.e3g-pausas .e3g-soltar.sobre{ border-color:var(--brand); color:var(--brand) }
 .e3g-argola-fantasma{ pointer-events:none }
 .e3g-verso textarea{ width:100%; min-height:62px; resize:vertical; font:600 14px var(--sans) }
 .e3g-verso .rapidos{ display:flex; gap:6px; margin:6px 0 10px }
@@ -530,10 +539,7 @@ export class Gerador {
     imp.append(el('div', {}, el('label', {}, 'Modelo'), sel), el('div', {}, el('label', {}, 'Bico'), bico));
     c.appendChild(imp);
     c.appendChild(this.check('Tenho AMS (troca de cor automática)', this.cfg.estrategia !== 'troca', v => { this.cfg.estrategia = v ? 'ams' : 'troca'; }));
-    if (r && r.trocas && r.trocas.length) {
-      c.appendChild(el('div', { class: 'e3g-trocas', html: '<b>Sem AMS:</b> no Bambu Studio, na barra de camadas, adicione a troca de filamento em ' +
-        r.trocas.map(t => '<b>camada ' + t.camada + '</b> (' + esc(t.nome.toLowerCase()) + ')').join(', ') + '. Cada cor tem sua altura.' }));
-    }
+    if (r && r.pausas && r.pausas.length) c.appendChild(this.blocoPausas(r));
     // ações
     const acoes = el('div', { class: 'e3d-botoes' });
     acoes.append(
@@ -546,6 +552,28 @@ export class Gerador {
       const notas = [...r.avisos.filter(a => a.tipo === 'alerta')];
       for (const a of notas) c.appendChild(el('div', { class: 'e3d-nota aviso' }, a.texto));
     }
+  }
+
+  // PAUSAS (sem AMS e/ou tag NFC): onde parar e os dois jeitos de pôr no arquivo
+  blocoPausas(r) {
+    const d = el('div', { class: 'e3g-pausas' });
+    const semAms = this.cfg.estrategia === 'troca';
+    const fz = z => fmt(z, 2);
+    d.innerHTML = '<div class="e3d-titulo" style="margin-top:0">Pausas na impressão</div>' +
+      (semAms ? '<p>Sem AMS a peça vai com <b>um filamento só</b> (comece com a cor da base: <span class="hex">' + esc(r.corBase) + '</span>). A impressora para em cada troca, você troca o filamento e continua.</p>' : '') +
+      '<ol>' + r.pausas.map(p => '<li><b>Camada ' + p.camada + '</b> <span>(' + fz(p.zBarra != null ? p.zBarra : p.z) + ' mm)</span> — ' + (p.tipo === 'nfc' ? 'coloque a tag NFC' : 'troque pra <i class="bolinha" style="background:' + esc(p.hex) + '"></i>' + esc(p.nome.toLowerCase())) + '</li>').join('') + '</ol>' +
+      '<div class="jeito"><b>Automático:</b> no Bambu Studio, fatie e use <i>Arquivo → Exportar → Exportar arquivo fatiado da placa</i> (.gcode.3mf). Solte esse arquivo aqui: ele volta com as pausas no lugar certo, pronto pra imprimir (cartão microSD ou abrindo no Bambu Studio e imprimindo).</div>';
+    const inp = el('input', { type: 'file', accept: '.3mf,.gcode', style: 'display:none', 'aria-label': 'Arquivo fatiado do Bambu' });
+    inp.onchange = () => { const f = inp.files && inp.files[0]; inp.value = ''; if (f) this.pausarFatiado(f); };
+    const zona = el('button', { type: 'button', class: 'btn largo e3g-soltar', 'data-b': 'pausas' }, 'Colocar as pausas no arquivo fatiado…');
+    zona.onclick = () => inp.click();
+    zona.addEventListener('dragover', ev => { ev.preventDefault(); zona.classList.add('sobre'); });
+    zona.addEventListener('dragleave', () => zona.classList.remove('sobre'));
+    zona.addEventListener('drop', ev => { ev.preventDefault(); zona.classList.remove('sobre'); const f = ev.dataTransfer.files && ev.dataTransfer.files[0]; if (f) this.pausarFatiado(f); });
+    d.append(zona, inp);
+    d.appendChild(el('div', { class: 'jeito', html: '<b>Na mão:</b> no Bambu Studio, depois de fatiar, clique com o botão direito no <b>+</b> da barra de camadas (à direita) na camada indicada → <i>Adicionar pausa</i>.' }));
+    if (this.ultimasPausas && this.ultimasPausas.length) d.appendChild(el('div', { class: 'e3d-nota' }, 'Último arquivo: ' + this.ultimasPausas.map(p => 'camada ' + p.camada + (p.jaTinha ? ' (já tinha)' : '')).join(', ') + '.'));
+    return d;
   }
 
   renderCores(lista) {
@@ -681,7 +709,7 @@ export class Gerador {
       c.appendChild(this.seg([['baixo', 'Por baixo (cola depois)'], ['fechado', 'Fechada dentro (pausa)']], n.modo, v => { this.cfg.nfc = { ...this.cfg.nfc, modo: v }; }));
       c.appendChild(this.campoSlider('Diâmetro da tag', 'mm', n.diametroMM, 10, 40, 1, v => { this.cfg.nfc = { ...this.cfg.nfc, diametroMM: v }; }));
       c.appendChild(this.campoSlider('Profundidade', 'mm', n.profundidadeMM, 0.4, 3, 0.1, v => { this.cfg.nfc = { ...this.cfg.nfc, profundidadeMM: v }; }));
-      if (this.res && this.res.nfc && this.res.nfc.modo === 'fechado') c.appendChild(el('div', { class: 'e3d-nota' }, 'Pausa na camada ' + this.res.nfc.camadaPausa + ' (' + fmt(this.res.nfc.zPausa, 2) + ' mm): ponha a tag e continue.'));
+      if (this.res && this.res.nfc && this.res.nfc.modo === 'fechado') c.appendChild(this.blocoPausas(this.res));
     }
     c.appendChild(el('div', { class: 'e3d-titulo' }, 'Análise da imagem'));
     const d = el('div', { class: 'e3d-diag' });
@@ -840,7 +868,31 @@ export class Gerador {
   }
 
   /* ------------------------------------------------------------ saídas */
-  partesExport() { return this.res.partes.map(p => ({ nome: p.nome, cor: p.cor, malha: { pos: p.malha.pos, idx: p.malha.idx } })); }
+  // sem AMS: pro Bambu vai UM sólido de um filamento (a cor muda na pausa);
+  // o Estúdio recebe as faixas coloridas (pra ver/editar)
+  partesExport(paraImprimir = true) {
+    const r = this.res;
+    const ps = paraImprimir && this.cfg.estrategia === 'troca' && r.pecaUnica ? [r.pecaUnica] : r.partes;
+    return ps.map(p => ({ nome: p.nome, cor: p.cor, malha: { pos: p.malha.pos, idx: p.malha.idx } }));
+  }
+
+  // arquivo fatiado do Bambu (.gcode.3mf ou .gcode) -> o mesmo arquivo com as pausas
+  async pausarFatiado(f) {
+    const r = this.res;
+    if (!r || !r.pausas || !r.pausas.length || !f) return;
+    if (f.size > 300 * 1024 * 1024) { avisar('Arquivo grande demais (máximo 300 MB).', 'warn'); return; }
+    try {
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      const x = await this.motor.rodar('geradorPausas', { bytes, pausas: r.pausas.map(p => ({ z: p.z, texto: p.texto })) });
+      if (x.erro) { avisar(x.erro, 'warn'); return; }
+      const nomeBase = (f.name || 'chaveiro').replace(/\.gcode\.3mf$|\.3mf$|\.gcode$/i, '');
+      baixar(x.bytes, nomeBase + '-com-pausas' + (x.formato === '3mf' ? '.gcode.3mf' : '.gcode'), x.formato === '3mf' ? 'model/3mf' : 'text/x-gcode');
+      this.ultimasPausas = x.feitas;
+      const lista = x.feitas.map(p => 'camada ' + p.camada).join(', ');
+      avisar((x.feitas.length === 1 ? 'Pausa colocada: ' : x.feitas.length + ' pausas colocadas: ') + lista + '. Imprima esse arquivo.' + (x.avisos.length ? ' ' + x.avisos.join(' ') : ''), x.avisos.length ? 'warn' : 'ok');
+      if (this.aba === 'personalizar') this.renderPainel();
+    } catch (e) { avisar('Não consegui colocar as pausas: ' + (e.message || e), 'warn'); }
+  }
 
   async baixar3MF() {
     if (!this.res) return;
@@ -849,7 +901,8 @@ export class Gerador {
     try {
       const r = await this.motor.rodar('exportar3MF', { cena: { objetos: [{ nome, transform: M4.identidade(), partes: this.partesExport() }] }, opc: { titulo: nome } });
       baixar(r.bytes, nomeArquivo(nome, 'chaveiro') + '.3mf', 'model/3mf');
-      avisar('3MF pronto — abra no Bambu Studio (ele já vem com as cores).', 'ok');
+      if (this.cfg.estrategia === 'troca' && this.res.pecaUnica) avisar('3MF de um filamento só pronto. Fatie no Bambu e coloque as pausas (camadas ' + (this.res.pausas || []).map(p => p.camada).join(', ') + ') — veja "Pausas" no painel.', 'ok');
+      else avisar('3MF pronto — abra no Bambu Studio (ele já vem com as cores).', 'ok');
     } catch (e) { avisar('Não consegui gerar o 3MF: ' + (e.message || e), 'warn'); }
     finally { b.disabled = false; }
   }
@@ -872,7 +925,7 @@ export class Gerador {
   }
   async abrirNoEstudio() {
     if (!this.res) return;
-    const partes = this.partesExport(), nome = this.nomePeca();
+    const partes = this.partesExport(false), nome = this.nomePeca();
     try {
       if (typeof window.ferModoFerramentas !== 'function') throw new Error('Estúdio indisponível');
       const E = await window.ferModoFerramentas('estudio');

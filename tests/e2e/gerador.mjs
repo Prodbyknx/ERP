@@ -124,8 +124,32 @@ export async function secaoGerador({ b, teste, tmp, raiz, novaPagina, passo, sim
     await novo();
     const r = await res();
     if (!r.trocas || r.trocas.length !== 3) throw new Error('trocas: ' + JSON.stringify(r.trocas));
-    const txt = await pg.textContent('.e3g-trocas');
-    if (!/camada \d+/.test(txt)) throw new Error('instrução: ' + txt);
+    const txt = await pg.textContent('.e3g-pausas');
+    if (!/Camada \d+/.test(txt) || !/um filamento só/.test(txt)) throw new Error('instrução: ' + txt);
+    // 3MF sem AMS: UM objeto, UM volume, um filamento (a cor da base)
+    const [dl] = await Promise.all([pg.waitForEvent('download', { timeout: 60000 }), pg.click('.e3g [data-b=baixar3mf]')]);
+    const arq3mf = path.join(tmp, 'gerador-sem-ams.3mf');
+    await dl.saveAs(arq3mf);
+    const sim = simular(arq3mf), vols = sim.objetos.flatMap(o => o.volumes);
+    if (sim.objetos.length !== 1 || vols.length !== 1 || String(vols[0].cor_volume).toUpperCase().slice(0, 7) !== r.base) throw new Error('3MF sem AMS: ' + JSON.stringify(sim.objetos));
+    // arquivo fatiado (formato do Bambu) -> volta com as pausas nas camadas certas
+    const { escreverZip, lerZip, texto } = await import('../../src/estudio3d/core/formatos/zip.js');
+    const { md5 } = await import('../../src/gerador/pausas.js');
+    const fs = await import('node:fs');
+    const pausas = await pg.evaluate(() => window.Estudio3D.gerador.res.pausas);
+    const alto = r.medidas.espessura, linhas = ['; HEADER_BLOCK_START', '; HEADER_BLOCK_END'];
+    for (let i = 1; i <= Math.round(alto / 0.2); i++) linhas.push('; CHANGE_LAYER', '; Z_HEIGHT: ' + +(i * 0.2).toFixed(2), '; LAYER_HEIGHT: 0.2', 'M73 L' + i, 'M991 S0 P' + (i - 1) + ' ;notify layer change', '; FEATURE: Outer wall', 'G1 X1 Y1 E.1');
+    const gcode = new TextEncoder().encode(linhas.join('\n'));
+    const fatiado = path.join(tmp, 'chaveiro.gcode.3mf');
+    fs.writeFileSync(fatiado, escreverZip([{ nome: 'Metadata/plate_1.gcode', dados: gcode }, { nome: 'Metadata/plate_1.gcode.md5', dados: md5(gcode) }, { nome: 'Metadata/project_settings.config', dados: '{"machine_pause_gcode":"M400 U1"}' }]));
+    const [dl2] = await Promise.all([pg.waitForEvent('download', { timeout: 60000 }), pg.setInputFiles('.e3g-pausas input[type=file]', fatiado)]);
+    if (dl2.suggestedFilename() !== 'chaveiro-com-pausas.gcode.3mf') throw new Error('nome ' + dl2.suggestedFilename());
+    const saida = path.join(tmp, 'chaveiro-com-pausas.gcode.3mf');
+    await dl2.saveAs(saida);
+    const z = lerZip(new Uint8Array(fs.readFileSync(saida))), g = texto(z['Metadata/plate_1.gcode']);
+    if (g.split('; PAUSE_PRINTING\n').length - 1 !== pausas.length || !/M400 U1/.test(g)) throw new Error('pausas no G-code: ' + (g.split('; PAUSE_PRINTING').length - 1) + ' de ' + pausas.length);
+    if (texto(z['Metadata/plate_1.gcode.md5']) !== md5(z['Metadata/plate_1.gcode'])) throw new Error('MD5 não atualizado');
+    for (const p of pausas) { const i = g.indexOf('; Z_HEIGHT: ' + +(p.z + 0.2).toFixed(2) + '\n'); const j = g.indexOf('; PAUSE_PRINTING', i); if (i < 0 || j < 0 || j > g.indexOf('; FEATURE', i)) throw new Error('pausa fora da camada de ' + p.z); }
     await marcar();
     await pg.check('.e3g-check:has-text("Tenho AMS") input');
     await pg.click('.e3g .e3d-painel-corpo .seg button[data-v=chaveiro]');

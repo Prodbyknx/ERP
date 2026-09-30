@@ -289,12 +289,15 @@ function montar(an, cfg, CrossSection, Manifold, G, t0) {
       // cor por altura: cada cor ganha a sua faixa; o que está mais alto passa por
       // todas as faixas de baixo (é o que sai trocando o filamento na mão)
       const rank = vivas.slice().sort((a, b) => nivel[a] - nivel[b] || an.cores[b].area - an.cores[a].area);
-      let z = altBase;
+      let z = altBase, debaixo = base;
       rank.forEach((k, r) => {
         const z1 = z + (r === 0 ? altArte : degrau);
         let col = null;
         for (const j of rank.slice(r)) col = col ? G(col.add(reg[j])) : reg[j];
         if (rank.length - r > 1) col = G(G(col.offset(0.02, 'Miter', 2)).offset(-0.02, 'Miter', 2));
+        // cada faixa cabe dentro da de baixo (nada sobra pra fora no ar)
+        if (r > 0) col = G(col.intersect(debaixo));
+        debaixo = col;
         addSolido(an.cores[k].nome, corDe(k), col, z, z1);
         trocas.push({ z: +z.toFixed(2), camada: Math.round(z / perfil.camada) + 1, hex: corDe(k), nome: an.cores[k].nome });
         zTopo[k] = z1; z = z1;
@@ -316,18 +319,34 @@ function montar(an, cfg, CrossSection, Manifold, G, t0) {
   const tx = -bx0, ty = -by0;
   const saida = [];
   let volTotal = 0;
+  const malhaDe = m => {
+    const mesh = m.getMesh(), np = mesh.numProp;
+    const pos = new Float32Array(mesh.vertProperties.length / np * 3);
+    for (let v = 0, nv2 = pos.length / 3; v < nv2; v++) { pos[v * 3] = mesh.vertProperties[v * np]; pos[v * 3 + 1] = mesh.vertProperties[v * np + 1]; pos[v * 3 + 2] = mesh.vertProperties[v * np + 2]; }
+    // triângulo de área ~0 (vértices colineares no float32) sai
+    const limpa = corrigirDegeneradas(criar(pos, Uint32Array.from(mesh.triVerts))).malha;
+    return { pos: Float32Array.from(limpa.pos), idx: Uint32Array.from(limpa.idx) };
+  };
+  const movidas = [];
   for (const p of partes) {
     const m = G(p.man.translate([tx, ty, 0]));
     const st = m.status();
     if (st !== 'NoError') return { erro: 'Falha na geometria (' + p.nome + ': ' + st + ').' };
-    const mesh = m.getMesh(), np = mesh.numProp;
-    const pos = new Float32Array(mesh.vertProperties.length / np * 3);
-    for (let v = 0, nv2 = pos.length / 3; v < nv2; v++) { pos[v * 3] = mesh.vertProperties[v * np]; pos[v * 3 + 1] = mesh.vertProperties[v * np + 1]; pos[v * 3 + 2] = mesh.vertProperties[v * np + 2]; }
     const vol = m.volume();
     volTotal += vol;
-    // triângulo de área ~0 (vértices colineares no float32) sai
-    const limpa = corrigirDegeneradas(criar(pos, Uint32Array.from(mesh.triVerts))).malha;
-    saida.push({ nome: p.nome, cor: p.hex, malha: { pos: Float32Array.from(limpa.pos), idx: Uint32Array.from(limpa.idx) }, volumeMM3: vol, gramas: vol / 1000 * PLA_G_CM3, genero: m.genus() });
+    movidas.push(m);
+    saida.push({ nome: p.nome, cor: p.hex, malha: malhaDe(m), volumeMM3: vol, gramas: vol / 1000 * PLA_G_CM3, genero: m.genus() });
+  }
+  // sem AMS: a peça vai pro Bambu como UM sólido de um filamento só (a cor
+  // muda pela pausa na altura certa; as faixas coloridas são só a prévia)
+  let pecaUnica = null;
+  if (cfg.estrategia === 'troca' && movidas.length > 1) {
+    let u = movidas[0];
+    for (let i = 1; i < movidas.length; i++) u = G(u.add(movidas[i]));
+    // encosto de faixas quase na mesma borda: junta vértice a menos de 1 µm (senão
+    // o arredondamento pra float32 cruza triângulo no degrau)
+    if (typeof u.simplify === 'function') u = G(u.simplify(0.001));
+    if (u.status() === 'NoError') pecaUnica = { nome: 'Chaveiro', cor: corBase, malha: malhaDe(u), volumeMM3: u.volume(), gramas: u.volume() / 1000 * PLA_G_CM3, genero: u.genus() };
   }
   // nomes iguais (duas cores com o mesmo nome) ganham número
   const vistos = {};
@@ -354,7 +373,13 @@ function montar(an, cfg, CrossSection, Manifold, G, t0) {
     alturas: { base: altBase, arte: altArte, degrau },
     corBase, cracha, niveis: nivel,
     argola: argola ? { xMM: argola.xMM + tx, yMM: argola.yMM + ty, furoMM: argola.furoMM, alcaMM: argola.alcaMM, px: [argola.x, argola.y], u: (argola.x - cx.x0) / cx.w, v: (argola.y - cx.y0) / cx.h, noVao: !!argola.noVao } : null,
-    nfc, verso: versoInfo, trocas: cfg.estrategia === 'troca' ? trocas : null,
+    nfc, verso: versoInfo, trocas: cfg.estrategia === 'troca' ? trocas : null, pecaUnica,
+    // pausas pra pôr no arquivo fatiado: troca de filamento (sem AMS) e tag NFC
+    pausas: [
+      // z: onde a cor nova começa; zBarra: a altura que o Bambu mostra na barra de camadas
+      ...(cfg.estrategia === 'troca' ? trocas.map(t => ({ z: t.z, zBarra: +(t.z + perfil.camada).toFixed(2), camada: t.camada, tipo: 'cor', hex: t.hex, nome: t.nome, texto: 'Troque o filamento: ' + t.nome + ' ' + t.hex })) : []),
+      ...(nfc && nfc.zPausa != null ? [{ z: nfc.zPausa, zBarra: +(nfc.zPausa + perfil.camada).toFixed(2), camada: nfc.camadaPausa, tipo: 'nfc', texto: 'Coloque a tag NFC no bolso' }] : [])
+    ].sort((a, b) => a.z - b.z),
     vista, logoMM,
     transformada: { esc, tx, ty },   // mm = (x_px*esc + tx, -y_px*esc + ty)
     qualidade: rel.qualidade, avisos: rel.avisos, dicas: rel.dicas, estimativa: rel.estimativa,

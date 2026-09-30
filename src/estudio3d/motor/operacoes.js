@@ -28,6 +28,7 @@ import { MeshBVH } from 'three-mesh-bvh';
 import { progresso } from '../core/progresso.js';
 import { analisar as analisarLogo, analisarSVG } from '../../gerador/analise.js';
 import { construir as construirChaveiro } from '../../gerador/chaveiro.js';
+import { pausar } from '../../gerador/pausas.js';
 import { criar } from '../core/malha.js';
 
 // GERADOR DE CHAVEIRO: a análise (máscaras grandes) fica aqui no worker; a
@@ -40,7 +41,7 @@ function resumoAnalise(id, an) {
 }
 
 // operações cujo resultado não vai pra tela como peça
-export const SEM_RENDER = new Set(['analisar', 'bvh', 'exportar3MF', 'exportarSTL', 'medidas', 'sugerirSeparacao', 'adjacencia']);
+export const SEM_RENDER = new Set(['analisar', 'bvh', 'exportar3MF', 'exportarSTL', 'medidas', 'sugerirSeparacao', 'adjacencia', 'geradorPausas']);
 
 function resumoValidacao(v) {
   const r = Object.assign({}, v);
@@ -77,6 +78,12 @@ export const OPERACOES = {
     if (r.erro) return { erro: r.erro };
     r.partes = r.partes.map(p => ({ ...p, malha: criar(p.malha.pos, p.malha.idx) }));
     return r;
+  },
+
+  // arquivo fatiado do Bambu (.gcode.3mf/.gcode) + pausas {z, texto} -> arquivo com as pausas
+  geradorPausas({ bytes, pausas }) {
+    progresso(0.2, 'Colocando as pausas');
+    return pausar(bytes, pausas);
   },
 
   importar({ nome, bytes, extras }) { return importarArquivo(nome, bytes, extras || {}); },
