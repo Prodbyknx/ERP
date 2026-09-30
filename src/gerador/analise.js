@@ -253,9 +253,26 @@ export function analisar({ px, w, h }, opc = {}) {
   hierarquia(rotulo, cores, W, H);
   const sugestao = sugerirBase(modo, fundo, cores, rotulo, sil, W, H);
 
+  // 9. é FOTO? (centenas de tons; as 8 cores mais comuns cobrem pouco da
+  //    imagem) — logo, mesmo em JPG, fica acima de 90% em 8 cores
+  const caixasTodas = new Map(); let nOp = 0;
+  for (let i = 0; i < n; i += 2) {
+    if (px[i * 4 + 3] < 128) continue; nOp++;
+    const k = Math.round(L[i] / 3) * 1e6 + (Math.round(A[i] / 4) + 500) * 1e3 + (Math.round(B[i] / 4) + 500);
+    caixasTodas.set(k, (caixasTodas.get(k) || 0) + 1);
+  }
+  const pops = [...caixasTodas.values()].sort((a, b) => b - a);
+  let top8 = 0; for (let i = 0; i < 8 && i < pops.length; i++) top8 += pops[i];
+  const tons = pops.filter(v => v >= nOp * 0.0005).length, cobre8 = top8 / Math.max(1, nOp);
+  const foto = { provavel: tons >= 60 && cobre8 < 0.7, tons, cobre8: +cobre8.toFixed(3) };
+  // a imagem (RGB no tamanho de trabalho) fica guardada: pôster e litofania usam
+  const rgb = new Uint8Array(n * 3);
+  for (let i = 0; i < n; i++) { rgb[i * 3] = px[i * 4]; rgb[i * 3 + 1] = px[i * 4 + 1]; rgb[i * 3 + 2] = px[i * 4 + 2]; }
+  const alfa = modo === 'alfa' ? sil : null;
+
   return {
     W, H, fatorImg: W / w, modo, fundo, rotulo, cores, coresBrutas, silhueta: sil,
-    caixa: M.caixa(sil, W, H), ruido, sugestao, ms: Date.now() - t0
+    caixa: M.caixa(sil, W, H), ruido, sugestao, foto, rgb, alfa, ms: Date.now() - t0
   };
 }
 
@@ -339,7 +356,7 @@ function sugerirBase(modo, fundo, cores, rotulo, sil, W, H) {
   return lm > 62 ? { corBase: '#1A1A1A', motivo: 'contraste', cracha: null } : { corBase: '#FFFFFF', motivo: 'contraste', cracha: null };
 }
 
-export { lab, dE };
+export { lab, dE, hierarquia, sugerirBase, maioria, rgbDeLab };
 
 /**
  * analisarSVG(texto, {w, h}) -> a mesma análise de analisar(), feita no desenho

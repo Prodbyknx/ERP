@@ -11,6 +11,7 @@ import { perfilDe, PLA_G_CM3 } from './perfis.js';
 import { criar } from '../estudio3d/core/malha.js';
 import { corrigirDegeneradas } from '../estudio3d/core/limpeza.js';
 import { gerarQR } from './qr.js';
+import { construirLitofania } from './litofania.js';
 
 export const PADRAO = {
   modelo: 'chaveiro',          // chaveiro | medalha | placa | contorno
@@ -27,7 +28,9 @@ export const PADRAO = {
   nfc: { ligado: false, diametroMM: 25, profundidadeMM: 0.9, modo: 'baixo', paredeMM: 1.6 },
   // verso: texto (telefone, @instagram, nome) na face de baixo, espelhado pra
   // ler certo ao virar. alfa: máscara do texto (w*h, 0..255) desenhada pela tela
-  verso: { alfa: null, w: 0, h: 0, modo: 'cor', cor: '#FFFFFF', profundidadeMM: 0.6, nome: 'Verso' }
+  verso: { alfa: null, w: 0, h: 0, modo: 'cor', cor: '#FFFFFF', profundidadeMM: 0.6, nome: 'Verso' },
+  // modelo 'litofania' (foto contra a luz): forma, espessura mín/máx, moldura, contraste
+  litofania: { forma: 'retangulo', espMin: 0.8, espMax: 3.0, moldura: 2.5, contraste: 1, inverter: false }
 };
 
 const segs = r => Math.max(24, Math.min(160, Math.ceil(2 * Math.PI * Math.abs(r) / 0.3)));
@@ -37,6 +40,7 @@ function mesclar(a, b) {
   o.argola = { ...a.argola, ...((b && b.argola) || {}) };
   o.nfc = { ...a.nfc, ...((b && b.nfc) || {}) };
   o.verso = { ...a.verso, ...((b && b.verso) || {}) };
+  o.litofania = { ...a.litofania, ...((b && b.litofania) || {}) };
   o.cores = { ...((b && b.cores) || {}) };
   return o;
 }
@@ -79,6 +83,7 @@ function engrossar(mk, W, H, rMin) {
 export function construir(an, cfgUsuario) {
   if (!an || an.erro) return { erro: (an && an.erro) || 'Sem imagem.' };
   const cfg = mesclar(PADRAO, cfgUsuario);
+  if (cfg.modelo === 'litofania') return construirLitofania(an, cfg);
   const { CrossSection, Manifold } = manifold();
   const vivos = [];
   const G = x => { if (x && typeof x.delete === 'function') vivos.push(x); return x; };
@@ -658,6 +663,7 @@ function relatorio(x) {
   q.push({ nivel: an.coresBrutas > 4 ? 'dica' : 'ok', titulo: 'Cores detectadas: ' + nc, texto: an.cores.map(c => c.nome).join(', ') + (an.coresBrutas > 4 ? ' (a imagem tem mais tons; juntei os parecidos em 4)' : '') });
   if (an.modo === 'fundo') q.push({ nivel: 'ok', titulo: 'Fundo removido', texto: 'fundo ' + an.fundo.nome.toLowerCase() + ' liso' });
   else if (an.modo === 'alfa') q.push({ nivel: 'ok', titulo: 'Fundo transparente', texto: an.vetor ? 'recorte pelo próprio desenho' : 'recorte pela transparência do PNG' });
+  else if (an.modo === 'poster') q.push({ nivel: 'ok', titulo: 'Foto em pôster', texto: an.cores.length + ' cores chapadas, sem mancha pequena demais pra imprimir' });
   else q.push({ nivel: 'dica', titulo: 'Recorte por claro/escuro', texto: 'a imagem não tem fundo liso nem transparência: confira o recorte' });
   // detalhes finos
   if (engrossados) q.push({ nivel: 'dica', titulo: 'Detalhes finos reforçados', texto: engrossados + ' traço(s) mais fino(s) que ' + perfil.traco.toFixed(2).replace('.', ',') + ' mm engrossados pra imprimir com bico ' + String(perfil.bico).replace('.', ',') });
@@ -694,7 +700,7 @@ function relatorio(x) {
   const minImpressao = volTotal / 6 / 60 + camadas * 0.12 + 1.5;   // ~6 mm³/s efetivo em peça pequena + troca de camada
   const estimativa = { camadas, trocas: nTrocas, minutos: Math.round(minImpressao + minTrocas), purgaG: cfg.estrategia === 'troca' ? 0 : +(nTrocas * perfil.purgaG).toFixed(1), gramas: +(volTotal / 1000 * PLA_G_CM3).toFixed(1) };
   if (cfg.estrategia !== 'troca' && vivas.length >= 2 && cfg.alturas === 'degraus' && nTrocas > 20) dicas.push({ tipo: 'dica', texto: 'Com "mesma altura" são menos trocas de filamento (mais rápido e menos purga).' });
-  if (cfg.estrategia === 'troca' && trocas.length) dicas.push({ tipo: 'dica', texto: 'Sem AMS: no Bambu Studio, clique com o botão direito na barra de camadas e "Adicionar troca de filamento" em ' + trocas.map(t => 'camada ' + t.camada + ' (' + t.nome.toLowerCase() + ')').join(', ') + '.' });
+  if (cfg.estrategia === 'troca' && trocas.length) dicas.push({ tipo: 'dica', texto: 'Sem AMS: pausa pra trocar o filamento em ' + trocas.map(t => 'camada ' + t.camada + ' (' + t.nome.toLowerCase() + ')').join(', ') + ' — veja "Pausas na impressão" no painel.' });
   if (argola && argola.noVao) { /* aviso já dado */ }
   // nível geral
   const ruim = q.filter(c => c.nivel === 'alerta').length + avisos.filter(a => a.tipo === 'alerta').length;

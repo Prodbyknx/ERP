@@ -34,10 +34,12 @@ const PADRAO = {
   corBase: 'auto', cores: {}, estrategia: 'ams', alturas: 'degraus', engrossar: true, impressora: 'A1', bicoMM: 0.4,
   argola: { ligada: true, posicao: 'topo', centro: true, ponto: null, furoMM: 4, paredeMM: 2.2 },
   nfc: { ligado: false, diametroMM: 25, profundidadeMM: 0.9, modo: 'baixo' },
-  verso: { texto: '', modo: 'cor', cor: '#FFFFFF' }
+  verso: { texto: '', modo: 'cor', cor: '#FFFFFF' },
+  litofania: { forma: 'retangulo', espMin: 0.8, espMax: 3.0, moldura: 2.5, contraste: 1, inverter: false }
 };
 const MOTIVO_BASE = { fundo: 'a cor do fundo da sua imagem', cracha: 'a cor de fora da logo', contraste: 'contrasta com a logo' };
-const MODO_RECORTE = { alfa: 'Fundo transparente', fundo: 'Fundo liso removido', tom: 'Recorte por claro/escuro' };
+const MODO_RECORTE = { alfa: 'Fundo transparente', fundo: 'Fundo liso removido', tom: 'Recorte por claro/escuro', poster: 'Foto em pôster' };
+const FORMAS_FOTO = [['retangulo', 'Retângulo'], ['redondo', 'Redondo'], ['coracao', 'Coração']];
 const LADO_MAX = 1600;   // imagem que vai pro motor (o motor trabalha em 1000 px)
 
 export const CSS_GERADOR = `
@@ -145,6 +147,9 @@ export class Gerador {
     this.cfg = clone(PADRAO);
     this.aba = 'padrao';
     this.seq = 0;
+    // foto: pôster (análise nova) ou litofania (modelo); anBase = a análise "logo" da mesma imagem
+    this.opcAnalise = { poster: null };
+    this.anBase = null;
     this.montar();
   }
 
@@ -311,6 +316,8 @@ export class Gerador {
     this.fecharComparar();
     this.cfg.cores = {}; this.cfg.corBase = 'auto';
     if (this.cfg.argola.posicao === 'livre') this.cfg.argola = { ...this.cfg.argola, posicao: 'topo', ponto: null };
+    if (this.cfg.modelo === 'litofania') this.cfg.modelo = this.modeloAntes || 'chaveiro';
+    this.opcAnalise = { poster: null }; this.anBase = null; this.fotoDecidida = false; this.simURL = null;
     this.res = null; this.an = null; this.primeiraVez = true;
     this.vazio.style.display = 'none';
     this.estado('analisando');
@@ -322,15 +329,99 @@ export class Gerador {
     const id = 'logo' + (++this.seq);
     const img = this.pixels;
     try {
-      const an = await this.motor.rodar('geradorAnalisar', { id, px: img.data, w: img.width, h: img.height, svg: (this.origem && this.origem.svg) || null });
+      const poster = this.opcAnalise.poster;
+      const an = await this.motor.rodar('geradorAnalisar', { id, px: img.data, w: img.width, h: img.height, svg: (this.origem && this.origem.svg) || null, poster, base: this.anBase ? this.anBase.id : null });
       if (this.pixels !== img) return;                 // já trocaram de logo
       if (an.erro) { this.estado('erro', an.erro); return; }
+      if (!an.poster) this.anBase = an;
+      // FOTO como logo vira mancha: na primeira vez já sai em pôster (dá pra trocar)
+      if (!an.poster && an.foto && an.foto.provavel && !this.fotoDecidida && this.cfg.modelo !== 'litofania') {
+        this.fotoDecidida = true;
+        this.opcAnalise = { poster: { cores: 4, forma: 'retangulo' } };
+        this.cfg.alturas = 'iguais';
+        avisar('É uma FOTO: fiz um pôster de 4 cores. Quer litofania (a foto aparece contra a luz)? Escolha em "Usar como".', 'ok');
+        return this.analisar();
+      }
       this.an = an;
       this.renderPainel();
       await this.construir();
     } catch (e) {
       this.estado('erro', 'Não consegui analisar a imagem: ' + (e.message || e));
     }
+  }
+
+  /* ------------------------------------------------------------ foto: logo | pôster | litofania */
+  tipoAtual() { return this.cfg.modelo === 'litofania' ? 'litofania' : this.an && this.an.poster ? 'poster' : 'logo'; }
+  async usarTipo(t) {
+    if (!this.an || t === this.tipoAtual()) return;
+    this.fecharComparar();
+    if (this.cfg.modelo === 'litofania' && t !== 'litofania') this.cfg.modelo = this.modeloAntes || 'chaveiro';
+    if (t === 'litofania') {
+      if (this.cfg.modelo !== 'litofania') this.modeloAntes = this.cfg.modelo;
+      this.cfg.modelo = 'litofania';
+      this.opcAnalise = { poster: null };
+      if (this.an.poster && this.anBase) this.an = this.anBase;     // litofania usa a foto inteira
+      this.res = null; this.estado('gerando'); this.renderPainel();
+      return this.construir();
+    }
+    this.cfg.cores = {}; this.cfg.corBase = 'auto';
+    if (t === 'poster') {
+      this.opcAnalise = { poster: { cores: 4, forma: 'retangulo', ...(this.ultimoPoster || {}) } };
+      this.cfg.alturas = 'iguais';
+    } else {
+      this.opcAnalise = { poster: null };
+      if (this.an.poster && this.anBase) { this.an = this.anBase; this.res = null; this.estado('gerando'); this.renderPainel(); return this.construir(); }
+    }
+    this.res = null; this.estado('analisando');
+    return this.analisar();
+  }
+  mudarPoster(o) {
+    this.ultimoPoster = { ...(this.opcAnalise.poster || {}), ...o };
+    this.opcAnalise = { poster: this.ultimoPoster };
+    this.cfg.cores = {}; this.cfg.corBase = 'auto';
+    this.estado('analisando');
+    this.analisar();
+  }
+  // "Usar como": aparece sozinho quando a imagem é foto (ou já está em pôster/litofania)
+  blocoTipo(c, sempre) {
+    const t = this.tipoAtual(), foto = this.an.foto && this.an.foto.provavel;
+    if (!sempre && !foto && t === 'logo') return;
+    c.appendChild(el('div', { class: 'e3d-titulo' }, 'Usar como'));
+    const s = el('div', { class: 'seg', 'data-b': 'tipo' });
+    for (const [v, txt] of [['logo', 'Logo'], ['poster', 'Pôster'], ['litofania', 'Litofania']]) s.appendChild(el('button', { type: 'button', 'data-v': v, class: v === t ? 'active' : '' }, txt));
+    s.onclick = ev => { const b = ev.target.closest('button'); if (b) this.usarTipo(b.dataset.v); };
+    c.appendChild(s);
+    const txt = t === 'litofania' ? 'Placa branca de espessura variável: contra a luz (janela, lanterna), a foto aparece com todos os tons.'
+      : t === 'poster' ? 'A foto em ' + (this.an.poster ? this.an.poster.cores : 4) + ' cores chapadas, sem mancha pequena demais pra imprimir.'
+        : foto ? 'Isso é uma FOTO: como logo ela vira manchas. Pôster ou Litofania ficam muito melhores.' : 'Pôster: a imagem em poucas cores chapadas. Litofania: aparece contra a luz.';
+    c.appendChild(el('p', { class: 'u', style: 'margin:0 0 10px' }, txt));
+    if (t === 'poster') {
+      const p = this.an.poster;
+      c.appendChild(el('div', { class: 'e3d-l2' },
+        el('div', {}, el('label', {}, 'Cores'), this.segSimples([['2', '2'], ['3', '3'], ['4', '4']], String(p.cores), v => this.mudarPoster({ cores: +v }))),
+        el('div', {}, el('label', {}, 'Forma'), this.segSimples([...FORMAS_FOTO, ...(this.an.alfa || (this.anBase && this.anBase.alfa) ? [['contorno', 'Recorte']] : [])], p.forma, v => this.mudarPoster({ forma: v })))));
+    }
+  }
+  // seg que não reconstrói sozinho (quem chama decide)
+  segSimples(ops, atual, aoMudar) {
+    const s = el('div', { class: 'seg' });
+    for (const [v, t] of ops) s.appendChild(el('button', { type: 'button', 'data-v': v, class: v === atual ? 'active' : '' }, t));
+    s.onclick = ev => { const b = ev.target.closest('button'); if (b && b.dataset.v !== atual) aoMudar(b.dataset.v); };
+    return s;
+  }
+  // controles da litofania (no lugar das cores)
+  blocoLitofania(c) {
+    const L = this.cfg.litofania, r = this.res;
+    const set = o => { this.cfg.litofania = { ...this.cfg.litofania, ...o }; };
+    c.appendChild(el('div', { class: 'e3d-titulo' }, 'Forma'));
+    c.appendChild(this.seg([...FORMAS_FOTO, ...(this.an.alfa ? [['contorno', 'Recorte']] : [])], L.forma, v => set({ forma: v })));
+    c.appendChild(this.campoSlider('Tamanho', 'maior lado, em mm', this.cfg.tamanhoMM, 25, 150, 1, v => { this.cfg.tamanhoMM = v; }));
+    c.appendChild(this.campoSlider('Mais fino', 'onde é claro, mm', L.espMin, 0.6, 2, 0.1, v => set({ espMin: v })));
+    c.appendChild(this.campoSlider('Mais grosso', 'onde é escuro, mm', L.espMax, 2, 6, 0.1, v => set({ espMax: v })));
+    c.appendChild(this.campoSlider('Contraste', '1 = como a foto', L.contraste, 0.5, 2, 0.05, v => set({ contraste: v })));
+    c.appendChild(this.campoSlider('Moldura', 'em volta, mm (0 = sem)', L.moldura, 0, 6, 0.5, v => set({ moldura: v })));
+    c.appendChild(this.check('Negativo (inverter claro e escuro)', !!L.inverter, v => set({ inverter: v })));
+    if (r && r.litofania) c.appendChild(el('div', { class: 'e3d-nota' }, 'Filamento BRANCO, camada de ' + fmt(r.litofania.camadaSugerida, 2) + ' mm e preenchimento 100%. Veja a prévia "contra a luz" no canto de cima.'));
   }
 
   /* ------------------------------------------------------------ construir */
@@ -348,7 +439,7 @@ export class Gerador {
       catch (e) {
         if (e.codigo !== 'sem-analise' && e.codigo !== 'cancelado') throw e;
         // motor reiniciou: analisa de novo (mesma imagem) e segue
-        const an = await this.motor.rodar('geradorAnalisar', { id: this.an.id, px: this.pixels.data, w: this.pixels.width, h: this.pixels.height, svg: (this.origem && this.origem.svg) || null });
+        const an = await this.motor.rodar('geradorAnalisar', { id: this.an.id, px: this.pixels.data, w: this.pixels.width, h: this.pixels.height, svg: (this.origem && this.origem.svg) || null, poster: this.an.poster || null });
         if (an.erro) throw new Error(an.erro);
         r = await this.motor.rodar('geradorConstruir', { id: this.an.id, cfg: this.cfg });
       }
@@ -441,10 +532,24 @@ export class Gerador {
     p.innerHTML = passo(1, 'Logo', temLogo && !!this.an, !temLogo) + '<b></b>' + passo(2, 'Chaveiro', tem, temLogo && !tem) + '<b></b>' + passo(3, 'Imprimir', bom, tem && !bom);
   }
 
+  // litofania: a foto como vai aparecer contra a luz (PNG da simulação)
+  urlSimulacao() {
+    const L = this.res && this.res.litofania;
+    if (!L) return null;
+    if (this.simURL && this.simDe === this.res) return this.simURL;
+    const s = L.simulacao, cv = document.createElement('canvas'); cv.width = s.w; cv.height = s.h;
+    const g = cv.getContext('2d'), im = g.createImageData(s.w, s.h);
+    for (let i = 0; i < s.w * s.h; i++) { const v = s.px[i]; im.data[i * 4] = Math.min(255, v * 1.02 + 6); im.data[i * 4 + 1] = Math.min(255, v * 0.98 + 4); im.data[i * 4 + 2] = v * 0.9; im.data[i * 4 + 3] = 255; }
+    g.putImageData(im, 0, 0);
+    this.simURL = cv.toDataURL('image/png'); this.simDe = this.res;
+    return this.simURL;
+  }
+
   renderAntes() {
     if (!this.origem) { this.antesEl.classList.remove('on'); return; }
     this.antesEl.classList.add('on');
-    this.antesEl.innerHTML = '<img alt="" src="' + this.origem.url + '">' + bt('data-b="comparar2" title="Comparar com a original"', null, 'Original × chaveiro');
+    const sim = this.cfg.modelo === 'litofania' ? this.urlSimulacao() : null;
+    this.antesEl.innerHTML = '<img alt="" src="' + (sim || this.origem.url) + '">' + bt('data-b="comparar2" title="' + (sim ? 'Como fica contra a luz' : 'Comparar com a original') + '"', null, sim ? 'Contra a luz × peça' : 'Original × chaveiro');
     this.antesEl.querySelector('[data-b=comparar2]').onclick = () => this.alternarComparar();
   }
 
@@ -453,7 +558,7 @@ export class Gerador {
     const n = this.an.cores.length;
     this.qualEl.className = 'e3g-qual e3d-vidro on ' + q.nivel;
     this.qualEl.innerHTML = '<i>' + (q.nivel === 'excelente' || q.nivel === 'boa' ? icone('check', 14) : '!') + '</i><div>' + esc(q.titulo) +
-      '<small>' + n + (n === 1 ? ' cor' : ' cores') + ' · ' + esc(MODO_RECORTE[this.an.modo] || '').toLowerCase() + '</small></div>';
+      '<small>' + (this.cfg.modelo === 'litofania' ? 'litofania · filamento branco' : n + (n === 1 ? ' cor' : ' cores') + ' · ' + esc(MODO_RECORTE[this.an.modo] || '').toLowerCase()) + '</small></div>';
     const item = (cls, t, s) => '<div class="e3g-item ' + cls + '"><i>' + (cls === 'dica' ? 'i' : cls === 'alerta' ? '!' : '✓') + '</i><div><b>' + esc(t) + '</b>' + esc(s || '') + '</div></div>';
     let h = '<div class="tp" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><b style="font-size:14px">O que o gerador conferiu</b><button type="button" class="e3d-ico" data-b="fechar" aria-label="Fechar">' + icone('x', 14) + '</button></div>';
     for (const i of q.itens) h += item(i.nivel === 'ok' ? 'ok' : i.nivel === 'dica' ? 'dica' : 'alerta', i.titulo, i.texto);
@@ -510,36 +615,19 @@ export class Gerador {
     // logo
     const logo = el('div', { class: 'e3g-logo' });
     logo.innerHTML = '<img alt="" src="' + this.origem.url + '"><div class="txt"><b>' + esc(this.origem.nome) + '</b>' +
-      esc(MODO_RECORTE[an.modo]) + ' · ' + an.cores.length + (an.cores.length === 1 ? ' cor' : ' cores') + (an.coresBrutas > 4 ? ' (de ' + an.coresBrutas + ' tons)' : '') + '</div>';
+      (this.cfg.modelo === 'litofania' ? 'Litofania · a foto em tons, contra a luz' : esc(MODO_RECORTE[an.modo]) + ' · ' + an.cores.length + (an.cores.length === 1 ? ' cor' : ' cores') + (an.coresBrutas > 4 && !an.poster ? ' (de ' + an.coresBrutas + ' tons)' : '')) + '</div>';
     logo.appendChild(el('button', { type: 'button', class: 'btn mini', onclick: () => this.input.click() }, 'Trocar'));
     c.appendChild(logo);
     if (r) {
       const m = r.medidas;
       c.appendChild(el('div', { class: 'e3g-resumo', html: '<div><span>Tamanho</span><b>' + fmt(m.largura, 0) + '×' + fmt(m.altura, 0) + '</b></div><div><span>Peso</span><b>' + fmt(r.estimativa.gramas, 1) + ' g</b></div><div><span>Tempo</span><b>~' + r.estimativa.minutos + ' min</b></div>' }));
     }
-    // cores = filamentos
-    c.appendChild(el('div', { class: 'e3d-titulo' }, 'Cores (filamentos)'));
-    const lista = el('div', { class: 'e3g-cores' });
-    c.appendChild(lista);
-    this.renderCores(lista);
-    // tamanho
-    c.appendChild(this.campoSlider('Tamanho', 'maior lado, em mm', this.cfg.tamanhoMM, 15, 150, 1, v => { this.cfg.tamanhoMM = v; }));
-    // formato
-    c.appendChild(el('div', { class: 'e3d-titulo' }, 'Formato'));
-    c.appendChild(this.seg([['chaveiro', 'Chaveiro'], ['medalha', 'Medalha'], ['placa', 'Placa'], ['contorno', 'Só contorno']], this.cfg.modelo, v => { this.cfg.modelo = v; }));
+    this.blocoTipo(c);
+    const lito = this.cfg.modelo === 'litofania';
+    if (lito) this.blocoLitofania(c);
+    else this.painelCoresFormato(c);
     // impressora
-    c.appendChild(el('div', { class: 'e3d-titulo' }, 'Impressora'));
-    const imp = el('div', { class: 'e3d-l2' });
-    const sel = el('select', { 'aria-label': 'Impressora' });
-    for (const [k, p] of Object.entries(IMPRESSORAS)) sel.appendChild(el('option', { value: k, selected: k === this.cfg.impressora }, p.nome));
-    sel.onchange = () => { this.cfg.impressora = sel.value; this.agendar(0); };
-    const bico = el('select', { 'aria-label': 'Bico' });
-    for (const b of [0.2, 0.4, 0.6]) bico.appendChild(el('option', { value: b, selected: b === this.cfg.bicoMM }, 'Bico ' + String(b).replace('.', ',') + ' mm'));
-    bico.onchange = () => { this.cfg.bicoMM = +bico.value; this.agendar(0); };
-    imp.append(el('div', {}, el('label', {}, 'Modelo'), sel), el('div', {}, el('label', {}, 'Bico'), bico));
-    c.appendChild(imp);
-    c.appendChild(this.check('Tenho AMS (troca de cor automática)', this.cfg.estrategia !== 'troca', v => { this.cfg.estrategia = v ? 'ams' : 'troca'; }));
-    if (r && r.pausas && r.pausas.length) c.appendChild(this.blocoPausas(r));
+    this.blocoImpressora(c, lito);
     // ações
     const acoes = el('div', { class: 'e3d-botoes' });
     acoes.append(
@@ -552,6 +640,36 @@ export class Gerador {
       const notas = [...r.avisos.filter(a => a.tipo === 'alerta')];
       for (const a of notas) c.appendChild(el('div', { class: 'e3d-nota aviso' }, a.texto));
     }
+  }
+
+  painelCoresFormato(c) {
+    // cores = filamentos
+    c.appendChild(el('div', { class: 'e3d-titulo' }, 'Cores (filamentos)'));
+    const lista = el('div', { class: 'e3g-cores' });
+    c.appendChild(lista);
+    this.renderCores(lista);
+    // tamanho
+    c.appendChild(this.campoSlider('Tamanho', 'maior lado, em mm', this.cfg.tamanhoMM, 15, 150, 1, v => { this.cfg.tamanhoMM = v; }));
+    // formato
+    c.appendChild(el('div', { class: 'e3d-titulo' }, 'Formato'));
+    c.appendChild(this.seg([['chaveiro', 'Chaveiro'], ['medalha', 'Medalha'], ['placa', 'Placa'], ['contorno', 'Só contorno']], this.cfg.modelo, v => { this.cfg.modelo = v; }));
+  }
+
+  blocoImpressora(c, lito) {
+    const r = this.res;
+    c.appendChild(el('div', { class: 'e3d-titulo' }, 'Impressora'));
+    const imp = el('div', { class: 'e3d-l2' });
+    const sel = el('select', { 'aria-label': 'Impressora' });
+    for (const [k, p] of Object.entries(IMPRESSORAS)) sel.appendChild(el('option', { value: k, selected: k === this.cfg.impressora }, p.nome));
+    sel.onchange = () => { this.cfg.impressora = sel.value; this.agendar(0); };
+    const bico = el('select', { 'aria-label': 'Bico' });
+    for (const b of [0.2, 0.4, 0.6]) bico.appendChild(el('option', { value: b, selected: b === this.cfg.bicoMM }, 'Bico ' + String(b).replace('.', ',') + ' mm'));
+    bico.onchange = () => { this.cfg.bicoMM = +bico.value; this.agendar(0); };
+    imp.append(el('div', {}, el('label', {}, 'Modelo'), sel), el('div', {}, el('label', {}, 'Bico'), bico));
+    c.appendChild(imp);
+    if (lito) return;
+    c.appendChild(this.check('Tenho AMS (troca de cor automática)', this.cfg.estrategia !== 'troca', v => { this.cfg.estrategia = v ? 'ams' : 'troca'; }));
+    if (r && r.pausas && r.pausas.length) c.appendChild(this.blocoPausas(r));
   }
 
   // PAUSAS (sem AMS e/ou tag NFC): onde parar e os dois jeitos de pôr no arquivo
@@ -649,6 +767,7 @@ export class Gerador {
       c.appendChild(el('p', { class: 'u', style: 'margin:4px 0 10px' }, a.posicao === 'livre' ? 'Argola no lugar onde você soltou. Escolha Topo/Esquerda/Direita pra voltar ao automático.' : 'Dica: arraste a argola na prévia pra pôr onde quiser — ela nunca fica em cima do desenho.'));
       c.appendChild(this.campoSlider('Furo', 'diâmetro, mm (argola comum: 4 a 5)', a.furoMM, 2, 10, 0.5, v => { this.cfg.argola = { ...this.cfg.argola, furoMM: v }; }));
     }
+    if (this.cfg.modelo === 'litofania') { c.appendChild(el('p', { class: 'u', style: 'margin:10px 0' }, 'Litofania é uma peça só, branca: verso, alturas e cores não se aplicam. Forma, espessura, contraste e moldura ficam em Padrão.')); return; }
     c.appendChild(el('div', { class: 'e3d-titulo' }, 'Verso (atrás)'));
     const v = this.cfg.verso, qr = v.tipo === 'qr', box = el('div', { class: 'e3g-verso' });
     box.appendChild(this.seg([['texto', 'Texto'], ['qr', 'QR code']], qr ? 'qr' : 'texto', t => {
@@ -697,6 +816,11 @@ export class Gerador {
 
   painelAvancado(c) {
     const an = this.an;
+    this.blocoTipo(c, true);
+    if (this.cfg.modelo === 'litofania') {
+      if (this.cfg.argola.ligada) c.appendChild(this.campoSlider('Parede da argola', 'mm', this.cfg.argola.paredeMM, 1.2, 5, 0.1, v => { this.cfg.argola = { ...this.cfg.argola, paredeMM: v }; }));
+      return this.diagnostico(c);
+    }
     c.appendChild(el('div', { class: 'e3d-titulo' }, 'Detalhes'));
     c.appendChild(this.check('Engrossar traço mais fino que o bico', this.cfg.engrossar, v => { this.cfg.engrossar = v; }));
     c.appendChild(el('p', { class: 'u', style: 'margin:0 0 10px' }, 'Traço mais fino que o bico some no fatiador. Ligado, ele engrossa só o necessário, no mesmo lugar.'));
@@ -711,16 +835,22 @@ export class Gerador {
       c.appendChild(this.campoSlider('Profundidade', 'mm', n.profundidadeMM, 0.4, 3, 0.1, v => { this.cfg.nfc = { ...this.cfg.nfc, profundidadeMM: v }; }));
       if (this.res && this.res.nfc && this.res.nfc.modo === 'fechado') c.appendChild(this.blocoPausas(this.res));
     }
+    this.diagnostico(c);
+  }
+
+  diagnostico(c) {
+    const an = this.an;
     c.appendChild(el('div', { class: 'e3d-titulo' }, 'Análise da imagem'));
     const d = el('div', { class: 'e3d-diag' });
     const lin = (a, b) => d.append(el('span', {}, a), el('b', {}, b));
     lin('Recorte', MODO_RECORTE[an.modo]);
+    if (an.foto) lin('Foto?', an.foto.provavel ? 'sim (' + an.foto.tons + ' tons)' : 'não (' + an.foto.tons + ' tons)');
     if (an.fundo) lin('Cor do fundo', an.fundo.nome + ' ' + an.fundo.hex);
     lin('Cores achadas', String(an.cores.length) + (an.coresBrutas > an.cores.length ? ' (de ' + an.coresBrutas + ')' : ''));
     lin('Resolução', an.W + '×' + an.H + ' px');
     lin('Tempo', fmt(an.ms / 1000, 2) + ' s + ' + (this.res ? fmt(this.res.ms / 1000, 2) + ' s' : '—'));
     c.appendChild(d);
-    c.appendChild(el('button', { type: 'button', class: 'btn', style: 'margin-top:10px', onclick: () => { this.cfg = clone(PADRAO); this.renderPainel(); this.agendar(0); } }, 'Voltar tudo ao automático'));
+    c.appendChild(el('button', { type: 'button', class: 'btn', style: 'margin-top:10px', onclick: () => { const lito = this.cfg.modelo === 'litofania'; this.cfg = clone(PADRAO); if (lito) this.cfg.modelo = 'litofania'; this.renderPainel(); this.agendar(0); } }, 'Voltar tudo ao automático'));
   }
 
   // componentes do painel
@@ -837,7 +967,7 @@ export class Gerador {
     this.vista('topo');
     this.visor.controles.enabled = false;
     this.corteX = this.corteX == null ? 0.5 : this.corteX;
-    this.compararEl.querySelector('img').src = this.origem.url;
+    this.compararEl.querySelector('img').src = (this.cfg.modelo === 'litofania' && this.urlSimulacao()) || this.origem.url;
     this.compararEl.classList.add('on');
     this.vistasEl.querySelector('[data-b=comparar]').classList.add('ativo');
     requestAnimationFrame(() => this.posicionarComparar());
@@ -851,9 +981,11 @@ export class Gerador {
   posicionarComparar() {
     const r = this.res, an = this.an, { esc: k, tx, ty } = r.transformada;
     const z = r.medidas.espessura;
-    // canto da imagem (px da análise) -> mm na mesa -> tela
+    // canto da imagem (px da análise) -> mm na mesa -> tela; litofania: a caixa da simulação (mm)
     const w = (x, y) => this.visor.telaDe(this.pos[0] + x * k + tx, this.pos[1] - y * k + ty, z);
-    const a = w(0, 0), b = w(an.W, an.H), box = this.compararEl.getBoundingClientRect();
+    const cm = r.litofania && this.cfg.modelo === 'litofania' ? r.litofania.caixaMM : null;
+    const wm = (X, Y) => this.visor.telaDe(this.pos[0] + X, this.pos[1] + Y, z);
+    const a = cm ? wm(cm[0], cm[3]) : w(0, 0), b = cm ? wm(cm[2], cm[1]) : w(an.W, an.H), box = this.compararEl.getBoundingClientRect();
     const img = this.compararEl.querySelector('img');
     Object.assign(img.style, { left: (Math.min(a.x, b.x) - box.left) + 'px', top: (Math.min(a.y, b.y) - box.top) + 'px', width: Math.abs(b.x - a.x) + 'px', height: Math.abs(b.y - a.y) + 'px' });
     this.aplicarCorte();
@@ -901,7 +1033,8 @@ export class Gerador {
     try {
       const r = await this.motor.rodar('exportar3MF', { cena: { objetos: [{ nome, transform: M4.identidade(), partes: this.partesExport() }] }, opc: { titulo: nome } });
       baixar(r.bytes, nomeArquivo(nome, 'chaveiro') + '.3mf', 'model/3mf');
-      if (this.cfg.estrategia === 'troca' && this.res.pecaUnica) avisar('3MF de um filamento só pronto. Fatie no Bambu e coloque as pausas (camadas ' + (this.res.pausas || []).map(p => p.camada).join(', ') + ') — veja "Pausas" no painel.', 'ok');
+      if (this.res.litofania) avisar('3MF da litofania pronto: filamento BRANCO, camada ' + fmt(this.res.litofania.camadaSugerida, 2) + ' mm, preenchimento 100%.', 'ok');
+      else if (this.cfg.estrategia === 'troca' && this.res.pecaUnica) avisar('3MF de um filamento só pronto. Fatie no Bambu e coloque as pausas (camadas ' + (this.res.pausas || []).map(p => p.camada).join(', ') + ') — veja "Pausas" no painel.', 'ok');
       else avisar('3MF pronto — abra no Bambu Studio (ele já vem com as cores).', 'ok');
     } catch (e) { avisar('Não consegui gerar o 3MF: ' + (e.message || e), 'warn'); }
     finally { b.disabled = false; }

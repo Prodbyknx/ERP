@@ -29,6 +29,7 @@ import { progresso } from '../core/progresso.js';
 import { analisar as analisarLogo, analisarSVG } from '../../gerador/analise.js';
 import { construir as construirChaveiro } from '../../gerador/chaveiro.js';
 import { pausar } from '../../gerador/pausas.js';
+import { posterizar } from '../../gerador/poster.js';
 import { criar } from '../core/malha.js';
 
 // GERADOR DE CHAVEIRO: a análise (máscaras grandes) fica aqui no worker; a
@@ -36,7 +37,7 @@ import { criar } from '../core/malha.js';
 const analises = new Map();
 function resumoAnalise(id, an) {
   const { W, H, fatorImg, modo, fundo, cores, coresBrutas, caixa, ruido, sugestao, ms } = an;
-  return { id, W, H, fatorImg, modo, fundo, coresBrutas, caixa, ruido, sugestao, ms, vetor: !!an.vetor,
+  return { id, W, H, fatorImg, modo, fundo, coresBrutas, caixa, ruido, sugestao, ms, vetor: !!an.vetor, foto: an.foto || null, poster: an.poster || null, alfa: !!an.alfa,
     cores: cores.map(c => ({ id: c.id, hex: c.hex, nome: c.nome, fracao: c.fracao, pai: c.pai, nivel: c.nivel })) };
 }
 
@@ -50,8 +51,20 @@ function resumoValidacao(v) {
 }
 
 export const OPERACOES = {
-  geradorAnalisar({ id, px, w, h, svg }) {
-    progresso(0.1, 'Analisando a logo');
+  geradorAnalisar({ id, px, w, h, svg, poster, base }) {
+    progresso(0.1, poster ? 'Fazendo o pôster' : 'Analisando a logo');
+    // pôster: parte da análise da mesma foto que já está no motor (sem refazer)
+    if (poster) {
+      let an0 = base && analises.get(base);
+      if (an0 && an0.base) an0 = an0.base;
+      if (!an0 || !an0.rgb) { an0 = analisarLogo({ px, w, h }); if (an0.erro) return { erro: an0.erro }; }
+      const p = posterizar(an0, poster);
+      if (p.erro) return { erro: p.erro };
+      p.base = an0;
+      analises.set(id, p);
+      while (analises.size > 3) analises.delete(analises.keys().next().value);
+      return resumoAnalise(id, p);
+    }
     // SVG: lê os caminhos (contorno exato); texto em fonte/foto dentro ou SVG
     // que não deu pra ler: usa os pixels que o navegador desenhou
     let an = null, aviso = null;

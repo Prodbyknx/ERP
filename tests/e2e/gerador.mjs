@@ -270,6 +270,29 @@ export async function secaoGerador({ b, teste, tmp, raiz, novaPagina, passo, sim
     if (!/#FFFFFF/.test(cores) || !/#111111/.test(cores)) throw new Error('cores: ' + cores);
   });
 
+  await passo(pg, 'gerador: FOTO -> pôster automático (cores chapadas); Litofania (peça branca, prévia contra a luz, 3MF de 1 volume); volta pra logo', async () => {
+    await marcar();
+    await pg.setInputFiles('.e3g input[type=file]', path.join(raiz, 'tests', 'fixtures', 'fotos', 'gato.jpg'));
+    const pronto = cond => pg.waitForFunction(new Function('const g = window.Estudio3D.gerador; return !!(g.res && g.res !== window.__r && !g.construindo && (' + cond + '));'), null, { timeout: 60000 });
+    await pronto("g.origem.nome === 'gato' && g.an.poster");
+    await pg.click('.e3g .e3d-painel-cab [data-v=padrao]');
+    let t = await pg.evaluate(() => { const g = window.Estudio3D.gerador; return { cores: g.an.cores.length, partes: g.res.partes.length, seg: !!document.querySelector('.e3g [data-b=tipo] [data-v=poster].active') }; });
+    if (t.cores !== 4 || t.partes < 4 || !t.seg) throw new Error('pôster: ' + JSON.stringify(t));
+    await marcar();
+    await pg.click('.e3g [data-b=tipo] [data-v=litofania]');
+    await pronto('g.res.litofania');
+    t = await pg.evaluate(() => { const g = window.Estudio3D.gerador; return { partes: g.res.partes.map(p => p.cor), antes: document.querySelector('.e3g-antes').textContent, img: document.querySelector('.e3g-antes img').src.slice(0, 21) }; });
+    if (t.partes.join() !== '#FFFFFF' || !/Contra a luz/.test(t.antes) || t.img !== 'data:image/png;base64') throw new Error('litofania: ' + JSON.stringify(t));
+    const [dl] = await Promise.all([pg.waitForEvent('download', { timeout: 60000 }), pg.click('.e3g [data-b=baixar3mf]')]);
+    const arq = path.join(tmp, 'litofania.3mf');
+    await dl.saveAs(arq);
+    const vols = simular(arq).objetos.flatMap(o => o.volumes);
+    if (vols.length !== 1 || !/^#FFFFFF/i.test(String(vols[0].cor_volume))) throw new Error('3MF: ' + JSON.stringify(vols));
+    await marcar();
+    await pg.click('.e3g [data-b=tipo] [data-v=logo]');
+    await pronto('!g.an.poster && !g.res.litofania');
+  });
+
   await passo(pg, 'gerador: nome digitado e forma viram chaveiro', async () => {
     await pg.evaluate(() => window.Estudio3D.gerador.usarTexto('MARIA', 'Arial Black'));
     await pg.waitForFunction(() => { const g = window.Estudio3D.gerador; return g.res && g.origem.tipo === 'texto' && !g.construindo; }, null, { timeout: 30000 });

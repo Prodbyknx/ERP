@@ -1,0 +1,5 @@
+Fotos de teste do gerador (litofania / pôster), tiradas do conjunto de
+exemplos do scikit-image (skimage/data), convertidas para JPG:
+- gato.jpg        "Chelsea the cat" — CC0, foto de Stefan van der Walt
+- cafe.jpg        "Coffee cup" — CC0, foto de Rachel Michetti (Pikolo Espresso Bar)
+- astronauta.jpg  Eileen Collins, NASA Great Images — domínio público
