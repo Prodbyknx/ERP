@@ -262,7 +262,7 @@ function extrairPorPlano(ctx, atual, R, adj, opc, avisos) {
     if (bons.length && bons.length < compsR.length) resto = bons.length === 1 ? bons[0] : ctx.guardar(Manifold.compose(bons));
   }
 
-  let relatorio = [];
+  let relatorio = [], soltos = [];
   if (opc.conector && opc.conector.tipo && opc.conector.tipo !== 'nenhum') {
     const loc = ctx.guardar(det.transform(Array.from(Fi)));
     const sec = ctx.guardar(loc.slice(1e-3));
@@ -273,10 +273,13 @@ function extrairPorPlano(ctx, atual, R, adj, opc, avisos) {
       relatorio = g.relatorio;
       if (g.positivos.length) det = ctx.guardar(det.add(g.positivos.length === 1 ? g.positivos[0] : ctx.guardar(Manifold.union(g.positivos))));
       if (g.negativosB.length) resto = ctx.guardar(resto.subtract(g.negativosB.length === 1 ? g.negativosB[0] : ctx.guardar(Manifold.union(g.negativosB))));
+      // pino solto / de filamento: furo também no detalhe
+      if (g.negativosA.length) det = ctx.guardar(det.subtract(g.negativosA.length === 1 ? g.negativosA[0] : ctx.guardar(Manifold.union(g.negativosA))));
+      soltos = g.soltos;
     } else avisos.push('Não achei a face do corte pra pôr o conector.');
   }
   return {
-    det, resto, metodo: 'plano', relatorio,
+    det, resto, metodo: 'plano', relatorio, soltos,
     plano: { n, d: n[0] * origem[0] + n[1] * origem[1] + n[2] * origem[2], centro: origem, desvioBorda: pl.desvio }
   };
 }
@@ -489,7 +492,7 @@ function extrairPorPlanoLocal(ctx, atual, R, adj, opc, avisos) {
   }
   if (t.falhou) return t;
   avisos.push(...t.av);
-  return { det: t.r.det, resto: t.r.resto, metodo: 'plano-local', relatorio: t.r.relatorio, plano: { n, d: d0, centro: pl.centro, desvioBorda: pl.desvio } };
+  return { det: t.r.det, resto: t.r.resto, metodo: 'plano-local', relatorio: t.r.relatorio, soltos: t.r.soltos, plano: { n, d: d0, centro: pl.centro, desvioBorda: pl.desvio } };
 }
 
 // cruzamentos novos perto da tampa (o fechamento pela superfície pode furar
@@ -684,7 +687,7 @@ export function separarDetalhe(parte, mascara, opc = {}) {
     let atual = { malha: parte.malha, cor: parte.cor, paleta: parte.paleta, origem: raizOrigem };
     const detalhes = [];
     const metodos = [];
-    const relatorio = [];
+    const relatorio = [], pinos = [];
     let plano = null;
     // regiões em ordem de tamanho (maior primeiro)
     const ordem = [...Array(reg.n).keys()].sort((a, b) => reg.tamanhos[b] - reg.tamanhos[a]);
@@ -752,6 +755,7 @@ export function separarDetalhe(parte, mascara, opc = {}) {
       }
       metodos.push(res.metodo);
       if (res.relatorio) relatorio.push(...res.relatorio);
+      for (const sp of res.soltos || []) pinos.push(ctx.parte(sp.man, 'Pino solto ' + (pinos.length + 1), parte.cor));
       if (res.plano && !plano) plano = res.plano;
       let det, resto;
       if (res.det) {
@@ -799,6 +803,7 @@ export function separarDetalhe(parte, mascara, opc = {}) {
     return {
       principal, detalhe: { nome: opc.nomeDetalhe || 'Detalhe', malha: detalhe.malha, cor: detalhe.cor, paleta: detalhe.paleta, origem: detalhe.origem || null },
       metodos, plano, relatorio, avisos,
+      pinos: pinos.map(p => ({ nome: p.nome, malha: { pos: p.malha.pos, idx: p.malha.idx }, cor: p.cor })),
       volumes: { principal: volume(principal.malha), detalhe: volume(detalhe.malha) },
       regioes: reg.n
     };

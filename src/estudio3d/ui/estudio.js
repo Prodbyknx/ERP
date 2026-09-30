@@ -1144,6 +1144,8 @@ export class Estudio {
       el('div', { class: 'leg' }, (cfg.legenda || []).map(([c, t]) => el('span', { style: '--c:' + c }, t))),
       el('button', { class: 'btn primary', onclick: () => this.confirmarPrevia() }, cfg.textoConfirmar || 'Confirmar'),
       el('button', { class: 'btn', onclick: () => this.cancelarPrevia() }, 'Cancelar'));
+    // alerta: o que a pessoa pediu e NÃO saiu (ex.: conector que não coube) — em destaque
+    if (cfg.alerta) this.previaEl.appendChild(el('div', { class: 'e3d-nota aviso', 'data-a': 'alerta', style: 'flex-basis:100%;margin:4px 0 0;font-weight:600' }, cfg.alerta));
     if (cfg.notas && cfg.notas.length) this.previaEl.appendChild(el('div', { style: 'flex-basis:100%;font-size:11.5px;color:var(--warn)' }, cfg.notas.join(' · ')));
     this.previaEl.style.display = 'flex';
     this.multiEl.style.display = 'none';

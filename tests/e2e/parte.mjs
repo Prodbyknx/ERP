@@ -79,6 +79,9 @@ export async function secaoParte({ b, teste, tmp, novaPagina, passo, abrirEstudi
     if (!(s.n > 50 && s.n < s.total * 0.3)) throw new Error('orelha: ' + JSON.stringify(s));
     await pg.click('.e3d-acaosel [data-a=pino]');
     await pg.waitForSelector('.e3d-previa', { state: 'visible', timeout: 120000 });
+    // o pino tem que EXISTIR (a prévia diz o encaixe e não há alerta de "sem pino")
+    const prev = await pg.textContent('.e3d-previa');
+    if (!/Encaixe: pino/.test(prev) || /SEM pino/.test(prev)) throw new Error('separou sem pino: ' + prev.replace(/\s+/g, ' ').slice(0, 300));
     await pg.click('.e3d-previa button.primary');
     await pg.waitForFunction(() => window.Estudio3D.estudio.cena.objetos.length === 2, null, { timeout: 60000 });
     const res = await pg.textContent('[data-sec=sep] [data-a=res]');

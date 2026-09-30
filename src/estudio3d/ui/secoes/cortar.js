@@ -247,8 +247,10 @@ export function montarCortar(est) {
     const afasta = Math.max(6, sug.raio * 3), n = p.mundo.n;
     const notas = r.avisos.slice();
     if (r.relatorio.length) notas.push('Encaixe: pino ' + r.relatorio[0].pino + ' / furo ' + r.relatorio[0].furo + ', ' + fmt(r.relatorio[0].profundidade, 1) + ' mm');
+    const semConector = !!cfgConector() && !r.relatorio.length;
+    const alerta = semConector ? 'Saiu SEM encaixe: ' + (r.avisos.find(a => /encaixe|conector|pino|espessura|largura/i.test(a)) || 'não coube pino nessa parte.') : null;
     est.mostrarPrevia({
-      titulo: 'Separar parte', legenda: [['#0659f2', 'face do corte / encaixe']], explodir: 1, notas, textoConfirmar: 'Confirmar',
+      titulo: 'Separar parte', legenda: [['#0659f2', 'face do corte / encaixe']], explodir: 1, notas, alerta, textoConfirmar: semConector ? 'Separar sem encaixe' : 'Confirmar',
       objetos: [
         { transform: o.transform, deslocar: n.map(v => v * afasta), partes: r.A.map(x => ({ malha: x.malha, cor: x.cor, paleta: x.paleta, papel: 'normal', origem: x.origem })) },
         { transform: o.transform, deslocar: [0, 0, 0], partes: r.B.map(x => ({ malha: x.malha, cor: x.cor, paleta: x.paleta, papel: 'normal', origem: x.origem })) }
@@ -295,9 +297,12 @@ export function montarCortar(est) {
     ];
     const notas = r.avisos.slice();
     if (r.relatorio.length) notas.push(r.relatorio.length + ' conector(es): ' + (r.relatorio[0].pino ? 'pino ' + r.relatorio[0].pino + ' / furo ' + r.relatorio[0].furo : r.relatorio[0].tipo));
-    q('res').innerHTML = '<div class="e3d-nota ok">Prévia: confirme em cima do 3D. Área do corte: ' + fmt(r.areaSecao, 1) + ' mm².</div>';
+    // pediu conector e não saiu nenhum: diz em destaque e por quê (antes só cortava calado)
+    const semConector = opc.conector && !r.relatorio.length;
+    const alerta = semConector ? 'Saiu SEM conector: ' + (r.avisos.find(a => /encaixe|conector|pino|espessura|largura/i.test(a)) || 'não coube encaixe nesse corte.') : null;
+    q('res').innerHTML = semConector ? '<div class="e3d-nota aviso">' + alerta + '</div>' : '<div class="e3d-nota ok">Prévia: confirme em cima do 3D. Área do corte: ' + fmt(r.areaSecao, 1) + ' mm².</div>';
     est.mostrarPrevia({
-      titulo: 'Corte em 2 partes', legenda: [['#0659f2', 'face do corte / conector']], objetos, explodir: 1, notas, textoConfirmar: 'Confirmar corte',
+      titulo: 'Corte em 2 partes', legenda: [['#0659f2', 'face do corte / conector']], objetos, explodir: 1, notas: semConector ? notas.filter(a => a !== alerta.replace('Saiu SEM conector: ', '')) : notas, alerta, textoConfirmar: semConector ? 'Cortar sem conector' : 'Confirmar corte',
       confirmar: () => {
         est.cena.aplicar('Cortar ' + o.nome, () => {
           const idx = est.cena.objetos.indexOf(o);
@@ -309,7 +314,7 @@ export function montarCortar(est) {
           for (const x of extras) { est.cena.colocarNaMesa(x); }
           est.cena.sel = { objeto: A.id, parte: A.partes.length === 1 ? A.partes[0].id : null };
         });
-        q('res').innerHTML = '<div class="e3d-nota ok">Cortado. As partes ficaram no lugar; use <b>Organizar mesa</b> pra imprimir.' + (r.relatorio.length ? ' Conectores: ' + r.relatorio.map(x => x.pino ? x.pino + '/' + x.furo : x.tipo).join(', ') + '.' : '') + '</div>';
+        q('res').innerHTML = '<div class="e3d-nota ' + (semConector ? 'aviso' : 'ok') + '">Cortado' + (semConector ? ' SEM conector' : '') + '. As partes ficaram no lugar; use <b>Organizar mesa</b> pra imprimir.' + (r.relatorio.length ? ' Conectores: ' + r.relatorio.map(x => x.pino ? x.pino + '/' + x.furo : x.tipo).join(', ') + (r.extras.length ? ' + ' + r.extras.length + ' pino(s) solto(s) pra imprimir' : '') + '.' : '') + '</div>';
         refazerTudo();
       },
       cancelar: () => { q('res').innerHTML = ''; mostrarPlano(); }

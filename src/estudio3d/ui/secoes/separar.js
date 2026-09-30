@@ -90,8 +90,12 @@ export function montarSeparar(est) {
     if (r.metodos.includes('casca')) notas.push('A seleção já era uma peça solta');
     notas.push(...r.avisos);
     if (r.relatorio.length) notas.push('Encaixe: pino ' + r.relatorio[0].pino + ', furo ' + r.relatorio[0].furo + ', ' + fmt(r.relatorio[0].profundidade, 1) + ' mm');
-    q('res').innerHTML = '<div class="e3d-nota ok">Prévia pronta: confira e confirme em cima do 3D.<br>Peça separada: ' + fmt(r.volumes.detalhe / 1000, 2) + ' cm³ · fica: ' + fmt(r.volumes.principal / 1000, 2) + ' cm³</div>';
+    // pediu pino e não saiu: em destaque (não só numa nota pequena)
+    const semConector = !!opc.conector && !r.relatorio.length;
+    const alerta = semConector ? 'Saiu SEM pino: ' + (r.avisos.find(a => /encaixe|conector|pino|espessura|largura|fina/i.test(a)) || 'não coube pino nesse detalhe.') : null;
+    q('res').innerHTML = '<div class="e3d-nota ' + (semConector ? 'aviso' : 'ok') + '">' + (semConector ? alerta + '<br>' : 'Prévia pronta: confira e confirme em cima do 3D.<br>') + 'Peça separada: ' + fmt(r.volumes.detalhe / 1000, 2) + ' cm³ · fica: ' + fmt(r.volumes.principal / 1000, 2) + ' cm³</div>';
     est.mostrarPrevia({
+      alerta,
       titulo: 'Separar "' + nome + '"',
       legenda: LEGENDA,
       objetos: [
@@ -107,9 +111,14 @@ export function montarSeparar(est) {
           o.partes[i] = novaParte({ ...p, malha: r.principal.malha, paleta: r.principal.paleta, id: p.id });
           const novo = novoObjeto({ nome, transform: o.transform, partes: [{ nome, malha: r.detalhe.malha, cor: r.detalhe.cor, paleta: r.detalhe.paleta }] });
           est.cena.objetos.splice(est.cena.objetos.indexOf(o) + 1, 0, novo);
+          // pino solto impresso à parte: vai pra mesa, ao lado
+          for (const pn of r.pinos || []) { const x = novoObjeto({ nome: pn.nome, transform: o.transform, partes: [{ nome: pn.nome, malha: pn.malha, cor: pn.cor }] }); est.cena.objetos.push(x); est.cena.colocarNaMesa(x); }
           est.cena.sel = { objeto: novo.id, parte: novo.partes[0].id };
         });
-        q('res').innerHTML = '<div class="e3d-nota ok">"' + nome + '" virou um objeto próprio, na mesma posição. Pra imprimir separado, use <b>Organizar mesa</b> ou mova a peça.</div>';
+        const enc = r.relatorio && r.relatorio.length ? r.relatorio[0] : null;
+        q('res').innerHTML = '<div class="e3d-nota ' + (semConector ? 'aviso' : 'ok') + '">"' + nome + '" virou um objeto próprio, na mesma posição' + (semConector ? ', SEM pino' : '') + '.' +
+          (enc && enc.filamento ? ' Encaixe: furo Ø2 mm dos dois lados — use ' + r.relatorio.length + ' pedaço(s) de filamento 1,75 mm com ' + fmt(enc.comprimentoPino, 1) + ' mm como pino.' : enc ? ' Encaixe: pino ' + enc.pino + '.' : '') +
+          ((r.pinos || []).length ? ' ' + r.pinos.length + ' pino(s) solto(s) na mesa pra imprimir.' : '') + ' Pra imprimir separado, use <b>Organizar mesa</b> ou mova a peça.</div>';
         q('nome').value = '';
       },
       cancelar: () => { q('res').innerHTML = ''; }

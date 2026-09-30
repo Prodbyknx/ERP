@@ -88,3 +88,33 @@ test('plano do mundo vira plano local respeitando a transformação do objeto', 
   const pl2 = planoParaLocal({ n: [1, 0, 0], d: 110 }, T);   // x=110 no mundo -> y local = -5
   assert.ok(Math.abs(pl2.n[1] + 1) < 1e-9); assert.ok(Math.abs(pl2.d - 5) < 1e-9);
 });
+
+// ---------- pediu conector: NUNCA some calado. Peça fina ganha pino solto;
+// seção fina (orelha, dedo) ganha furo pra pino de FILAMENTO; o que não dá
+// mesmo explica com o motivo certo (espessura × largura)
+const cilindroMalha = (h, r) => { const m = W.Manifold.cylinder(h, r, r, 48, true), g = m.getMesh(); const pos = new Float32Array(g.vertProperties.length / g.numProp * 3); for (let v = 0; v < pos.length / 3; v++) for (let k = 0; k < 3; k++) pos[v * 3 + k] = g.vertProperties[v * g.numProp + k]; return { pos, idx: Uint32Array.from(g.triVerts) }; };
+const con = t => ({ tipo: t, auto: true, diametro: 5, lado: 5, largura: 4, comprimento: 8, profundidade: 6, folga: 0.2, quantidade: 2, ladoPino: 'A', folgaFundo: 0.3, chanfro: 0.4, parede: 1.2 });
+test('conector em placa de 6 mm cortada na espessura: pino SOLTO (antes saía sem nada)', () => {
+  const r = cortarPorPlano([{ nome: 'Placa', malha: caixaMalha(60, 40, 6), cor: '#fff' }], { n: [0, 0, 1], d: 3 }, { conector: con('cilindrico') });
+  assert.ok(r.relatorio.length >= 1, r.avisos.join(' | '));
+  assert.ok(r.extras.length >= 1 && /Pino solto/.test(r.extras[0].nome));
+  assert.ok(r.avisos.some(a => /PINO SOLTO/.test(a)));
+  for (const p of [...r.A, ...r.B, ...r.extras]) assert.ok(solida(p.malha), p.nome);
+});
+test('conector em pescoço de Ø3,2 mm: furo pros dois lados pra pino de filamento 1,75', () => {
+  for (const t of ['cilindrico', 'quadrado', 'lingueta', 'andorinha']) {
+    const r = cortarPorPlano([{ nome: 'Pescoço', malha: cilindroMalha(30, 1.6), cor: '#fff' }], { n: [0, 0, 1], d: 0 }, { conector: con(t) });
+    assert.equal(r.relatorio.length, 1, t + ': ' + r.avisos.join(' | '));
+    assert.equal(r.relatorio[0].tipo, 'filamento', t);
+    assert.ok(r.relatorio[0].comprimentoPino >= 2.6, t);
+    const vA = r.A.reduce((s, p) => s + volume(p.malha), 0), vB = r.B.reduce((s, p) => s + volume(p.malha), 0), meio = Math.PI * 1.6 ** 2 * 15;
+    assert.ok(vA < meio - 5 && vB < meio - 5, t + ' furo dos dois lados ' + vA.toFixed(1) + ' ' + vB.toFixed(1));
+    for (const p of [...r.A, ...r.B]) assert.ok(solida(p.malha), t + ' ' + p.nome);
+  }
+});
+test('conector que não cabe mesmo (placa de 4 mm): sai sem, e diz que é ESPESSURA, não largura', () => {
+  const r = cortarPorPlano([{ nome: 'Placa', malha: caixaMalha(60, 40, 4), cor: '#fff' }], { n: [0, 0, 1], d: 2 }, { conector: con('cilindrico') });
+  assert.equal(r.relatorio.length, 0);
+  assert.ok(r.avisos.some(a => /espessura de cada lado/.test(a)), r.avisos.join(' | '));
+  assert.ok(!r.avisos.some(a => /de largura: não cabe/.test(a)));
+});
