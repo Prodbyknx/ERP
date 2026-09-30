@@ -17,6 +17,30 @@ COMO USAR
    de exemplo: Gabriel (admin) e Ana (vendedora).
 
 
+NOVIDADES DESTA VERSÃO (12) — O QUE "AINDA NÃO FAZIA" AGORA FAZ
+-----------------------------------------------------------------
+Detalhes em FERRAMENTAS.txt.
+- SVG EM VETOR: o gerador lê os caminhos do arquivo -> contorno exato
+  (pior cor 96,5% no PNG -> 99,7% no SVG; borda 0,016 -> 0,005 mm).
+  SVG com texto em fonte cai pra imagem e avisa.
+- FOTO: reconhecida sozinha. PÔSTER (2 a 4 cores chapadas, retângulo,
+  redondo, coração ou recorte) ou LITOFANIA (placa branca que mostra a
+  foto contra a luz, com moldura e argola; prévia "contra a luz").
+- SEM AMS: 3MF de UM filamento + "Colocar as pausas no arquivo fatiado":
+  solte o .gcode.3mf do Bambu e ele volta com a pausa em cada camada de
+  troca (serve também pra tag NFC fechada dentro).
+- QR do verso de qualquer tamanho (versões 1 a 40), com correção de erro
+  automática.
+- CORTE COM CONECTOR nunca some calado: peça fina ganha pino solto;
+  orelha/dedo ganha furo pra pino de filamento; se não cabe nada, a
+  prévia diz "Saiu SEM conector" e por quê.
+- ESTÚDIO: arrastar a peça na mesa com o mouse; Duplicar -> Excluir
+  apaga só a cópia; posição = centro X/Y e base Z (girada, "Z = 0" põe
+  na mesa); pincel no topo de cilindro/peça de CAD funciona.
+ARQUIVOS PRA SUBIR: os mesmos de sempre (app.js, estudio3d.js, index.html
+e os outros do pacote SUBIR-NO-CLOUDFLARE).
+
+
 NOVIDADES DESTA VERSÃO (11) — GERADOR DE CHAVEIRO NOVO
 -------------------------------------------------------
 Ferramentas -> Gerar chaveiro. Detalhes em FERRAMENTAS.txt.

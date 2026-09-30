@@ -29,6 +29,15 @@ A TELA (mesma cara do Estúdio 3D)
 
 O QUE ELE DESCOBRE SOZINHO
 --------------------------
+É LOGO OU FOTO?
+  Foto (centenas de tons: rosto, pet, paisagem) é reconhecida sozinha e
+  já sai em PÔSTER. "Usar como": Logo · Pôster · Litofania.
+SVG
+  Lê os CAMINHOS do arquivo (vetor): contorno exato da curva, sem
+  serrilhado de pixel. Entende path, formas, <style>/classes, transform,
+  recorte (clip-path), traço com junta/ponta, cores e degradê. SVG com
+  TEXTO em fonte ou foto dentro: usa a imagem que o navegador desenhou e
+  avisa pra converter o texto em curvas.
 FUNDO
   PNG transparente   usa a transparência.
   Fundo liso (JPG)   acha a cor da borda e mede o ruído do JPG pra não
@@ -74,7 +83,16 @@ FORMATO             Chaveiro · Medalha · Placa · Só contorno.
 IMPRESSORA          A1, A1 mini, P1S, P1P, X1C + bico 0,2 / 0,4 / 0,6.
   Muda a mesa, a camada (0,1 no bico 0,2) e o traço mínimo.
 TENHO AMS           desligado = cor por ALTURA: cada cor ganha a sua
-  faixa e ele diz em que CAMADA trocar o filamento no Bambu Studio.
+  faixa. O 3MF vai com UM filamento só (a cor muda na pausa) e aparece
+  "PAUSAS NA IMPRESSÃO" com as camadas:
+    AUTOMÁTICO: no Bambu Studio, fatie e use Arquivo → Exportar →
+      Exportar arquivo fatiado da placa (.gcode.3mf); solte esse arquivo
+      no botão "Colocar as pausas no arquivo fatiado". Volta o mesmo
+      arquivo com a pausa ("M400 U1", a do próprio perfil da impressora)
+      no começo de cada camada certa, achada pela ALTURA. Imprima esse
+      arquivo (cartão microSD ou abrindo no Bambu Studio).
+    NA MÃO: botão direito no + da barra de camadas → Adicionar pausa.
+  A tag NFC "fechada dentro" usa o mesmo caminho (pausa pra pôr a tag).
 Resumo: tamanho, peso (g) e tempo estimado; no rodapé da prévia, as
 trocas de cor estimadas.
 
@@ -94,6 +112,21 @@ VERSO    TEXTO (até 2 linhas): @instagram, telefone, nome.
          "Verso" mostra como fica. Letras menores que 3 mm: ele avisa.
 ALTURAS  Em degraus · Tudo na mesma altura; base e relevo (mm).
 BORDA    em volta da logo (mm). Canto da placa.
+
+FOTO: PÔSTER E LITOFANIA
+------------------------
+PÔSTER     a foto em 2, 3 ou 4 cores chapadas (bordas limpas, sem mancha
+           menor do que imprime), em Retângulo · Redondo · Coração ·
+           Recorte (se a foto tiver fundo transparente/liso).
+LITOFANIA  placa BRANCA de espessura variável: contra a luz (janela,
+           lanterna do celular) a foto aparece com todos os tons. A
+           espessura vem da claridade pela luz que passa no PLA (claro =
+           fino, escuro = grosso; 0,8 a 3 mm), com moldura e argola.
+           Controles: forma, tamanho, mais fino/mais grosso, contraste,
+           moldura, negativo. O canto de cima mostra "Contra a luz × peça"
+           e COMPARAR põe a simulação por cima da peça.
+           Imprima com filamento branco, camada 0,1 mm (0,06 no bico 0,2)
+           e preenchimento 100%.
 
 AVANÇADO
 --------
@@ -121,9 +154,12 @@ GARANTIAS (testadas a cada entrega: tests/gerador.test.mjs)
   Benchmark: node tools/bench-chaveiro.mjs --novo
 
 LIMITES
-  - Foto (rosto, paisagem) não é logo: vira manchas de até 4 cores.
-  - SVG é desenhado em alta resolução antes de analisar (não lê os
-    caminhos do SVG direto).
+  - Pôster tem no máximo 4 cores: rosto claro em fundo claro pode se
+    misturar com o fundo (use Litofania pra ter todos os tons).
+  - Pausa automática: arquivo fatiado do Bambu Studio/Orca (.gcode.3mf
+    ou .gcode); 3MF sem fatiar não tem camadas.
+  - Engrossar traço fino engrossa traço de verdade e ponta aguda; canto
+    vivo de peça grossa não incha mais.
 
 =====================================================================
 ESTÚDIO 3D — preparar qualquer STL / OBJ / 3MF pra imprimir
@@ -213,8 +249,13 @@ CONSERTAR — conferir e consertar
    Ao abrir um arquivo ele já confere sozinho, em segundo plano.
 
 AJUSTAR — posição, tamanho e cor
-   Medidas em mm (posição, rotação, tamanho ou %), Manter proporção,
-   Colocar na mesa, Centralizar, Girar 90°, Espelhar, Redefinir.
+   Medidas em mm (rotação, tamanho ou %), Manter proporção, Colocar na
+   mesa, Centralizar, Girar 90°, Espelhar, Redefinir.
+   POSIÇÃO = CENTRO X e Y da peça na mesa e BASE Z (altura da parte de
+   baixo; 0 = encostada na mesa), valendo também com a peça girada.
+   MOVER COM O MOUSE: segure a peça e arraste — ela anda na mesa, sem
+   mudar a altura (arrastar no vazio gira a câmera). Com a alça Mover
+   (tecla G), a seta move num eixo só. Ctrl+Z desfaz.
    DEITAR NA MAIOR FACE PLANA (ou "na face que eu clicar"). A cor de cada
    peça é escolhida aqui e é a que vai pro 3MF.
 
@@ -244,6 +285,17 @@ CORTAR — em partes
    Lingueta e ranhura · Rabo de andorinha · Pino solto. Diâmetro,
    profundidade, quantidade e FOLGA configuráveis; o resultado diz as
    medidas finais, ex.: "Pino Ø 5,00 mm · Furo Ø 5,50 mm".
+   Quando o encaixe pedido não cabe, ele NÃO some calado:
+     - peça fina (placa cortada na espessura): PINO SOLTO (furo dos dois
+       lados; o pino vai pra mesa pra imprimir junto);
+     - seção fina (orelha, dedo, pescoço de ~3 mm): furo Ø2 dos dois
+       lados pra um PINO DE FILAMENTO (um pedaço do próprio filamento
+       1,75 mm; o aviso diz o comprimento);
+     - lingueta/andorinha que não cabem viram pino;
+     - não cabe nada: a prévia mostra em destaque "Saiu SEM conector" e
+       o motivo (espessura ou largura), e o botão vira "Cortar sem
+       conector".
+   O mesmo vale pro "Separar com pino" (barra da parte selecionada).
 
 TEXTO — nome, logo e relevo, FRENTE E VERSO
    Alto-relevo, alto-relevo colorido (peça separada), baixo-relevo /
