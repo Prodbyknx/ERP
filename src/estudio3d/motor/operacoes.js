@@ -26,7 +26,7 @@ import { melhorGiro, normalizar, avaliar } from '../core/ia/avaliacao.js';
 import { BufferGeometry, BufferAttribute } from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 import { progresso } from '../core/progresso.js';
-import { analisar as analisarLogo } from '../../gerador/analise.js';
+import { analisar as analisarLogo, analisarSVG } from '../../gerador/analise.js';
 import { construir as construirChaveiro } from '../../gerador/chaveiro.js';
 import { criar } from '../core/malha.js';
 
@@ -35,7 +35,7 @@ import { criar } from '../core/malha.js';
 const analises = new Map();
 function resumoAnalise(id, an) {
   const { W, H, fatorImg, modo, fundo, cores, coresBrutas, caixa, ruido, sugestao, ms } = an;
-  return { id, W, H, fatorImg, modo, fundo, coresBrutas, caixa, ruido, sugestao, ms,
+  return { id, W, H, fatorImg, modo, fundo, coresBrutas, caixa, ruido, sugestao, ms, vetor: !!an.vetor,
     cores: cores.map(c => ({ id: c.id, hex: c.hex, nome: c.nome, fracao: c.fracao, pai: c.pai, nivel: c.nivel })) };
 }
 
@@ -49,9 +49,22 @@ function resumoValidacao(v) {
 }
 
 export const OPERACOES = {
-  geradorAnalisar({ id, px, w, h }) {
+  geradorAnalisar({ id, px, w, h, svg }) {
     progresso(0.1, 'Analisando a logo');
-    const an = analisarLogo({ px, w, h });
+    // SVG: lê os caminhos (contorno exato); texto em fonte/foto dentro ou SVG
+    // que não deu pra ler: usa os pixels que o navegador desenhou
+    let an = null, aviso = null;
+    if (svg) {
+      try {
+        const v = analisarSVG(svg, { w, h });
+        if (v.voltarRaster) aviso = v.avisos[0] + ' Usei a imagem (contorno por pixel).';
+        else if (!v.erro) an = v;
+      } catch (e) { aviso = 'Não consegui ler os caminhos do SVG (' + (e.message || e) + '): usei a imagem (contorno por pixel).'; }
+    }
+    if (!an) {
+      an = analisarLogo({ px, w, h });
+      if (aviso && !an.erro) an.svg = { formas: 0, avisos: [aviso] };
+    }
     if (an.erro) return { erro: an.erro };
     analises.set(id, an);
     while (analises.size > 3) analises.delete(analises.keys().next().value);

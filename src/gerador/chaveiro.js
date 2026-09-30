@@ -57,12 +57,23 @@ function engrossar(mk, W, H, rMin) {
   }
   if (ns < 2) return { mask: mk, n: 0, meia: null };
   const { rot, pedacos } = M.rotular(M.dilatar(semente, W, H, 1.5), W, H);
-  const longos = pedacos.filter(p => p.area >= Math.max(8, rMin * 6));
+  // canto vivo também tem crista fina (vai afinando até a ponta), mas curta e
+  // grudada no corpo grosso: esse não engrossa (senão o canto incha pra fora).
+  // Engrossa: crista comprida (traço de verdade) ou peça toda fina (pingo, fio).
+  const nSem = new Int32Array(pedacos.length + 1), toca = new Uint8Array(pedacos.length + 1);
+  for (let i = 0; i < W * H; i++) { const p = rot[i]; if (!p) continue; if (semente[i]) nSem[p]++; else if (mk[i] && d2[i] >= r2) toca[p] = 1; }
+  const vale = new Uint8Array(pedacos.length + 1);
+  for (const p of pedacos) vale[p.id] = !toca[p.id] || nSem[p.id] >= 2.5 * rMin ? 1 : 0;
+  const usar = new Uint8Array(W * H);
+  let nu = 0;
+  for (let i = 0; i < W * H; i++) if (semente[i] && vale[rot[i]]) { usar[i] = 1; nu++; }
+  if (!nu) return { mask: mk, n: 0, meia: null };
+  const longos = pedacos.filter(p => vale[p.id] && p.area >= Math.max(8, rMin * 6));
   const meias = [];
   const ehLongo = new Uint8Array(pedacos.length + 1); for (const p of longos) ehLongo[p.id] = 1;
-  for (let i = 0; i < W * H; i++) if (semente[i] && ehLongo[rot[i]]) meias.push(Math.sqrt(d2[i]));
+  for (let i = 0; i < W * H; i++) if (usar[i] && ehLongo[rot[i]]) meias.push(Math.sqrt(d2[i]));
   meias.sort((a, b) => a - b);
-  return { mask: M.uniao(mk, M.dilatar(semente, W, H, rMin)), n: longos.length, meia: meias.length ? meias[meias.length >> 1] : null };
+  return { mask: M.uniao(mk, M.dilatar(usar, W, H, rMin)), n: longos.length, meia: meias.length ? meias[meias.length >> 1] : null };
 }
 
 export function construir(an, cfgUsuario) {
@@ -106,6 +117,11 @@ function montar(an, cfg, CrossSection, Manifold, G, t0) {
   const nivel = {}; const nv = k => nivel[k] || (nivel[k] = paiDe(k) == null ? 1 : 1 + nv(paiDe(k)));
   ks.forEach(nv);
 
+  // ---------- SVG: contorno EXATO de cada cor (formas do arquivo, em px, y pra cima)
+  const vet = an.vetor ? regioesVetor(an.vetor, K, CrossSection, G) : null;
+  const silVet = vet ? (vet.filter(Boolean).length ? G(CrossSection.union(vet.filter(Boolean))) : null) : null;
+  if (vet && (!silVet || silVet.isEmpty())) return { erro: 'O desenho do SVG ficou vazio.' };
+
   // ---------- escala
   const cx = an.caixa;
   const borda = temBase ? Math.max(0, cfg.bordaMM) : 0;
@@ -113,14 +129,19 @@ function montar(an, cfg, CrossSection, Manifold, G, t0) {
   if (cfg.modelo === 'medalha') {
     const mx = (cx.x0 + cx.x1 + 1) / 2, my = (cx.y0 + cx.y1 + 1) / 2;
     let r2 = 0;
-    for (let y = cx.y0; y <= cx.y1; y++) for (let x = cx.x0; x <= cx.x1; x++) if (an.silhueta[y * W + x]) { const d = (x + 0.5 - mx) ** 2 + (y + 0.5 - my) ** 2; if (d > r2) r2 = d; }
+    if (silVet) { for (const p of silVet.toPolygons()) for (const v of p) { const d = (v[0] - mx) ** 2 + (-v[1] - my) ** 2; if (d > r2) r2 = d; } }
+    else for (let y = cx.y0; y <= cx.y1; y++) for (let x = cx.x0; x <= cx.x1; x++) if (an.silhueta[y * W + x]) { const d = (x + 0.5 - mx) ** 2 + (y + 0.5 - my) ** 2; if (d > r2) r2 = d; }
     esc = (cfg.tamanhoMM / 2 - borda) / Math.sqrt(r2);
+  } else if (silVet) {
+    const b = silVet.bounds();
+    esc = (cfg.tamanhoMM - 2 * borda) / Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1]);
   } else esc = (cfg.tamanhoMM - 2 * borda) / Math.max(cx.w, cx.h);
   if (!(esc > 0)) return { erro: 'A borda é maior que a peça: diminua a borda ou aumente o tamanho.' };
   const pxMM = 1 / esc;
+  const vetMM = vet ? vet.map(c => c ? G(c.scale([esc, esc])) : null) : null;
 
   // ---------- máscaras de cada cor erguida (+ engrossar traço fino)
-  const rot = an.rotulo, masks = {};
+  const rot = an.rotulo, masks = {}, extra = {};
   for (const k of ks) masks[k] = new Uint8Array(n);
   let silExtra = null;
   for (let i = 0; i < n; i++) { const r = rot[i]; if (r >= 0) { const k = raiz(r); if (masks[k]) masks[k][i] = 1; } }
@@ -129,7 +150,7 @@ function montar(an, cfg, CrossSection, Manifold, G, t0) {
   if (cfg.engrossar && temBase && rMin >= 0.75) {
     for (const k of ks) {
       const r = engrossar(masks[k], W, H, rMin);
-      if (r.mask !== masks[k]) { masks[k] = r.mask; silExtra = silExtra ? M.uniao(silExtra, r.mask) : r.mask; }
+      if (r.mask !== masks[k]) { if (vet) extra[k] = M.menos(r.mask, masks[k]); masks[k] = r.mask; silExtra = silExtra ? M.uniao(silExtra, r.mask) : r.mask; }
       engrossados += r.n;
       if (r.meia != null) meiaFina = meiaFina == null ? r.meia : Math.min(meiaFina, r.meia);
     }
@@ -138,7 +159,17 @@ function montar(an, cfg, CrossSection, Manifold, G, t0) {
 
   const suave = an.modo === 'fundo' && an.ruido > 1.5 ? 2 : 1;
   const cs = m => { const p = poligonosMM(m, W, H, esc, { tolMM: 0.02, suave }); return p.length ? G(new CrossSection(p, 'EvenOdd')) : null; };
-  const csSil = cs(sil);
+  // SVG: a cor é a forma exata do arquivo; o que o engrossar acrescentou (em px)
+  // entra por cima, com 1 px de folga pra dentro (sem fresta entre os dois)
+  const extraCS = {};
+  if (vet) for (const k of Object.keys(extra)) { const c = cs(extra[k]); if (c) extraCS[k] = G(c.offset(esc, 'Miter', 2)); }
+  const regiaoVet = k => {
+    const l = [];
+    for (let j = 0; j < K; j++) if (vetMM[j] && raiz(j) === +k) l.push(vetMM[j]);
+    if (extraCS[k]) l.push(extraCS[k]);
+    return l.length ? (l.length === 1 ? l[0] : G(CrossSection.union(l))) : null;
+  };
+  const csSil = vet ? (Object.keys(extraCS).length ? G(CrossSection.union([G(silVet.scale([esc, esc])), ...Object.values(extraCS)])) : G(silVet.scale([esc, esc]))) : cs(sil);
   if (!csSil) return { erro: 'O desenho ficou vazio.' };
   const nPecas = c => { const d = c.decompose(); const k = d.length; d.forEach(x => x.delete()); return k; };
   const taparFuros = (c, aMin) => {
@@ -202,8 +233,8 @@ function montar(an, cfg, CrossSection, Manifold, G, t0) {
   const reg = {};
   let ocupado = null;
   for (const k of ordem) {
-    let c = cs(masks[k]);
-    if (!c) continue;
+    let c = vet ? regiaoVet(k) : cs(masks[k]);
+    if (!c || c.isEmpty()) continue;
     if (temBase) c = G(c.intersect(base));
     if (ocupado) c = G(c.subtract(ocupado));
     // abertura de 0,02 mm: tira a lasca de largura ~0 que sobra entre duas
@@ -330,6 +361,42 @@ function montar(an, cfg, CrossSection, Manifold, G, t0) {
     perfil: { id: perfil.id, nome: perfil.nome, bico: perfil.bico, camada: perfil.camada, ams: perfil.ams },
     ms: Date.now() - t0
   };
+}
+
+// Formas do SVG na ordem da pintura: a de cima ganha. Cada cor = o que dela
+// sobra visível; forma da cor do fundo (rótulo -1) apaga o que estava embaixo.
+// Formas seguidas da mesma cor viram uma união só (menos operações).
+function regioesVetor(v, K, CrossSection, G) {
+  const regra = r => r === 'evenodd' ? 'EvenOdd' : 'NonZero';
+  const yCima = aneis => aneis.map(a => a.map(p => [p[0], -p[1]]));
+  const recortes = new Map();
+  const deRecorte = partes => {
+    let c = recortes.get(partes);
+    if (!c) {
+      const l = partes.map(pp => G(new CrossSection(yCima(pp.aneis), regra(pp.regra))));
+      c = l.length === 1 ? l[0] : l.length ? G(CrossSection.union(l)) : null;
+      recortes.set(partes, c);
+    }
+    return c;
+  };
+  const csDe = f => {
+    let c = G(new CrossSection(yCima(f.aneis), regra(f.regra)));
+    for (const partes of f.clip || []) { const r = deRecorte(partes); c = r ? G(c.intersect(r)) : G(c.subtract(c)); }
+    return c;
+  };
+  const reg = new Array(K).fill(null);
+  const fs = v.formas;
+  for (let i = 0; i < fs.length;) {
+    let j = i; while (j < fs.length && fs[j].rotulo === fs[i].rotulo) j++;
+    const l = fs.slice(i, j).map(csDe).filter(c => !c.isEmpty());
+    if (l.length) {
+      const g = l.length === 1 ? l[0] : G(CrossSection.union(l)), r = fs[i].rotulo;
+      for (let k = 0; k < K; k++) if (k !== r && reg[k]) reg[k] = G(reg[k].subtract(g));
+      if (r >= 0 && r < K) reg[r] = reg[r] ? G(reg[r].add(g)) : g;
+    }
+    i = j;
+  }
+  return reg.map(c => c && !c.isEmpty() ? c : null);
 }
 
 function areaPol(p) { let s = 0; for (let i = 0, j = p.length - 1; i < p.length; j = i++) s += p[j][0] * p[i][1] - p[i][0] * p[j][1]; return s / 2; }
@@ -556,15 +623,16 @@ function relatorio(x) {
   const { an, cfg, perfil, largura, altura, espessura, saida, vivas, corDe, engrossados, meiaFina, pxMM, argola, pontes, trocas, altBase, altArte, avisos, dicas, temBase, cracha } = x;
   const q = [];   // {ok, titulo, texto}
   const pxOrig = pxMM / an.fatorImg;
-  // resolução da imagem no tamanho pedido
-  if (pxOrig >= 10) q.push({ nivel: 'ok', titulo: 'Resolução ótima', texto: Math.round(pxOrig) + ' px por mm' });
+  // resolução da imagem no tamanho pedido (SVG lido em vetor não tem resolução)
+  if (an.vetor) q.push({ nivel: 'ok', titulo: 'Contorno exato do SVG', texto: an.svg.formas + ' forma(s) lidas do arquivo: a borda segue a curva do desenho' });
+  else if (pxOrig >= 10) q.push({ nivel: 'ok', titulo: 'Resolução ótima', texto: Math.round(pxOrig) + ' px por mm' });
   else if (pxOrig >= 5) q.push({ nivel: 'ok', titulo: 'Resolução boa', texto: pxOrig.toFixed(1) + ' px por mm' });
   else q.push({ nivel: 'alerta', titulo: 'Imagem pequena pra esse tamanho', texto: pxOrig.toFixed(1) + ' px por mm: a borda pode sair serrilhada. Use uma imagem maior (1000 px ou mais) ou um chaveiro menor.' });
   // cores
   const nc = an.cores.length;
   q.push({ nivel: an.coresBrutas > 4 ? 'dica' : 'ok', titulo: 'Cores detectadas: ' + nc, texto: an.cores.map(c => c.nome).join(', ') + (an.coresBrutas > 4 ? ' (a imagem tem mais tons; juntei os parecidos em 4)' : '') });
   if (an.modo === 'fundo') q.push({ nivel: 'ok', titulo: 'Fundo removido', texto: 'fundo ' + an.fundo.nome.toLowerCase() + ' liso' });
-  else if (an.modo === 'alfa') q.push({ nivel: 'ok', titulo: 'Fundo transparente', texto: 'recorte pela transparência do PNG' });
+  else if (an.modo === 'alfa') q.push({ nivel: 'ok', titulo: 'Fundo transparente', texto: an.vetor ? 'recorte pelo próprio desenho' : 'recorte pela transparência do PNG' });
   else q.push({ nivel: 'dica', titulo: 'Recorte por claro/escuro', texto: 'a imagem não tem fundo liso nem transparência: confira o recorte' });
   // detalhes finos
   if (engrossados) q.push({ nivel: 'dica', titulo: 'Detalhes finos reforçados', texto: engrossados + ' traço(s) mais fino(s) que ' + perfil.traco.toFixed(2).replace('.', ',') + ' mm engrossados pra imprimir com bico ' + String(perfil.bico).replace('.', ',') });
@@ -576,6 +644,7 @@ function relatorio(x) {
       if (precisa <= 150) dicas.push({ tipo: 'dica', texto: 'Pra os traços mais finos saírem sem engrossar: chaveiro de ' + precisa + ' mm' + (perfil.bico > 0.2 ? ' ou bico 0,2' : '') + '.' });
     }
   }
+  if (an.svg) for (const t of an.svg.avisos) avisos.push({ tipo: 'alerta', texto: t });
   if (pontes) dicas.push({ tipo: 'dica', texto: 'A logo tinha partes soltas: a base junta tudo numa peça só.' });
   if (cracha != null) dicas.push({ tipo: 'dica', texto: 'A base usa a cor de fora da logo (' + an.cores[cracha].nome.toLowerCase() + '): uma cor a menos pra trocar.' });
   // mesa

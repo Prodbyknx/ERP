@@ -5,6 +5,7 @@
 // cores; pixel de borda fica com a cor vizinha mais parecida.
 import { labDaImagem, lab, dE, hex, redimensionar, nomeDaCor } from './imagem.js';
 import * as M from './mascara.js';
+import { lerSVG, rasterizarSVG } from './svg.js';
 
 export const LADO_TRABALHO = 1000;   // maior lado da análise em px (imagem pequena é ampliada: contorno liso)
 export const MAX_CORES = 4;
@@ -339,3 +340,43 @@ function sugerirBase(modo, fundo, cores, rotulo, sil, W, H) {
 }
 
 export { lab, dE };
+
+/**
+ * analisarSVG(texto, {w, h}) -> a mesma análise de analisar(), feita no desenho
+ * do próprio SVG (rasterizado aqui, na área do viewBox), mais an.vetor: cada
+ * forma do arquivo em px de trabalho com a cor (rótulo) que a análise deu pra
+ * ela — o construir usa esses contornos exatos em vez dos contornos por pixel.
+ * w/h: tamanho em que a tela mostra a imagem (fatorImg casa com ela).
+ * SVG com texto em fonte ou foto dentro: { voltarRaster: true } (o navegador
+ * desenha isso melhor; a tela manda os pixels).
+ */
+export function analisarSVG(texto, opc = {}) {
+  const t0 = Date.now();
+  const lido = lerSVG(texto);
+  if (lido.textoOuImagem) return { voltarRaster: true, avisos: lido.avisos };
+  const lado = opc.lado || LADO_TRABALHO;
+  const ras = rasterizarSVG(lido, lado);
+  const an = analisar({ px: ras.px, w: ras.w, h: ras.h }, { lado });
+  if (an.erro) return an;
+  if (an.W !== ras.w || an.H !== ras.h) return an;          // (não acontece: já sai no lado de trabalho)
+  const K = an.cores.length, F = lido.formas.length, n = an.W * an.H;
+  // cor de cada forma = a da análise nos pixels onde ela é a de cima
+  const votos = new Int32Array(F * (K + 1));
+  for (let i = 0; i < n; i++) { const f = ras.dono[i]; if (f < 0) continue; const r = an.rotulo[i]; votos[f * (K + 1) + (r < 0 ? K : r)]++; }
+  const rotulos = lido.formas.map((fo, f) => {
+    const lf = lab(fo.cor[0], fo.cor[1], fo.cor[2]);
+    const maisPerto = () => { let q = 0, dm = Infinity; an.cores.forEach((c, k) => { const d = dE(lf, c.lab); if (d < dm) { dm = d; q = k; } }); return q; };
+    let melhor = -1, nm = 0, melhorCor = -1, nc = 0;
+    for (let k = 0; k <= K; k++) { const v = votos[f * (K + 1) + k]; if (v > nm) { nm = v; melhor = k; } if (k < K && v > nc) { nc = v; melhorCor = k; } }
+    const pertoDoFundo = an.modo === 'fundo' && an.fundo && dE(lf, an.fundo.lab) < 20;
+    if (melhor === K) return pertoDoFundo ? -1 : (melhorCor >= 0 ? melhorCor : maisPerto());   // fundo pintado por cima = apaga
+    if (melhor >= 0) return melhor;
+    if (pertoDoFundo && dE(lf, an.fundo.lab) < dE(lf, an.cores[maisPerto()].lab)) return -1;
+    return maisPerto();
+  });
+  an.vetor = { formas: ras.formasPx.map((fp, i) => ({ aneis: fp.aneis, regra: fp.regra, clip: fp.clip, rotulo: rotulos[i] })) };
+  an.svg = { formas: F, avisos: lido.avisos };
+  if (opc.w) an.fatorImg = an.W / opc.w;
+  an.ms = Date.now() - t0;
+  return an;
+}

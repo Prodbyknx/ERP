@@ -15,7 +15,7 @@ import { executar } from '../src/estudio3d/motor/operacoes.js';
 import { pecasDoGerador } from '../src/estudio3d/core/pecasGerador.js';
 import { validar } from '../src/estudio3d/core/validador.js';
 import { carregarManifold } from '../tests/util/manifold.mjs';
-import { analisar } from '../src/gerador/analise.js';
+import { analisar, analisarSVG } from '../src/gerador/analise.js';
 import { construir } from '../src/gerador/chaveiro.js';
 import { criar } from '../src/estudio3d/core/malha.js';
 import { manifold } from '../src/estudio3d/core/solidos.js';
@@ -127,11 +127,11 @@ export async function rodarGeradorAtual(logo, fluxo = 'padrao', { tamanhoMM = 50
 // ---------- o motor NOVO (src/gerador): análise automática + geometria no Manifold
 export async function rodarMotorNovo(logo, { tamanhoMM = 50, bico = 0.4, cfg = {} } = {}) {
   const arq = path.join(pastaLogos, logo.arquivo);
-  if (/\.svg$/.test(arq)) return { pulado: 'SVG: a tela rasteriza no navegador (no Node não há decodificador de SVG)' };
-  const img = lerImagem(new Uint8Array(fs.readFileSync(arq)), arq);
   const tempos = {};
-  let t = performance.now();
-  const an = analisar({ px: img.px, w: img.largura, h: img.altura });
+  let t = performance.now(), an;
+  // SVG: o motor lê os caminhos do arquivo (contorno exato); o resto, os pixels
+  if (/\.svg$/.test(arq)) an = analisarSVG(fs.readFileSync(arq, 'utf8'), { w: logo.w, h: logo.h });
+  else { const img = lerImagem(new Uint8Array(fs.readFileSync(arq)), arq); an = analisar({ px: img.px, w: img.largura, h: img.altura }); }
   tempos.analise = performance.now() - t; tempos.imagem = 0;
   if (an.erro) return { erro: an.erro, tempos };
   t = performance.now();

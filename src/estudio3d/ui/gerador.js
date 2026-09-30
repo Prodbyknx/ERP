@@ -269,7 +269,9 @@ export class Gerador {
       const g = cv.getContext('2d', { willReadFrequently: true });
       g.imageSmoothingQuality = 'high';
       g.drawImage(img, 0, 0, w, h);
-      await this.usarPixels(g.getImageData(0, 0, w, h), { tipo: svg ? 'svg' : 'imagem', nome, url: cv.toDataURL('image/png') });
+      // SVG: o motor lê os caminhos do arquivo (contorno exato); os pixels ficam pra tela e de reserva
+      const texto = svg ? await f.text().catch(() => null) : null;
+      await this.usarPixels(g.getImageData(0, 0, w, h), { tipo: svg ? 'svg' : 'imagem', nome, url: cv.toDataURL('image/png'), svg: texto });
     } catch (e) {
       avisar('Não consegui abrir essa imagem.', 'warn');
     } finally { URL.revokeObjectURL(url); }
@@ -311,7 +313,7 @@ export class Gerador {
     const id = 'logo' + (++this.seq);
     const img = this.pixels;
     try {
-      const an = await this.motor.rodar('geradorAnalisar', { id, px: img.data, w: img.width, h: img.height });
+      const an = await this.motor.rodar('geradorAnalisar', { id, px: img.data, w: img.width, h: img.height, svg: (this.origem && this.origem.svg) || null });
       if (this.pixels !== img) return;                 // já trocaram de logo
       if (an.erro) { this.estado('erro', an.erro); return; }
       this.an = an;
@@ -337,7 +339,7 @@ export class Gerador {
       catch (e) {
         if (e.codigo !== 'sem-analise' && e.codigo !== 'cancelado') throw e;
         // motor reiniciou: analisa de novo (mesma imagem) e segue
-        const an = await this.motor.rodar('geradorAnalisar', { id: this.an.id, px: this.pixels.data, w: this.pixels.width, h: this.pixels.height });
+        const an = await this.motor.rodar('geradorAnalisar', { id: this.an.id, px: this.pixels.data, w: this.pixels.width, h: this.pixels.height, svg: (this.origem && this.origem.svg) || null });
         if (an.erro) throw new Error(an.erro);
         r = await this.motor.rodar('geradorConstruir', { id: this.an.id, cfg: this.cfg });
       }

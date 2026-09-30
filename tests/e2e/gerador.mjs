@@ -197,6 +197,37 @@ export async function secaoGerador({ b, teste, tmp, raiz, novaPagina, passo, sim
     await pg.click('.e3g .e3d-vistas [data-b=comparar]');
   });
 
+  await passo(pg, 'gerador: SVG é lido em VETOR (contorno exato do arquivo), alinhado com a original; SVG com texto em fonte cai pros pixels com aviso', async () => {
+    await abrir('sol-4cores-svg.svg');
+    const r = await res();
+    const nomes = r.partes.map(p => p.split(' ')[0]).sort().join();
+    if (nomes !== 'Amarelo,Base,Preto,Vermelho' || r.base !== '#1D4ED8') throw new Error(JSON.stringify(r.partes) + ' ' + r.base);
+    const v = await pg.evaluate(() => ({ vetor: window.Estudio3D.gerador.an.vetor, q: window.Estudio3D.gerador.res.qualidade.itens.map(x => x.titulo).join('|') }));
+    if (!v.vetor || !/Contorno exato do SVG/.test(v.q)) throw new Error(JSON.stringify(v));
+    // comparar: a imagem (desenhada pelo navegador) bate com a peça lida do vetor
+    await pg.click('.e3g .e3d-vistas [data-b=comparar]');
+    await pg.waitForTimeout(400);
+    const c = await pg.evaluate(() => {
+      const g = window.Estudio3D.gerador, img = document.querySelector('.e3g-comparar img').getBoundingClientRect();
+      const r = g.res, pos = g.pos, z = r.medidas.espessura, cx = g.an.caixa, k = r.transformada;
+      const p = (x, y) => g.visor.telaDe(pos[0] + x * k.esc + k.tx, pos[1] - y * k.esc + k.ty, z);
+      const a = p(cx.x0, cx.y0), b2 = p(cx.x1 + 1, cx.y1 + 1);
+      const fx = x => img.left + x / g.an.W * img.width, fy = y => img.top + y / g.an.H * img.height;
+      return Math.max(Math.abs(a.x - fx(cx.x0)), Math.abs(a.y - fy(cx.y0)), Math.abs(b2.x - fx(cx.x1 + 1)), Math.abs(b2.y - fy(cx.y1 + 1)));
+    });
+    await pg.click('.e3g .e3d-vistas [data-b=comparar]');
+    if (c > 2) throw new Error('comparar desalinhado ' + c.toFixed(1) + ' px');
+    // SVG com texto em fonte: o navegador desenha o texto; o motor usa os pixels e avisa
+    const fs = await import('node:fs');
+    const arq = path.join(tmp, 'logo-com-texto.svg');
+    fs.writeFileSync(arq, '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 400 200"><rect x="10" y="10" width="380" height="180" rx="40" fill="#15803d"/><text x="200" y="130" font-size="90" font-family="Arial" font-weight="900" text-anchor="middle" fill="#ffffff">LOJA</text></svg>');
+    await marcar();
+    await pg.setInputFiles('.e3g input[type=file]', arq);
+    await pg.waitForFunction(() => { const g = window.Estudio3D.gerador; return g.origem && g.origem.nome === 'logo-com-texto' && g.res && g.res !== window.__r && !g.construindo; }, null, { timeout: 30000 });
+    const t = await pg.evaluate(() => { const g = window.Estudio3D.gerador; return { vetor: !!g.an.vetor, avisos: g.res.avisos.map(a => a.texto).join('|'), partes: g.res.partes.map(p => p.nome) }; });
+    if (t.vetor || !/TEXTO em fonte/.test(t.avisos) || t.partes.length < 2) throw new Error(JSON.stringify(t));
+  });
+
   await passo(pg, 'gerador: JPG com fundo branco (escudo) -> base branca com a faixa, verde e preto', async () => {
     await abrir('escudo-3cores-jpg.jpg');
     const r = await res();

@@ -8,7 +8,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { carregarManifold } from './util/manifold.mjs';
 import { lerImagem } from '../mcp/imagem.mjs';
-import { analisar } from '../src/gerador/analise.js';
+import { analisar, analisarSVG } from '../src/gerador/analise.js';
+import { caminhoParaPontos, lerSVG } from '../src/gerador/svg.js';
+import { manifold } from '../src/estudio3d/core/solidos.js';
 import { construir } from '../src/gerador/chaveiro.js';
 import { validar } from '../src/estudio3d/core/validador.js';
 import { criar } from '../src/estudio3d/core/malha.js';
@@ -16,7 +18,8 @@ import { rodarMotorNovo, medirNovo } from '../tools/bench-chaveiro.mjs';
 
 await carregarManifold();
 const pasta = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'logos');
-const logos = JSON.parse(fs.readFileSync(path.join(pasta, 'logos.json'), 'utf8')).filter(l => !/\.svg$/.test(l.arquivo));
+const todas = JSON.parse(fs.readFileSync(path.join(pasta, 'logos.json'), 'utf8'));
+const logos = todas.filter(l => !/\.svg$/.test(l.arquivo));
 const imagem = nome => { const l = logos.find(x => x.nome === nome); const img = lerImagem(new Uint8Array(fs.readFileSync(path.join(pasta, l.arquivo))), l.arquivo); return { px: img.px, w: img.largura, h: img.altura }; };
 const cacheAn = new Map();
 const an = nome => { if (!cacheAn.has(nome)) cacheAn.set(nome, analisar(imagem(nome))); return cacheAn.get(nome); };
@@ -24,7 +27,7 @@ const solida = p => { const v = validar(criar(Float64Array.from(p.malha.pos), p.
 const zDe = p => { let a = Infinity, b = -Infinity; for (let i = 2; i < p.malha.pos.length; i += 3) { a = Math.min(a, p.malha.pos[i]); b = Math.max(b, p.malha.pos[i]); } return [+a.toFixed(3), +b.toFixed(3)]; };
 
 // ---------- fidelidade (benchmark com limites)
-for (const l of logos) {
+for (const l of todas) {
   test('fidelidade: ' + l.nome, async () => {
     const r = await rodarMotorNovo(l);
     assert.ok(!r.erro, r.erro);
@@ -38,6 +41,12 @@ for (const l of logos) {
     assert.equal(m.argolaComeArtePct, 0, 'argola em cima da arte');
     assert.ok(m.finosPreservadosPct >= 85, 'traço fino preservado ' + m.finosPreservadosPct.toFixed(0) + '%');
     for (const p of m.malha) assert.ok(p.fechada && !p.cruzamentos && !p.degeneradas, 'malha ' + p.nome + ': ' + JSON.stringify(p));
+    // SVG lido em vetor: contorno exato (melhor que qualquer imagem)
+    if (/\.svg$/.test(l.arquivo)) {
+      assert.ok(r.an.vetor, 'SVG devia ser lido em vetor');
+      assert.ok(m.piorCorPct >= 99, 'SVG: pior cor ' + m.piorCorPct.toFixed(2) + '%');
+      assert.ok(m.erroBordaMM <= 0.01, 'SVG: erro de borda ' + m.erroBordaMM.toFixed(4) + ' mm');
+    }
   });
 }
 
@@ -220,4 +229,76 @@ test('QR: gerador segue a norma (tamanho por versão, padrões de posição e te
   assert.equal(gerarQR('a').nivel, 'H');
   assert.equal(gerarQR('x'.repeat(2900)).versao, 40);
   assert.throws(() => gerarQR('a'.repeat(3000)));
+});
+
+// ---------- SVG em vetor (contorno exato do arquivo)
+const areaDe = pols => { const { CrossSection } = manifold(); const c = new CrossSection(pols, 'Positive'); const a = c.area(); c.delete(); return a; };
+const svgChaveiro = (svg, cfg = {}) => { const a = analisarSVG(svg, { w: 500, h: 500 }); assert.ok(!a.erro && !a.voltarRaster, a.erro || 'voltarRaster'); const r = construir(a, { argola: { ligada: false }, ...cfg }); assert.ok(!r.erro, r.erro); return { a, r, cor: hex => r.vista.find(v => v.cor === hex) }; };
+
+test('SVG: caminho (arco com flags grudadas, relativo, S/T, número colado)', () => {
+  assert.deepEqual(caminhoParaPontos('M0 0a10 10 0 0120 0', 0.01)[0].pts.slice(-1)[0], [20, 0]);
+  assert.deepEqual(caminhoParaPontos('M0 0a10 10 0 01 20 0', 0.01)[0].pts.slice(-1)[0], [20, 0]);
+  const t = caminhoParaPontos('m10,10 20,0 0,20z m5 5 l1 1', 0.01);
+  assert.deepEqual(t.map(x => x.pts[0]), [[10, 10], [15, 15]]);
+  assert.equal(t[0].fechado, true);
+  assert.deepEqual(caminhoParaPontos('M-1.5.5.5-1.5', 0.1)[0].pts, [[-1.5, 0.5], [0.5, -1.5]]);
+  assert.deepEqual(caminhoParaPontos('M0 0Q5 10 10 0T20 0', 0.1)[0].pts.slice(-1)[0], [20, 0]);
+  // S reflete o controle da C anterior: a curva passa pelo ponto do meio simétrica
+  const s = caminhoParaPontos('M0 0C0 10 10 10 10 0S20 -10 20 0', 0.01)[0].pts;
+  const y15 = s.reduce((a, p) => Math.abs(p[0] - 15) < Math.abs(a[0] - 15) ? p : a);
+  assert.ok(Math.abs(y15[1] + 7.5) < 0.1, 'S refletido: y(15) = ' + y15[1]);
+});
+
+test('SVG: círculo sai com o raio exato (sem serrilhado de pixel)', () => {
+  const { r, cor } = svgChaveiro('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><circle cx="100" cy="100" r="90" fill="#e11d48"/></svg>', { corBase: '#FFFFFF' });
+  const v = cor('#E11D48'), pts = v.poligonos.flat();
+  const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+  for (const p of pts) assert.ok(Math.abs(Math.hypot(p[0] - cx, p[1] - cy) - 22.5) < 0.005, 'raio ' + Math.hypot(p[0] - cx, p[1] - cy));
+  assert.ok(Math.abs(areaDe(v.poligonos) / (Math.PI * 22.5 ** 2) - 1) < 0.001);
+  assert.ok(Math.abs(r.medidas.largura - 50) < 0.01 && Math.abs(r.medidas.altura - 50) < 0.01, 'medidas ' + r.medidas.largura + ' × ' + r.medidas.altura);
+});
+
+test('SVG: <style> com classe, transform, evenodd, use, recorte (clip-path), traço e fundo que apaga', () => {
+  // anel evenodd azul + quadrado amarelo girado (use) no furo
+  let x = svgChaveiro(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><style>.a{fill:#1d4ed8}.b{fill:#facc15}</style><rect id="q" width="20" height="20"/></defs>
+    <path class="a" fill-rule="evenodd" d="M50 5a45 45 0 1 1 0 90a45 45 0 1 1 0-90zM50 25a25 25 0 1 0 0 50a25 25 0 1 0 0-50z"/>
+    <g transform="translate(40 40) rotate(45 10 10)"><use href="#q" class="b"/></g></svg>`);
+  assert.equal(x.a.cores.length, 2);
+  assert.ok(Math.abs(areaDe(x.cor('#1D4ED8').poligonos) - Math.PI * (45 ** 2 - 25 ** 2) * 0.25) < 1, 'anel');
+  assert.ok(Math.abs(areaDe(x.cor('#FACC15').poligonos) - 100) < 0.2, 'quadrado');
+  // recorte: meio círculo preto de 40 un. = 22,5 mm
+  x = svgChaveiro(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><clipPath id="c"><rect width="50" height="100"/></clipPath><circle cx="50" cy="50" r="40" fill="#111" clip-path="url(#c)"/><rect x="60" y="30" width="30" height="40" fill="#dc2626"/></svg>`, { corBase: '#FFFFFF' });
+  const xs = x.cor('#111111').poligonos.flat().map(p => p[0]);
+  assert.ok(Math.abs(Math.max(...xs) - Math.min(...xs) - 22.5) < 0.02, 'meio círculo ' + (Math.max(...xs) - Math.min(...xs)));
+  // traço: linha de 8 un. com ponta redonda vira área
+  x = svgChaveiro('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M10 50H90" stroke="#15803d" stroke-width="8" stroke-linecap="round" fill="none"/></svg>', { corBase: '#FFFFFF' });
+  const k = 45 / 88;  // 80 + 2 pontas de 4
+  assert.ok(Math.abs(areaDe(x.cor('#15803D').poligonos) - (80 * 8 + Math.PI * 16) * k * k) < 1, 'traço');
+  // fundo branco + círculo branco por cima do laranja: vira furo (base aparece)
+  x = svgChaveiro('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#fff"/><circle cx="50" cy="50" r="40" fill="#e8590c"/><circle cx="50" cy="50" r="15" fill="#fff"/></svg>');
+  assert.equal(x.a.modo, 'fundo');
+  assert.ok(Math.abs(areaDe(x.cor('#E8590C').poligonos) - Math.PI * (40 ** 2 - 15 ** 2) * (45 / 80) ** 2) < 2, 'anel laranja');
+  for (const p of x.r.partes) assert.ok(solida(p), 'malha ' + p.nome);
+});
+
+test('SVG: texto em fonte ou foto dentro volta pros pixels; lixo não quebra', () => {
+  assert.equal(analisarSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 40"><text x="0" y="30">Oi</text><rect width="10" height="10"/></svg>').voltarRaster, true);
+  assert.equal(analisarSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><image href="a.png" width="10" height="10"/><rect width="5" height="5"/></svg>').voltarRaster, true);
+  assert.throws(() => lerSVG('<html></html>'), /SVG/);
+  assert.throws(() => lerSVG('<svg xmlns="http://www.w3.org/2000/svg"></svg>'), /formas/);
+  // path quebrado no meio: usa o que deu pra ler
+  assert.equal(lerSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M0 0L10 0L10 10Z L5 x"/></svg>').formas.length, 1);
+});
+
+test('SVG: logo com 400 formas (Illustrator) monta rápido e sem canto inchado', () => {
+  let s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">';
+  for (let i = 0; i < 400; i++) { const x = 20 + (i % 20) * 18, y = 20 + Math.floor(i / 20) * 18; s += `<path fill="${i % 3 ? '#111' : '#1d4ed8'}" d="M${x} ${y}h12v12h-12z"/>`; }
+  const t = Date.now();
+  const { r } = svgChaveiro(s + '</svg>');
+  assert.ok(Date.now() - t < 6000, 'demorou ' + (Date.now() - t) + ' ms');
+  // quadradinhos continuam quadrados: área exata (sem engrossar canto)
+  const lado = 12 * 45 / 354;
+  const nPreto = 400 - Math.ceil(400 / 3), nAzul = Math.ceil(400 / 3);
+  assert.ok(Math.abs(areaDe(r.vista.find(v => v.cor === '#111111').poligonos) - nPreto * lado * lado) < 0.5);
+  assert.ok(Math.abs(areaDe(r.vista.find(v => v.cor === '#1D4ED8').poligonos) - nAzul * lado * lado) < 0.5);
 });
