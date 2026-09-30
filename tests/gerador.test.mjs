@@ -215,5 +215,9 @@ test('QR: gerador segue a norma (tamanho por versão, padrões de posição e te
   for (const [x0, y0] of [[0, 0], [22, 0], [0, 22]]) for (let d = 0; d < 7; d++) { assert.ok(m[y0][x0 + d] && m[y0 + 6][x0 + d] && m[y0 + d][x0] && m[y0 + d][x0 + 6]); }
   for (let i = 8; i < 21; i++) { assert.equal(m[6][i], i % 2 === 0); assert.equal(m[i][6], i % 2 === 0); }
   assert.equal(gerarQR('a'.repeat(150)).versao, 8);
-  assert.throws(() => gerarQR('a'.repeat(400)));
+  // versões grandes (tabelas até a 40) e correção que sobe de graça quando cabe
+  assert.equal(gerarQR('a'.repeat(1475)).versao, 32);
+  assert.equal(gerarQR('a').nivel, 'H');
+  assert.equal(gerarQR('x'.repeat(2900)).versao, 40);
+  assert.throws(() => gerarQR('a'.repeat(3000)));
 });

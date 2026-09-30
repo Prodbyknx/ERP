@@ -1,17 +1,29 @@
-// QR Code (modo byte, correção M, versões 1 a 10) sem dependência — pro
-// verso do chaveiro (link do Instagram, WhatsApp, site). Segue a norma
-// ISO/IEC 18004: Reed-Solomon em GF(256), padrões fixos, máscara com menor
-// penalidade. Devolve a grade: true = módulo escuro.
-const ECC_M = [-1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26];        // códigos de correção por bloco
-const BLOCOS_M = [-1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5];               // blocos por versão
-const FORMATO_M = 0;                                                // bits do nível M
+// QR Code (modo byte, versões 1 a 40, correção L/M/Q/H) sem dependência —
+// pro verso do chaveiro (link do Instagram, WhatsApp, site, texto longo).
+// Segue a norma ISO/IEC 18004: Reed-Solomon em GF(256), padrões fixos,
+// máscara com menor penalidade. Devolve a grade: true = módulo escuro.
+// Tabelas por nível [L, M, Q, H] e versão (índice 0 não usado).
+const ECC = {
+  L: [-1, 7, 10, 15, 20, 26, 18, 20, 24, 30, 18, 20, 24, 26, 30, 22, 24, 28, 30, 28, 28, 28, 28, 30, 30, 26, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30],
+  M: [-1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26, 26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28],
+  Q: [-1, 13, 22, 18, 26, 18, 24, 18, 22, 20, 24, 28, 26, 24, 20, 30, 24, 28, 28, 26, 30, 28, 30, 30, 30, 30, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30],
+  H: [-1, 17, 28, 22, 16, 22, 28, 26, 26, 24, 28, 24, 28, 22, 24, 24, 30, 28, 28, 26, 28, 30, 24, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30]
+};
+const BLOCOS = {
+  L: [-1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 6, 6, 6, 6, 7, 8, 8, 9, 9, 10, 12, 12, 12, 13, 14, 15, 16, 17, 18, 19, 19, 20, 21, 22, 24, 25],
+  M: [-1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5, 8, 9, 9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20, 21, 23, 25, 26, 28, 29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49],
+  Q: [-1, 1, 1, 2, 2, 4, 4, 6, 6, 8, 8, 8, 10, 12, 16, 12, 17, 16, 18, 21, 20, 23, 23, 25, 27, 29, 34, 34, 35, 38, 40, 43, 45, 48, 51, 53, 56, 59, 62, 65, 68],
+  H: [-1, 1, 1, 2, 4, 4, 4, 5, 6, 8, 8, 11, 11, 16, 16, 18, 16, 19, 21, 25, 25, 25, 34, 30, 32, 35, 37, 40, 42, 45, 48, 51, 54, 57, 60, 63, 66, 70, 74, 77, 81]
+};
+const FORMATO = { L: 1, M: 0, Q: 3, H: 2 };
 
 function modulosCrus(v) {
   let r = (16 * v + 128) * v + 64;
   if (v >= 2) { const n = Math.floor(v / 7) + 2; r -= (25 * n - 10) * n - 55; if (v >= 7) r -= 36; }
   return r;
 }
-const palavrasDados = v => Math.floor(modulosCrus(v) / 8) - ECC_M[v] * BLOCOS_M[v];
+const palavrasDados = (v, n) => Math.floor(modulosCrus(v) / 8) - ECC[n][v] * BLOCOS[n][v];
+const bitsPrecisos = (v, len) => 4 + (v <= 9 ? 8 : 16) + len * 8;
 
 function mul(x, y) {
   let z = 0;
@@ -36,23 +48,29 @@ function resto(dados, div) {
   return r;
 }
 
-export function gerarQR(texto) {
+export function gerarQR(texto, opc = {}) {
   const bytes = [...new TextEncoder().encode(String(texto))];
-  let v = 1;
-  for (; v <= 10; v++) if (4 + (v <= 9 ? 8 : 16) + bytes.length * 8 <= palavrasDados(v) * 8) break;
-  if (v > 10) throw new Error('Texto longo demais pro QR do chaveiro (máximo ~200 letras).');
+  // menor versão com correção M (a L só se não couber); depois sobe a
+  // correção de graça se ainda couber na mesma versão (mais resistente a risco)
+  const minimo = opc.nivel || 'M';
+  let nivel = minimo, v = 1;
+  const cabe = (vv, nn) => bitsPrecisos(vv, bytes.length) <= palavrasDados(vv, nn) * 8;
+  for (; v <= 40; v++) if (cabe(v, nivel)) break;
+  if (v > 40 && nivel !== 'L') { nivel = 'L'; for (v = 1; v <= 40; v++) if (cabe(v, nivel)) break; }
+  if (v > 40) throw new Error('Texto longo demais pro QR (máximo ~2900 letras).');
+  if (!opc.nivel) for (const n of ['Q', 'H']) if (cabe(v, n)) nivel = n;
   // bits: modo byte (0100) + tamanho + dados + terminador + enchimento
   const bits = [];
   const por = (val, n) => { for (let i = n - 1; i >= 0; i--) bits.push((val >>> i) & 1); };
   por(4, 4); por(bytes.length, v <= 9 ? 8 : 16); bytes.forEach(b => por(b, 8));
-  const cap = palavrasDados(v) * 8;
+  const cap = palavrasDados(v, nivel) * 8;
   por(0, Math.min(4, cap - bits.length));
   por(0, (8 - bits.length % 8) % 8);
   for (let p = 0xEC; bits.length < cap; p ^= 0xEC ^ 0x11) por(p, 8);
   const dados = [];
   for (let i = 0; i < bits.length; i += 8) { let b = 0; for (let k = 0; k < 8; k++) b = (b << 1) | bits[i + k]; dados.push(b); }
   // blocos + correção, intercalados
-  const nb = BLOCOS_M[v], ecc = ECC_M[v], cru = Math.floor(modulosCrus(v) / 8);
+  const nb = BLOCOS[nivel][v], ecc = ECC[nivel][v], cru = Math.floor(modulosCrus(v) / 8);
   const curtos = nb - cru % nb, tamCurto = Math.floor(cru / nb), div = divisor(ecc);
   const blocos = [];
   for (let i = 0, k = 0; i < nb; i++) {
@@ -76,7 +94,7 @@ export function gerarQR(texto) {
     }
   }
   if (v >= 2) {
-    const n = Math.floor(v / 7) + 2, passo = Math.ceil((v * 4 + 4) / (n * 2 - 2)) * 2;
+    const n = Math.floor(v / 7) + 2, passo = v === 32 ? 26 : Math.ceil((v * 4 + 4) / (n * 2 - 2)) * 2;
     const ps = [6]; for (let p = N - 7; ps.length < n; p -= passo) ps.splice(1, 0, p);
     for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
       if ((i === 0 && j === 0) || (i === 0 && j === n - 1) || (i === n - 1 && j === 0)) continue;
@@ -84,7 +102,7 @@ export function gerarQR(texto) {
     }
   }
   const formato = mascara => {
-    const d = (FORMATO_M << 3) | mascara; let r = d;
+    const d = (FORMATO[nivel] << 3) | mascara; let r = d;
     for (let i = 0; i < 10; i++) r = (r << 1) ^ ((r >>> 9) * 0x537);
     const b = ((d << 10) | r) ^ 0x5412, bit = i => ((b >>> i) & 1) === 1;
     for (let i = 0; i <= 5; i++) pos(8, i, bit(i));
@@ -130,5 +148,5 @@ export function gerarQR(texto) {
   let melhor = 0, pm = Infinity;
   for (let m = 0; m < 8; m++) { aplicar(m); formato(m); const p = penalidade(); if (p < pm) { pm = p; melhor = m; } aplicar(m); }
   aplicar(melhor); formato(melhor);
-  return { versao: v, tamanho: N, modulos: mod };
+  return { versao: v, nivel, tamanho: N, modulos: mod };
 }
