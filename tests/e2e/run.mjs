@@ -496,6 +496,8 @@ async function main() {
   console.log('7b) pegar olho/orelha num clique (passar o mouse acende) e separar pela barra');
   const { secaoParte } = await import('./parte.mjs');
   await secaoParte({ b, teste, tmp, novaPagina, passo, abrirEstudio, abrirSecao });
+  const { secaoUso } = await import('./uso.mjs');
+  await secaoUso({ b, teste, tmp, novaPagina, passo, abrirEstudio });
 
   console.log('8) separar a mão do boneco (STL cru, com furos) pelo corte de uma parte');
   pg = await novaPagina(b);

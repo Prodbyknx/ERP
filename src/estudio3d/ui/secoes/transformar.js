@@ -8,7 +8,7 @@ export function montarTransformar(est) {
   const d = el('details', { 'data-sec': 'transf' });
   d.innerHTML = `<summary><span class="n">2</span>Posição, tamanho e cor</summary><div class="e3d-sec">
     <p class="u" data-a="alvo">Escolha um objeto.</p>
-    <div class="e3d-l3"><div><label>Posição X</label><input type="text" data-t="px"></div><div><label>Y</label><input type="text" data-t="py"></div><div><label>Z (mm)</label><input type="text" data-t="pz"></div></div>
+    <div class="e3d-l3" title="Centro da peça na mesa (X, Y) e altura da parte de baixo (Z)"><div><label>Centro X</label><input type="text" data-t="px"></div><div><label>Centro Y</label><input type="text" data-t="py"></div><div><label>Base Z (mm)</label><input type="text" data-t="pz"></div></div>
     <div class="e3d-l3" style="margin-top:6px"><div><label>Rotação X</label><input type="text" data-t="rx"></div><div><label>Y</label><input type="text" data-t="ry"></div><div><label>Z (graus)</label><input type="text" data-t="rz"></div></div>
     <div class="e3d-l3" style="margin-top:6px"><div><label>Largura X</label><input type="text" data-t="tx"></div><div><label>Profund. Y</label><input type="text" data-t="ty"></div><div><label>Altura Z (mm)</label><input type="text" data-t="tz"></div></div>
     <div class="e3d-l3" style="margin-top:6px"><div><label>Escala %</label><input type="text" data-t="esc"></div>
@@ -80,7 +80,9 @@ export function montarTransformar(est) {
       const dc = estado(o);
       const c = est.cena.caixaExata(o);
       const set = (k, v, casas = 2) => { const i = campo(k); if (document.activeElement !== i) i.value = fmt(v, casas).replace(/\./g, ''); };
-      set('px', dc.pos[0]); set('py', dc.pos[1]); set('pz', dc.pos[2]);
+      // posição = o que se vê: centro da peça na mesa e altura da base (girada
+      // ou não). A origem interna do arquivo não diz nada pra quem usa.
+      if (c) { set('px', (c.min[0] + c.max[0]) / 2); set('py', (c.min[1] + c.max[1]) / 2); set('pz', c.min[2]); }
       set('rx', dc.rot[0], 1); set('ry', dc.rot[1], 1); set('rz', dc.rot[2], 1);
       if (c) { set('tx', c.tam[0]); set('ty', c.tam[1]); set('tz', c.tam[2]); }
       const uni = Math.abs(dc.esc[0] - dc.esc[1]) < 1e-9 && Math.abs(dc.esc[1] - dc.esc[2]) < 1e-9;
@@ -93,7 +95,17 @@ export function montarTransformar(est) {
     const o = est.objetoAtual();
     if (!o) return;
     const dc = estado(o);
-    const pos = [lerNumero(campo('px').value, dc.pos[0]), lerNumero(campo('py').value, dc.pos[1]), lerNumero(campo('pz').value, dc.pos[2])];
+    if (k === 'px' || k === 'py' || k === 'pz') {
+      const c = est.cena.caixaExata(o), eixo = { px: 0, py: 1, pz: 2 }[k];
+      const v = lerNumero(campo(k).value, NaN);
+      if (!c || !isFinite(v)) { render(); return; }
+      const atual = [(c.min[0] + c.max[0]) / 2, (c.min[1] + c.max[1]) / 2, c.min[2]], d = [0, 0, 0];
+      d[eixo] = v - atual[eixo];
+      if (Math.abs(d[eixo]) < 1e-9) return;
+      est.cena.aplicar('Posição', () => { o.transform = M4.multiplicar(M4.translacao(d[0], d[1], d[2]), o.transform); });
+      return;
+    }
+    const pos = dc.pos;
     const rot = [lerNumero(campo('rx').value, dc.rot[0]), lerNumero(campo('ry').value, dc.rot[1]), lerNumero(campo('rz').value, dc.rot[2])];
     let esc = dc.esc.slice();
     if (k === 'esc') {

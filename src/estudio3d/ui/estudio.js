@@ -419,10 +419,45 @@ export class Estudio {
           cv.setPointerCapture(ev.pointerId);
           pin.pincel(hit, ev, true);
         }
+        return;
+      }
+      // ARRASTAR A PEÇA na mesa (modo Escolher, como no Bambu Studio): segurou
+      // em cima de uma peça e arrastou -> ela anda no plano da mesa (a altura
+      // não muda). Arrastar no vazio continua girando a câmera.
+      // (com a alça Mover ligada também: a seta move num eixo, o corpo na mesa)
+      const gz = this.visor.gizmo;
+      if (ev.button === 0 && !ev.shiftKey && !ev.ctrlKey && !ev.metaKey && !this.previaAtiva && this.ferramenta === 'navegar' && (this.visor.modoGizmo === 'nenhum' || this.visor.modoGizmo === 'mover') && !(gz && (gz.axis || gz.dragging))) {
+        const hit = this.visor.intersectar(ev);
+        if (hit && this.cena.objeto(hit.objeto)) {
+          const z = hit.ponto.z, p0 = this.visor.pontoNoPlano(ev, [0, 0, 1], z);
+          if (p0) {
+            this.arrasteObj = { id: hit.objeto, parte: hit.parte, z, p0: [p0.x, p0.y], x: ev.clientX, y: ev.clientY, ativo: false, pid: ev.pointerId };
+            this.visor.controles.enabled = false;
+          }
+        }
       }
     });
     cv.addEventListener('pointermove', ev => {
       if (this.arrastandoPonto) { this.secoes.desenhar.mover(ev); return; }
+      const a = this.arrasteObj;
+      if (a) {
+        if (!a.ativo) {
+          if (Math.hypot(ev.clientX - a.x, ev.clientY - a.y) < 5) return;
+          a.ativo = true;
+          try { cv.setPointerCapture(a.pid); } catch (e) { /* ok */ }
+          // arrastou uma peça fora da seleção: ela passa a ser a seleção
+          if (!this.cena.objetosSel().some(o => o.id === a.id)) { const o = this.cena.objeto(a.id); this.cena.selecionar(a.id, o.partes.length === 1 ? o.partes[0].id : a.parte); }
+          a.objs = this.cena.objetosSel().map(o => ({ o, t0: o.transform }));
+          cv.style.cursor = 'grabbing';
+        }
+        const p = this.visor.pontoNoPlano(ev, [0, 0, 1], a.z);
+        if (!p) return;
+        a.d = [p.x - a.p0[0], p.y - a.p0[1]];
+        const T = M4.translacao(a.d[0], a.d[1], 0);
+        for (const { o, t0 } of a.objs) { const g = this.visor.grupos.get(o.id); if (g) this.visor.aplicarMatriz(g, M4.multiplicar(T, t0)); }
+        this.visor.pedirRender();
+        return;
+      }
       const pin = this.alvoPincel();
       if (pin) {
         const hit = this.visor.intersectar(ev);
@@ -431,6 +466,21 @@ export class Estudio {
       }
     });
     const fim = ev => {
+      const a = this.arrasteObj;
+      if (a) {
+        this.arrasteObj = null;
+        this.visor.controles.enabled = true;
+        cv.style.cursor = '';
+        try { cv.releasePointerCapture(a.pid); } catch (e) { /* ok */ }
+        if (a.ativo) {
+          ini = null;
+          if (a.d && Math.hypot(a.d[0], a.d[1]) > 1e-6) {
+            const T = M4.translacao(a.d[0], a.d[1], 0);
+            this.cena.aplicar(a.objs.length > 1 ? 'Mover ' + a.objs.length + ' peças' : 'Mover', () => { for (const { o, t0 } of a.objs) o.transform = M4.multiplicar(T, t0); });
+          } else this.visor.sincronizar();
+          return;
+        }
+      }
       if (this.arrastandoPonto) {
         this.arrastandoPonto = false;
         this.visor.controles.enabled = true;
@@ -453,6 +503,7 @@ export class Estudio {
       ini = null;
     };
     cv.addEventListener('pointerup', fim);
+    cv.addEventListener('pointercancel', fim);
     cv.addEventListener('pointerleave', () => { const pin = this.alvoPincel(); if (pin) pin.cursorPincel(null); });
     cv.addEventListener('contextmenu', ev => {
       ev.preventDefault();
@@ -753,7 +804,9 @@ export class Estudio {
     if (!o) return;
     const c = this.cena.caixaExata(o);
     const d = novoObjeto({ nome: o.nome + ' (cópia)', transform: M4.multiplicar(M4.translacao(c ? c.tam[0] + 6 : 10, 0, 0), o.transform), papel: o.papel, forma: o.forma, partes: o.partes.map(p => ({ ...p, id: undefined })) });
-    this.cena.aplicar('Duplicar', () => { this.cena.objetos.push(d); this.cena.sel = { objeto: d.id, parte: d.partes.length === 1 ? d.partes[0].id : null }; });
+    // a seleção passa pra CÓPIA (só ela): senão Excluir logo depois apagava as duas
+    this.cena.aplicar('Duplicar', () => { this.cena.objetos.push(d); this.cena.sel = { objeto: d.id, parte: d.partes.length === 1 ? d.partes[0].id : null }; this.cena.multi = [d.id]; });
+    return d;
   }
   juntarObjetos() {
     const vis = this.cena.objetos.filter(o => o.visivel);
@@ -862,7 +915,10 @@ export class Estudio {
     this.cena.aplicar(papel === 'furo' ? 'Usar ' + o.nome + ' como furo' : 'Usar ' + o.nome + ' como sólido', () => { o.papel = papel; });
     if (papel === 'furo') avisar('Agora ' + o.nome + ' é um furo: onde ele atravessar outra peça, sai material.');
   }
-  duplicarSelecao() { for (const o of this.cena.objetosSel()) this.duplicarObjeto(o.id); }
+  duplicarSelecao() {
+    const copias = this.cena.objetosSel().map(o => this.duplicarObjeto(o.id)).filter(Boolean);
+    if (copias.length > 1) { this.cena.multi = copias.map(c => c.id); this.cena.emitir('selecao', this.cena.sel); }
+  }
   removerSelecao() {
     const objs = this.cena.objetosSel();
     if (!objs.length) return;

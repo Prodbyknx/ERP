@@ -151,6 +151,53 @@ function detalhar(s, c, R, L, novosV, limite = 4000) {
   return feitas;
 }
 
+// Depois de dividir: VIRA arestas (critério de Delaunay) na região do pincel.
+// Dividir pela aresta mais longa numa triangulação ruim (tampa de cilindro
+// em leque, CAD) deixa triângulos finíssimos e vértices quase coincidentes;
+// puxando, a pele dobra e cruza. Virando a diagonal onde os dois ângulos
+// opostos somam mais de 180°, os triângulos ficam bem formados. Só vira em
+// superfície quase plana ali (não muda a forma) e sem misturar cores.
+function virarArestas(s, c, R, passadas = 4) {
+  const I = s.idx, P = s.pos;
+  const faces = new Set();
+  for (const [v] of noRaio(s, c, R * 1.25)) for (const f of s.vf[v]) faces.add(f);
+  const nor = (a, b, cc) => { const ux = P[b * 3] - P[a * 3], uy = P[b * 3 + 1] - P[a * 3 + 1], uz = P[b * 3 + 2] - P[a * 3 + 2], wx = P[cc * 3] - P[a * 3], wy = P[cc * 3 + 1] - P[a * 3 + 1], wz = P[cc * 3 + 2] - P[a * 3 + 2]; return [uy * wz - uz * wy, uz * wx - ux * wz, ux * wy - uy * wx]; };
+  const ang = (o, a, b) => { const ux = P[a * 3] - P[o * 3], uy = P[a * 3 + 1] - P[o * 3 + 1], uz = P[a * 3 + 2] - P[o * 3 + 2], wx = P[b * 3] - P[o * 3], wy = P[b * 3 + 1] - P[o * 3 + 1], wz = P[b * 3 + 2] - P[o * 3 + 2]; const d = ux * wx + uy * wy + uz * wz, L = Math.hypot(ux, uy, uz) * Math.hypot(wx, wy, wz); return L > 0 ? Math.acos(Math.max(-1, Math.min(1, d / L))) : 0; };
+  const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+  const tira = (l, f) => { const i = l.indexOf(f); if (i >= 0) l.splice(i, 1); };
+  let total = 0;
+  for (let it = 0; it < passadas; it++) {
+    let viradas = 0;
+    for (const f1 of faces) {
+      for (let e = 0; e < 3; e++) {
+        const a = I[f1 * 3 + e], b = I[f1 * 3 + (e + 1) % 3], c1 = I[f1 * 3 + (e + 2) % 3];
+        let f2 = -1, d = -1;
+        for (const g of s.vf[a]) {
+          if (g === f1) continue;
+          for (let k = 0; k < 3; k++) if (I[g * 3 + k] === b && I[g * 3 + (k + 1) % 3] === a) { f2 = g; d = I[g * 3 + (k + 2) % 3]; }
+          if (f2 >= 0) break;
+        }
+        if (f2 < 0 || d === c1) continue;
+        if (s.cor && s.cor[f1] !== s.cor[f2]) continue;
+        if (ang(c1, a, b) + ang(d, b, a) <= Math.PI + 1e-3) continue;
+        const n1 = nor(a, b, c1), n2 = nor(b, a, d), L1 = Math.hypot(...n1), L2 = Math.hypot(...n2);
+        if (!(L1 > 0 && L2 > 0) || dot(n1, n2) / (L1 * L2) < 0.985) continue;
+        if (s.vf[c1].some(g => s.vf[d].includes(g))) continue;          // já existe a aresta c1-d
+        const m = [n1[0] + n2[0], n1[1] + n2[1], n1[2] + n2[2]], q1 = nor(a, d, c1), q2 = nor(d, b, c1);
+        if (dot(q1, m) <= 1e-12 || dot(q2, m) <= 1e-12) continue;        // não pode inverter
+        I[f1 * 3] = a; I[f1 * 3 + 1] = d; I[f1 * 3 + 2] = c1;
+        I[f2 * 3] = d; I[f2 * 3 + 1] = b; I[f2 * 3 + 2] = c1;
+        tira(s.vf[a], f2); tira(s.vf[b], f1); s.vf[c1].push(f2); s.vf[d].push(f1);
+        viradas++;
+        break;
+      }
+    }
+    total += viradas;
+    if (!viradas) break;
+  }
+  return total;
+}
+
 // um toque do pincel em c (referencial da peça).
 // opc: { tipo, raio, forca (0..1), simetria: 'x'|'y'|'z'|0|1|2|null,
 //        detalhe: aresta máxima em mm debaixo do pincel (0/nada = não divide) }
@@ -163,7 +210,9 @@ export function tocar(s, c, opc) {
   const mex = new Set();
   if (opc.detalhe > 0) {
     const novos = [];
-    for (const q of pontos) detalhar(s, q, opc.raio, opc.detalhe, novos);
+    let divididas = 0;
+    for (const q of pontos) divididas += detalhar(s, q, opc.raio, opc.detalhe, novos);
+    if (divididas) for (const q of pontos) virarArestas(s, q, opc.raio);
     for (const v of novos) { mex.add(v); s.mexidos.add(v); }
   }
   for (const q of pontos) for (const v of aplicar(s, q, opc)) mex.add(v);
