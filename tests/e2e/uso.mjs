@@ -89,5 +89,24 @@ export async function secaoUso({ b, teste, tmp, novaPagina, passo, abrirEstudio 
     if (!/Saiu SEM conector/.test(t) || !/espessura/.test(t) || !/sem conector/i.test(bt)) throw new Error(t.slice(0, 300) + ' | ' + bt);
     await pg.click('.e3d-previa button:not(.primary)');
   });
+  await passo(pg, 'USO: abrir STL com duas peças que se atravessam -> Consertar junta num sólido só e fica "Pronto pra fatiar" (antes o volume ia a zero)', async () => {
+    await limpar();
+    // STL binário: dois cubos de 20 mm, um atravessando o outro
+    const tris = [];
+    const cubo = (o) => { const p = [[0,0,0],[20,0,0],[20,20,0],[0,20,0],[0,0,20],[20,0,20],[20,20,20],[0,20,20]].map(v => v.map((c, i) => c + o[i]));
+      for (const [a, b, c] of [[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7]]) tris.push([p[a], p[b], p[c]]); };
+    cubo([0, 0, 0]); cubo([10, 10, 10]);
+    const buf = Buffer.alloc(84 + tris.length * 50); buf.writeUInt32LE(tris.length, 80);
+    tris.forEach((t, i) => t.forEach((v, k) => v.forEach((c, j) => buf.writeFloatLE(c, 84 + i * 50 + 12 + k * 12 + j * 4))));
+    const arq = path.join(tmp, 'sobrepostas.stl'); fs.writeFileSync(arq, buf);
+    await pg.setInputFiles('#ferr_estudio .e3d input[type=file][multiple]', arq);
+    await pg.waitForFunction(() => window.Estudio3D.estudio.cena.objetos.length === 1, null, { timeout: 60000 });
+    await ferr('diag');
+    await pg.waitForFunction(s => /Auto-interseções\s*4/.test(document.querySelector(s).textContent), sec('diag') + '[data-a=resultado]', { timeout: 60000 });
+    await pg.click(sec('diag') + '[data-a=reparar]');
+    await pg.waitForFunction(s => /Pronto pra fatiar/.test(document.querySelector(s).textContent), sec('diag') + '[data-a=resultado]', { timeout: 60000 });
+    const t = await pg.textContent(sec('diag') + '[data-a=resultado]');
+    if (!/juntou 2 partes/.test(t) || !/Volume\s*15,00 cm³/.test(t) || !/Objetos desconectados\s*1/.test(t)) throw new Error(t.slice(0, 600));
+  });
   await pg.context().close();
 }

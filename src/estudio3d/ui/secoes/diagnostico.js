@@ -20,7 +20,7 @@ export function corDeRotulo(i) {
 export function montarDiagnostico(est) {
   const d = el('details', { open: true, 'data-sec': 'diag' });
   d.innerHTML = `<summary><span class="n">1</span>Abrir e conferir</summary><div class="e3d-sec">
-    <p class="u">A conferência é geométrica: vale o que está no arquivo, não o que parece na tela. <b>Consertar</b> fecha buracos acompanhando a curva, desvira faces e tira sobras — o detalhe do modelo fica.</p>
+    <p class="u">A conferência é geométrica: vale o que está no arquivo, não o que parece na tela. <b>Consertar</b> fecha buracos acompanhando a curva, desvira faces, tira sobras, refaz onde a superfície se cruza e junta partes que se atravessam num sólido só (como o fatiador faria) — o detalhe do modelo fica.</p>
     <div data-a="resultado"></div>
     <div class="e3d-botoes">
       <button class="btn primary largo" data-a="reparar">Consertar automaticamente</button>

@@ -60,6 +60,7 @@ export function autoInterseccoes(m, opc = {}) {
     if (a0 === b0 || a0 === b1 || a0 === b2 || a1 === b0 || a1 === b1 || a1 === b2 || a2 === b0 || a2 === b1 || a2 === b2) return false;
     if (triCruzaTri(vert(m, a0), vert(m, a1), vert(m, a2), vert(m, b0), vert(m, b1), vert(m, b2))) {
       pares++; faces.add(t1); faces.add(t2);
+      if (opc.pares) opc.pares.push(t1, t2);
       if (pares >= max) { completo = false; return true; }
     }
     return false;

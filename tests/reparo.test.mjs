@@ -89,3 +89,76 @@ test('validador: componente interno detectado', () => {
   const v = validar(j);
   assert.equal(v.componentesInternos, 1);
 });
+
+/* ---- auditoria do "Conferir e consertar" (01/10): defeitos que o conserto
+   piorava ou deixava pra trás ---- */
+import { carregarManifold } from './util/manifold.mjs';
+import { gerarBoneco } from './util/boneco.mjs';
+await carregarManifold();
+const { OPERACOES } = await import('../src/estudio3d/motor/operacoes.js');
+const virarTudo = m => { const idx = Uint32Array.from(m.idx); for (let t = 0; t < idx.length; t += 3) { const x = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = x; } return criar(m.pos, idx); };
+const consertar = (malha, extra = {}) => OPERACOES.reparar({ parte: { nome: 'p', malha, cor: '#999999', ...extra }, opc: {} });
+
+test('consertar: faces viradas -> conta só as que estavam erradas (não a peça inteira)', () => {
+  const s = esfera(10, 4), nt = s.idx.length / 3, idx = Uint32Array.from(s.idx);
+  let erradas = 0;
+  for (let t = 0; t < nt; t += 7) { const x = idx[t * 3 + 1]; idx[t * 3 + 1] = idx[t * 3 + 2]; idx[t * 3 + 2] = x; erradas++; }
+  const r = reparar(criar(s.pos, idx));
+  assert.ok(ok(validar(r.malha)));
+  assert.ok(volume(r.malha) > 0);
+  assert.deepEqual(r.passos, ['acertou a orientação de ' + erradas + ' face(s)']);
+});
+
+test('consertar: peça dentro de outra NÃO vira vazio (antes virava do avesso e mudava a impressão)', () => {
+  const m = juntar([caixaMalha(20, 20, 20), caixaMalha(4, 4, 4, 8, 8, 8)]);
+  assert.equal(volume(reparar(m).malha), 8064, 'o conserto de malha não vira a peça de dentro');
+  const r = consertar(m);
+  const v = validar(r.parte.malha);
+  assert.ok(v.imprimivel && v.componentes === 1, JSON.stringify({ comp: v.componentes, imp: v.imprimivel }));
+  assert.ok(Math.abs(volume(r.parte.malha) - 8000) < 1e-3, 'virou um sólido só: ' + volume(r.parte.malha));
+});
+
+test('consertar: duas peças que se atravessam viram um sólido só (antes o volume ia a ZERO)', () => {
+  const r = consertar(juntar([caixaMalha(20, 20, 20), caixaMalha(20, 20, 20, 10, 10, 10)]));
+  const v = validar(r.parte.malha);
+  assert.ok(v.imprimivel && v.autoInterseccoes === 0 && v.componentes === 1);
+  assert.ok(Math.abs(volume(r.parte.malha) - 15000) < 1e-2, String(volume(r.parte.malha)));
+  assert.match(r.passos.join(' '), /juntou 2 partes/);
+});
+
+test('consertar: peça oca continua oca; peça que atravessa a oca é juntada sem tapar o vazio', () => {
+  const oca = juntar([caixaMalha(20, 20, 20), virarTudo(caixaMalha(10, 10, 10, 5, 5, 5))]);
+  let r = consertar(oca);
+  assert.deepEqual(r.passos, []);
+  assert.ok(Math.abs(volume(r.parte.malha) - 7000) < 1e-3);
+  r = consertar(juntar([caixaMalha(20, 20, 20), virarTudo(caixaMalha(6, 6, 6, 3, 3, 3)), caixaMalha(10, 10, 10, 15, 15, 15)]));
+  const v = validar(r.parte.malha);
+  assert.equal(v.cavidades, 1, 'o vazio continua');
+  assert.ok(v.imprimivel);
+  assert.ok(Math.abs(volume(r.parte.malha) - (8000 - 216 + 1000 - 125)) < 1e-2, String(volume(r.parte.malha)));
+});
+
+test('consertar: cores das peças juntadas ficam', () => {
+  const ab = juntar([caixaMalha(20, 20, 20), caixaMalha(20, 20, 20, 10, 10, 10)]);
+  const cor = new Uint16Array(24); for (let t = 12; t < 24; t++) cor[t] = 1;
+  const r = consertar(criar(ab.pos, ab.idx, cor), { cor: '#cc0000', paleta: ['#cc0000', '#0000cc'] });
+  assert.deepEqual(r.parte.paleta, ['#CC0000', '#0000CC']);
+  assert.ok(r.parte.malha.cor.includes(0) && r.parte.malha.cor.includes(1));
+});
+
+test('consertar: boneco de partes sobrepostas vira um sólido limpo, com o volume do boneco certo', () => {
+  const limpo = gerarBoneco('limpo').malha;
+  const r = consertar(gerarBoneco('cascas').malha);
+  const v = validar(r.parte.malha);
+  assert.ok(v.imprimivel && v.componentes === 1 && v.autoInterseccoes === 0, JSON.stringify({ comp: v.componentes, auto: v.autoInterseccoes }));
+  assert.ok(Math.abs(volume(r.parte.malha) - volume(limpo)) / volume(limpo) < 1e-3, volume(r.parte.malha) + ' x ' + volume(limpo));
+});
+
+test('consertar: boneco de IA sujo sai sem nenhum cruzamento (antes sobrava auto-interseção)', () => {
+  const r = consertar(gerarBoneco('sujo').malha);
+  const v = validar(r.parte.malha);
+  assert.ok(v.imprimivel && v.fechada && v.autoInterseccoes === 0, JSON.stringify({ fechada: v.fechada, auto: v.autoInterseccoes }));
+  assert.match(r.passos.join(' '), /refez \d+ face\(s\) onde a superfície se cruzava/);
+  const limpo = volume(gerarBoneco('limpo').malha);
+  assert.ok(Math.abs(volume(r.parte.malha) - limpo) / limpo < 0.005, 'detalhe/volume preservado');
+});

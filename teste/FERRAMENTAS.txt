@@ -245,7 +245,10 @@ CONSERTAR — conferir e consertar
    · Espessura mínima · Volume · Peso · Dimensão total.
    "Consertar automaticamente" fecha buraco acompanhando a curva, desvira
    face, separa vértice non-manifold, tira face degenerada e repetida e
-   lixo solto. Não suaviza nem simplifica — o detalhe fica.
+   lixo solto, refaz o pedacinho onde a superfície atravessa ela mesma, e
+   junta num sólido só as partes que se atravessam ou ficam uma dentro da
+   outra (o que o fatiador faria). Peça oca continua oca. Não suaviza nem
+   simplifica — o detalhe fica.
    Ao abrir um arquivo ele já confere sozinho, em segundo plano.
 
 AJUSTAR — posição, tamanho e cor

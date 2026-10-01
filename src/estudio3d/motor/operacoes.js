@@ -18,7 +18,8 @@ import { segmentar } from '../core/segmentacao.js';
 import { escrever3MF } from '../core/formatos/tmf.js';
 import { escreverSTL } from '../core/formatos/stl.js';
 import { escreverZip } from '../core/formatos/zip.js';
-import { transformar, juntar, volume, caixa, semFaces, compactar } from '../core/malha.js';
+import { transformar, juntar, volume, caixa, semFaces, compactar, subMalha } from '../core/malha.js';
+import { arestas, componentes, listasPorRotulo } from '../core/topologia.js';
 import { gerarForma } from '../core/formas.js';
 import { combinar, aplicarFuros, aplicarFurosNaCena } from '../core/modelagem.js';
 import { fotosPara3D, prepararVistas } from '../core/ia/reconstrucao.js';
@@ -118,7 +119,11 @@ export const OPERACOES = {
       progresso(0.6, 'Virando sólido');
       try {
         comContexto(ctx => {
-          const man = ctx.solido({ malha, cor, paleta: malha.cor ? paleta : null }, parte.nome);
+          // peças que se atravessam (ou uma dentro da outra) viram um sólido só,
+          // do jeito que o fatiador imprimiria — sem isso o laudo nunca fica limpo
+          const u = opc.unir !== false ? unirCascas(ctx, { malha, cor, paleta: malha.cor ? paleta : null }, parte.nome) : null;
+          if (u) passos.push('juntou ' + u.antes + ' partes que se atravessavam num sólido só' + (u.depois > 1 ? ' (ficaram ' + u.depois + ' peças separadas)' : ''));
+          const man = u ? u.man : ctx.solido({ malha, cor, paleta: malha.cor ? paleta : null }, parte.nome);
           const p = ctx.parte(man, parte.nome, cor);
           malha = p.malha; cor = p.cor; paleta = p.paleta;
         });
@@ -319,4 +324,40 @@ export function transferiveis(obj, lista = [], vistos = new Set()) {
   if (obj instanceof ArrayBuffer) { lista.push(obj); return lista; }
   for (const k in obj) transferiveis(obj[k], lista, vistos);
   return lista;
+}
+
+// Junta as cascas fechadas que se atravessam ou ficam uma dentro da outra
+// (positivas = peça; negativas = vazio de peça oca, que continua vazio).
+// Devolve null se nada se sobrepõe (a malha fica como está).
+function unirCascas(ctx, parte, nome) {
+  const m = parte.malha;
+  const top = arestas(m);
+  for (let e = 0; e < top.nE; e++) if (top.inicio[e + 1] - top.inicio[e] !== 2) return null;   // aberta: não dá
+  const comp = componentes(m, top);
+  if (comp.n < 2 || comp.n > 3000) return null;
+  const { Manifold } = manifold();
+  const listas = listasPorRotulo(comp.rotulo, comp.n);
+  const pos = [], neg = [];
+  let somaPos = 0, somaNeg = 0;
+  for (let c = 0; c < comp.n; c++) {
+    const sub = subMalha(m, listas.lista.subarray(listas.inicio[c], listas.inicio[c + 1])).malha;
+    const v = volume(sub);
+    if (Math.abs(v) < 1e-9) continue;
+    let alvo = sub;
+    if (v < 0) {
+      const idx = Uint32Array.from(sub.idx);
+      for (let t = 0; t < idx.length; t += 3) { const x = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = x; }
+      alvo = criar(sub.pos, idx, sub.cor);
+    }
+    let man;
+    try { man = ctx.solido({ malha: alvo, cor: parte.cor, paleta: alvo.cor ? parte.paleta : null }, nome); } catch (e) { return null; }
+    if (v > 0) { pos.push(man); somaPos += v; } else { neg.push(man); somaNeg -= v; }
+  }
+  if (pos.length < 2) return null;
+  let u = ctx.guardar(Manifold.union(pos));
+  if (neg.length) u = ctx.guardar(u.subtract(ctx.guardar(Manifold.union(neg))));
+  const partes = u.decompose(); const depois = partes.filter(c => c.volume() > 0).length; for (const c of partes) c.delete();
+  const esperado = somaPos - somaNeg;
+  if (depois === pos.length && Math.abs(u.volume() - esperado) <= 1e-5 * Math.max(1, esperado)) return null;
+  return { man: u, antes: pos.length, depois };
 }

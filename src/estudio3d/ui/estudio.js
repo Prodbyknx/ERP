@@ -34,7 +34,7 @@ const FERRAMENTAS = [
   { sec: 'mod', ico: 'modificar', rot: 'Modificar', titulo: 'Modificar a peça', desc: 'Arredondar e chanfrar bordas, puxar ou empurrar uma face, deixar oca com parede em mm e espelhar. Geometria de verdade, com prévia.' },
   { sec: 'esc', ico: 'esculpir', rot: 'Esculpir', titulo: 'Esculpir e deformar', desc: 'Pincel pra puxar, empurrar, inflar, achatar e suavizar — com simetria ao vivo. Torcer, afunilar e dobrar a peça inteira.' },
   { sec: 'des', ico: 'desenhar', rot: 'Desenhar', titulo: 'Desenhar e criar', desc: 'Desenhe um contorno na mesa e ele vira peça: com espessura, girado (vaso, puxador) ou tubo.' },
-  { sec: 'diag', ico: 'escudo', rot: 'Consertar', titulo: 'Conferir e consertar', desc: 'Vê se o arquivo imprime e conserta buracos, faces viradas e sobras, sem perder detalhe.' },
+  { sec: 'diag', ico: 'escudo', rot: 'Consertar', titulo: 'Conferir e consertar', desc: 'Vê se o arquivo imprime e conserta buracos, faces viradas, cruzamentos e partes sobrepostas, sem perder detalhe.' },
   { sec: 'transf', ico: 'ajustar', rot: 'Ajustar', titulo: 'Posição, tamanho e cor', desc: 'Medidas em mm, girar, deitar pra imprimir sem suporte e a cor de cada peça.' },
   { sec: 'sel', ico: 'selecionar', rot: 'Selecionar', titulo: 'Selecionar uma parte', desc: 'Clique numa orelha, olho ou detalhe: a seleção para sozinha na dobra.' },
   { sec: 'sep', ico: 'separar', rot: 'Separar', titulo: 'Separar para imprimir', desc: 'O detalhe selecionado vira peça própria, com encaixe. Ou separe por cor, pra imprimir sem AMS.' },

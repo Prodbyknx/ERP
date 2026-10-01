@@ -3,7 +3,7 @@
 // separação do que é non-manifold -> fragmentos -> buracos -> normal pra fora.
 import { arestas, componentes, listasPorRotulo, lacosDeBorda, facesDoVertice } from './topologia.js';
 import { criar, caixa, soldar, compactar, subMalha, volume, area, semFaces } from './malha.js';
-import { facesDuplicadas, verticesCoincidentes } from './validador.js';
+import { facesDuplicadas, verticesCoincidentes, autoInterseccoes } from './validador.js';
 import { triangularPoligono3D, normalNewell, baseDoPlano, lacoSeCruza } from './triangular.js';
 import { construirBVH, lancarRaio, dentroDeOutras } from './bvh.js';
 import { progresso } from './progresso.js';
@@ -70,6 +70,11 @@ export function orientarESeparar(m) {
         else if (flip[o] !== precisa) { corte[e] = 1; conflitos++; }
       }
     }
+    // a semente pode ser justamente uma das faces erradas: fica o sentido da
+    // MAIORIA do pedaço (só as faces do contra são viradas)
+    let contra = 0;
+    for (let i = 0; i < fim; i++) if (flip[fila[i]] === 1) contra++;
+    if (contra * 2 > fim) for (let i = 0; i < fim; i++) flip[fila[i]] ^= 1;
   }
   for (let t = 0; t < nt; t++) if (flip[t] === 1) { const x = idx[t * 3 + 1]; idx[t * 3 + 1] = idx[t * 3 + 2]; idx[t * 3 + 2] = x; viradas++; }
 
@@ -341,6 +346,51 @@ export function taparBuracos(m, opc = {}) {
   return { malha: criar(Float64Array.from(pos), Uint32Array.from(idx), cor ? Uint16Array.from(cor) : null), tapados, ignorados, maiorPerimetro: maior, metodos };
 }
 
+// Auto-interseção DENTRO da mesma casca (dobra que atravessa a própria
+// superfície, comum em modelo de IA): tira as faces que se cruzam e o anel em
+// volta, e fecha o buraco de novo com tampa alisada. Repete algumas vezes.
+// Cascas diferentes que se atravessam não entram aqui: viram um sólido só
+// pelo Manifold (motor/operacoes.js), sem perder nada.
+export function desfazerAutoInterseccoes(m, opc = {}) {
+  let removidas = 0, rodadas = 0, restantes = 0;
+  for (; rodadas < (opc.rodadas || 4); rodadas++) {
+    const comp = componentes(m);
+    const pares = [];
+    autoInterseccoes(m, { max: 50000, tempoMs: opc.tempoMs || 10000, pares });
+    const nt = m.idx.length / 3, marca = new Uint8Array(nt);
+    let n = 0;
+    for (let i = 0; i < pares.length; i += 2) {
+      const a = pares[i], b = pares[i + 1];
+      if (comp.rotulo[a] !== comp.rotulo[b]) continue;
+      if (!marca[a]) { marca[a] = 1; n++; }
+      if (!marca[b]) { marca[b] = 1; n++; }
+    }
+    restantes = n;
+    if (!n) break;
+    // muita coisa cruzando = defeito grande demais pra remendo local
+    if (n > Math.max(400, nt * 0.02)) return { malha: m, removidas, restantes: n, desistiu: true };
+    // folga: as faces que tocam (por vértice) as marcadas, crescendo a cada rodada
+    const fdv = facesDoVertice(m);
+    let tirar = marca;
+    for (let anel = 0; anel <= rodadas; anel++) {
+      const prox = Uint8Array.from(tirar);
+      for (let t = 0; t < nt; t++) if (tirar[t]) for (let k = 0; k < 3; k++) {
+        const v = m.idx[t * 3 + k];
+        for (let j = fdv.inicio[v]; j < fdv.inicio[v + 1]; j++) prox[fdv.lista[j]] = 1;
+      }
+      tirar = prox;
+    }
+    let k = 0; for (let t = 0; t < nt; t++) if (tirar[t]) k++;
+    m = compactar(semFaces(m, tirar));
+    removidas += k;
+    m = taparBuracos(m, { alisar: true }).malha;
+    const o = orientarESeparar(m); m = o.malha;
+    if (o.separados) m = taparBuracos(m, { alisar: true }).malha;
+    m = removerFragmentos(m).malha;
+  }
+  return { malha: m, removidas, restantes, rodadas };
+}
+
 // Cada componente FECHADO com volume negativo é virado
 export function orientarParaFora(m) {
   const top = arestas(m);
@@ -357,9 +407,11 @@ export function orientarParaFora(m) {
     if (!aberto[c]) {
       // casca fechada: cavidade (vazio dentro de outra) tem volume negativo de
       // propósito; só vira se o sinal não bate com o aninhamento
-      const cav = comp.n > 1 && comp.n <= 60 ? dentroDeOutras(m, k => listas.lista.subarray(listas.inicio[k], listas.inicio[k + 1]), c, comp.n) : 0;
+      // Casca dentro de (ou atravessando) outra NÃO é virada: com volume positivo
+      // ela é peça sobreposta (o fatiador une; o "Consertar" junta num sólido
+      // só), com negativo é o vazio de uma peça oca. Virar mudaria o que imprime.
       const vol = volume(subMalha(m, faces).malha);
-      virar = cav ? vol > 0 : vol < 0;
+      virar = vol < 0 && !(comp.n > 1 && comp.n <= 60 && dentroDeOutras(m, k => listas.lista.subarray(listas.inicio[k], listas.inicio[k + 1]), c, comp.n));
     }
     else {
       // aberto: raio pra fora a partir de algumas faces; se bate em si mesmo
@@ -439,6 +491,14 @@ export function reparar(m0, opc = {}) {
       const t2 = taparBuracos(m, { alisar: opc.alisar });
       m = t2.malha;
     }
+  }
+  if (opc.autoInterseccoes !== false) {
+    pg(0.47, 'Desfazendo dobras que se cruzam');
+    const ai = desfazerAutoInterseccoes(m, opc);
+    if (ai.removidas && !ai.restantes) passos.push('refez ' + ai.removidas + ' face(s) onde a superfície se cruzava');
+    else if (ai.removidas) passos.push('refez ' + ai.removidas + ' face(s) onde a superfície se cruzava (ainda sobram ' + ai.restantes + ')');
+    else if (ai.desistiu) passos.push(ai.restantes + ' face(s) se cruzando — muitas pra remendar sem mudar a peça');
+    m = ai.malha;
   }
   pg(0.52, 'Virando pra fora');
   const pf = orientarParaFora(m);
