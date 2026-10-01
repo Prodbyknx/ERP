@@ -6,5 +6,5 @@ window.ERP_CONFIG = {
   publicKey: 'sb_publishable_Vt667mySP1lopI8X-H3lCg_wr1Vrmm0',
   // CAPTCHA no login (opcional): a chave do SITE do Cloudflare Turnstile
   // (pública, começa com 0x). Vazio = sem CAPTCHA. Veja seguranca/LEIA-ME-SEGURANCA.txt.
-  turnstile: ''
+  turnstile: '0x4AAAAAAFLD0iY3lkutQElq'
 };
