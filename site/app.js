@@ -407,7 +407,7 @@ const ON_SHOW={
   fin:()=>renderFinance(),
   rep:()=>{ if(!$('rep_ini').value) repPreset('mes'); else renderRelatorios(); },
   cfg:()=>renderPrinters(),
-  audit:()=>renderAudit(),
+  audit:()=>{ renderAudit(); carregarAuditServidor(); },
   users:()=>{ if(typeof renderUsers === 'function') renderUsers(); },
 };
 // libera a aba para o perfil atual
@@ -2023,7 +2023,42 @@ $('cfg_reset').onclick=()=>{
 };
 
 /* ---------- backup ---------- */
-$('btn_export').onclick=()=>Cloud.exportBackup();
+// O backup leva TUDO (clientes, vendas, custos). Com senha, sai cifrado.
+$('btn_export').onclick=()=>{
+  abrirModal('Exportar backup', `
+    <p class="hint" style="margin:0 0 12px">O arquivo leva todos os dados do sistema: clientes, vendas, custos.
+      Com senha ele sai <b>cifrado</b> — quem achar o arquivo sem a senha não lê nada.</p>
+    <div class="field"><label>Senha do backup <span class="u">no mínimo 8 caracteres</span></label>
+      <input type="password" id="bk_senha" autocomplete="new-password"></div>
+    <div class="field"><label>Repita a senha</label>
+      <input type="password" id="bk_senha2" autocomplete="new-password"></div>
+    <p class="hint" style="margin:0; font-size:12px">Guarde a senha: sem ela o backup não abre, nem pra nós.</p>
+    <div id="bk_erro" class="form-erro" style="display:none"></div>`, [
+    { txt:'Cancelar', fn: fecharModal },
+    { txt:'Baixar sem senha', fn: () => { fecharModal(); Cloud.exportBackup(); } },
+    { txt:'Baixar protegido', cls:'primary', id:'bk_baixar', fn: async () => {
+      const a = $('bk_senha').value, b = $('bk_senha2').value, erro = $('bk_erro');
+      const falha = m => { erro.textContent = m; erro.style.display = 'block'; };
+      if(a.length < 8) return falha('A senha precisa de pelo menos 8 caracteres.');
+      if(a !== b) return falha('As duas senhas não são iguais.');
+      $('bk_baixar').disabled = true; $('bk_baixar').textContent = 'Cifrando…';
+      try{ await Cloud.exportBackup(a); fecharModal(); toast('Backup protegido baixado','ok'); }
+      catch(e){ falha(e.message || String(e)); $('bk_baixar').disabled = false; $('bk_baixar').textContent = 'Baixar protegido'; }
+    } }
+  ]);
+};
+// backup protegido: pede a senha na hora de importar
+function pedirSenhaBackup(){
+  return new Promise(ok => {
+    abrirModal('Backup protegido', `
+      <div class="field"><label>Senha do backup</label>
+        <input type="password" id="bk_abrir" autocomplete="current-password"></div>`, [
+      { txt:'Cancelar', fn: fecharModal },
+      { txt:'Abrir backup', cls:'primary', fn: () => { const v = $('bk_abrir').value; _modalAoFechar = null; fecharModal(); ok(v); } }
+    ]);
+    _modalAoFechar = () => ok(null);
+  });
+}
 $('btn_import').onclick=()=>{
   if(currentUser.perfil!=='ADMIN'){toast('Importação requer ADMIN','warn');return;}
   $('file_import').click();
@@ -2031,7 +2066,7 @@ $('btn_import').onclick=()=>{
 $('file_import').onchange=e=>{
   const file=e.target.files[0];e.target.value='';if(!file)return;
   customConfirm('Importar este backup vai substituir os dados do sistema na nuvem. Deseja continuar?',async()=>{
-    try{await Cloud.importBackup(file);}catch(err){toast(err.message,'warn');}
+    try{await Cloud.importBackup(file, pedirSenhaBackup);}catch(err){toast(err.message,'warn');}
   });
 };
 
@@ -2330,8 +2365,10 @@ function abrirMenuMais(botao, q){
    (o do navegador, com "Inspecionar", não aparece). Não é segurança: as ferramentas do
    navegador continuam acessíveis e a proteção dos dados é no servidor (login + RLS).
    Campo de texto, texto selecionado e link mantêm o menu do navegador (copiar, colar,
-   abrir link). Um único ouvinte fica ligado; os de teclado, clique fora, rolagem e
-   redimensionar só existem enquanto o menu está aberto.
+   abrir link); Shift + botão direito abre sempre o do navegador. No menu do sistema,
+   "Copiar" copia o texto selecionado ou o texto embaixo do mouse, e "Colar" cola no
+   campo que está sendo editado. Um único ouvinte fica ligado; os de teclado, clique
+   fora, rolagem e redimensionar só existem enquanto o menu está aberto.
    Uma área com menu próprio se registra: MenuContexto.registrar(raiz, fn), com
    fn(evento) devolvendo os itens, 'proprio' (a área abre o menu sozinha) ou null
    (vale o menu da área de fora). Item: { rot, fn, atalho?, desativado?, perigo? } ou '-'. */
@@ -2342,11 +2379,60 @@ const MenuContexto = (() => {
   // o que diferencia é não ter havido clique/toque logo antes
   let ultimoPonteiro = -1e9;
   const marcarPonteiro = () => { ultimoPonteiro = performance.now(); };
+  // o campo que estava sendo editado quando o botão direito desceu (o clique
+  // tira o foco dele antes do menu abrir): é nele que o "Colar" cola
+  let campoDoDireito = null;
+  document.addEventListener('pointerdown', e => {
+    campoDoDireito = e.button === 2 && editavel(document.activeElement) ? document.activeElement : null;
+  }, { capture: true, passive: true });
   document.addEventListener('pointerdown', marcarPonteiro, { capture: true, passive: true });
   document.addEventListener('pointerup', marcarPonteiro, { capture: true, passive: true });
   const porTeclado = () => performance.now() - ultimoPonteiro > 600;
   const nativo = alvo => !!alvo.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"], a[href], [data-menu-nativo]') ||
     (() => { const s = window.getSelection(); return !!(s && !s.isCollapsed && String(s).trim() && s.containsNode(alvo, true)); })();
+  /* ---- copiar / colar ---- */
+  const editavel = el => !!el && el.isConnected && !el.disabled && !el.readOnly &&
+    ((el.tagName === 'TEXTAREA') || (el.tagName === 'INPUT' && /^(text|search|email|tel|url|number|password|)$/i.test(el.type || '')) || el.isContentEditable);
+  // o texto embaixo do mouse: o trecho de texto onde o ponteiro está (nome, telefone, valor…)
+  function textoNoPonto(x, y, alvo){
+    let no = null;
+    if(document.caretPositionFromPoint){ const c = document.caretPositionFromPoint(x, y); no = c && c.offsetNode; }
+    else if(document.caretRangeFromPoint){ const c = document.caretRangeFromPoint(x, y); no = c && c.startContainer; }
+    let t = no && no.nodeType === 3 && alvo.contains(no) ? no.textContent : '';
+    if(!t.trim() && alvo.childElementCount === 0) t = alvo.textContent || '';
+    t = t.replace(/\s+/g, ' ').trim();
+    return t.length > 500 ? '' : t;
+  }
+  async function copiarTexto(t){
+    try{ await navigator.clipboard.writeText(t); }
+    catch(e){
+      const ta = document.createElement('textarea'); ta.value = t; ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+      document.body.appendChild(ta); ta.select();
+      try{ document.execCommand('copy'); } finally { ta.remove(); }
+    }
+    if(typeof toast === 'function') toast('Copiado: ' + (t.length > 40 ? t.slice(0, 40) + '…' : t), 'ok');
+  }
+  async function colarEm(campo){
+    let t;
+    try{ t = await navigator.clipboard.readText(); }
+    catch(e){ if(typeof toast === 'function') toast('O navegador não deixou colar por aqui: use Ctrl+V', 'warn'); campo.focus(); return; }
+    if(t == null) return;
+    campo.focus();
+    if(campo.isContentEditable){ document.execCommand('insertText', false, t); return; }
+    try{ campo.setRangeText(t, campo.selectionStart, campo.selectionEnd, 'end'); }
+    catch(e){ campo.value = t; }   // number/email não têm seleção: troca o valor
+    campo.dispatchEvent(new Event('input', { bubbles: true }));
+    campo.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  function itensCopiarColar(ev, alvo, campo, teclado){
+    const sel = window.getSelection(), escolhido = sel && !sel.isCollapsed ? String(sel).trim() : '';
+    // pelo teclado não há "embaixo do mouse"; em botão, o texto é o nome do botão
+    const texto = escolhido || (teclado || alvo.closest('button, [role=button], .btn') ? '' : textoNoPonto(ev.clientX, ev.clientY, alvo));
+    const itens = [];
+    if(texto) itens.push({ rot: escolhido ? 'Copiar seleção' : 'Copiar "' + (texto.length > 28 ? texto.slice(0, 28) + '…' : texto) + '"', atalho: 'Ctrl+C', fn: () => copiarTexto(texto) });
+    if(campo) itens.push({ rot: 'Colar', atalho: 'Ctrl+V', fn: () => colarEm(campo) });
+    return itens.length ? [...itens, '-'] : [];
+  }
   function fechar(devolverFoco){
     if(!aberto) return;
     const { el, antes } = aberto;
@@ -2423,7 +2509,9 @@ const MenuContexto = (() => {
   document.addEventListener('contextmenu', ev => {
     const alvo = ev.target;
     if(aberto && aberto.el.contains(alvo)){ ev.preventDefault(); return; }
-    if(!(alvo instanceof Element) || nativo(alvo) || alvo.closest('[inert]')){ fechar(false); return; }
+    // Shift + botão direito: sempre o menu do navegador
+    if(ev.shiftKey || !(alvo instanceof Element) || nativo(alvo) || alvo.closest('[inert]')){ fechar(false); return; }
+    const campo = editavel(document.activeElement) ? document.activeElement : (editavel(campoDoDireito) ? campoDoDireito : null);
     // a área mais de dentro responde primeiro
     const doLugar = areas.filter(a => a.raiz.contains(alvo)).sort((a, b) => a.raiz.contains(b.raiz) ? 1 : -1);
     for(const a of doLugar){
@@ -2433,7 +2521,8 @@ const MenuContexto = (() => {
       if(r === 'proprio') return;
       // pela tecla Menu / Shift+F10: abre junto do elemento em foco
       const teclado = porTeclado(), q = alvo.getBoundingClientRect();
-      abrir(r, teclado ? q.left + 8 : ev.clientX, teclado ? q.top + Math.min(q.height, 32) : ev.clientY, { teclado });
+      abrir([...(alvo.closest('canvas') ? [] : itensCopiarColar(ev, alvo, campo, teclado)), ...r],
+        teclado ? q.left + 8 : ev.clientX, teclado ? q.top + Math.min(q.height, 32) : ev.clientY, { teclado });
       return;
     }
     fechar(false);
@@ -4593,8 +4682,8 @@ function formUsuario(u){
           </label>`).join('')}
       </div>
       <p class="hint" style="margin:10px 0 0; font-size:11.5px; color:var(--amber)">
-        Pelas regras atuais do banco, perfil Vendedor também não grava gastos nem Configurações,
-        mesmo com a caixinha marcada. Se precisar que um vendedor faça isso, as regras do Supabase têm que mudar.
+        Pelas regras do banco, perfil Vendedor também não grava gastos nem Configurações,
+        mesmo com a caixinha marcada. Cadastrar produto e mudar preço ou custo também é só do Administrador.
       </p>
       <p class="hint" style="margin:14px 0 0; font-size:12px">
         Usuários nunca aparece para o vendedor — só administrador gerencia contas.
@@ -4882,7 +4971,8 @@ window.openMonthlyReportModal = () => {
 
 $('btn_rm_close').onclick = () => {
   $('modal-monthly-report').classList.remove('active');
-  $('rm_pdf_preview').src = ''; // Limpa a memória do navegador ao fechar
+  // about:blank, nunca '' (src vazio carrega a PRÓPRIA página dentro do quadro)
+  $('rm_pdf_preview').src = 'about:blank'; // Limpa a memória do navegador ao fechar
 };
 
 $('btn_rm_generate').onclick = () => {
@@ -5287,7 +5377,8 @@ window.pdfViewer = (htmlContent, filename, titulo, subtitulo, optOverride) => {
   $('pv_title').textContent = titulo || 'Documento';
   $('pv_sub').textContent = subtitulo || '';
   $('pv_frame').style.display = 'none';
-  $('pv_frame').src = '';
+  $('pv_frame').src = 'about:blank';   // nunca '': src vazio carrega a própria página no quadro
+  if(_pvBlobUrl){ URL.revokeObjectURL(_pvBlobUrl); _pvBlobUrl = null; }
   $('pv_msg').style.display = 'block';
   $('pv_msg').textContent = 'Gerando documento...';
   $('modal-pdf-view').classList.add('active');
@@ -5316,7 +5407,8 @@ window.pdfViewer = (htmlContent, filename, titulo, subtitulo, optOverride) => {
 
 $('pv_close').onclick = () => {
   $('modal-pdf-view').classList.remove('active');
-  $('pv_frame').src = '';          // libera a memória do blob
+  $('pv_frame').src = 'about:blank';   // libera a memória do blob
+  if(_pvBlobUrl) URL.revokeObjectURL(_pvBlobUrl);
   _pvBlobUrl = null;
 };
 $('pv_download').onclick = () => {
@@ -8605,6 +8697,54 @@ function renderAudit(){
     $('audit-pg-next').onclick = ()=>{ auditPage++; renderAudit(); };
   }
 }
+
+/* ---------- registro do servidor ----------
+   Com a proteção no servidor, o banco anota toda alteração (de qualquer
+   computador): quem, quando, o quê. Só o ADMIN vê. Sem a proteção, some. */
+const AUDIT_SRV_NOMES = { sales:'Venda', products:'Produto', quotes:'Orçamento', clients:'Cliente', crm_logs:'Contato (CRM)',
+  expenses:'Gasto', config:'Configurações', printers:'Impressora', filaments:'Filamento', services:'Serviço',
+  stock_snapshots:'Fechamento de estoque', prod_log:'Produção', consignments:'Consignado', consig_history:'Acerto de consignado',
+  est_cfg:'Estimativa de produção', meta:'Preferências', '*':'Todos os dados' };
+let auditSrv = { itens:[], fim:false, carregando:false };
+async function carregarAuditServidor(mais){
+  const card = $('audit-servidor');
+  if(!card) return;
+  const pode = !!(window.Cloud && Cloud.protegido && typeof Cloud.historico === 'function' && currentUser && currentUser.perfil === 'ADMIN');
+  card.style.display = pode ? '' : 'none';
+  if(!pode || auditSrv.carregando) return;
+  auditSrv.carregando = true;
+  try{
+    const antes = mais && auditSrv.itens.length ? auditSrv.itens[auditSrv.itens.length-1].id : null;
+    const lote = await Cloud.historico(antes) || [];
+    auditSrv.itens = mais ? auditSrv.itens.concat(lote) : lote;
+    auditSrv.fim = lote.length < 200;
+    renderAuditServidor();
+  }catch(e){
+    $('audit-srv-list').innerHTML = '<div class="empty">Não foi possível ler o registro do servidor: ' + esc(e.message || String(e)) + '</div>';
+  }finally{ auditSrv.carregando = false; }
+}
+function renderAuditServidor(){
+  const el = $('audit-srv-list'), pager = $('audit-srv-pager');
+  if(!el) return;
+  if(!auditSrv.itens.length){ el.innerHTML = '<div class="empty">Nenhuma alteração registrada pelo servidor ainda.</div>'; pager.innerHTML=''; return; }
+  const cor = { criou:'var(--green)', alterou:'var(--brand)', apagou:'var(--red)', 'importou backup':'var(--red)' };
+  el.innerHTML = `<table><thead><tr><th>Quando</th><th>Quem</th><th>O que fez</th><th>Item</th><th>Campos</th></tr></thead><tbody>${
+    auditSrv.itens.map(l => { const q = fmtQuando(l.em); return `
+    <tr>
+      <td style="white-space:nowrap">
+        <div style="font-family:var(--mono); font-size:12.5px">${q.dia}</div>
+        <div style="font-family:var(--mono); font-size:11px; color:var(--ink-dim)">${q.hora}</div>
+      </td>
+      <td><div style="font-weight:600">${esc(l.nome || '—')}</div><small style="color:var(--ink-dim)">${esc(l.perfil || '')}</small></td>
+      <td><span style="color:${cor[l.acao] || 'var(--ink)'}; font-weight:600">${esc(l.acao)}</span> <span style="color:var(--ink-soft)">${esc(AUDIT_SRV_NOMES[l.colecao] || l.colecao || '')}</span></td>
+      <td>${esc(l.resumo || '') || '<small style="color:var(--ink-dim)">' + esc(l.registro || '—') + '</small>'}</td>
+      <td><small style="color:var(--ink-soft)">${esc((l.campos || []).join(', '))}</small></td>
+    </tr>`; }).join('')}</tbody></table>`;
+  pager.innerHTML = auditSrv.fim ? `<small style="color:var(--ink-dim)">${auditSrv.itens.length} registro(s)</small>`
+    : `<button class="btn small ghost" id="audit-srv-mais" type="button">Carregar mais</button>`;
+  if($('audit-srv-mais')) $('audit-srv-mais').onclick = () => carregarAuditServidor(true);
+}
+if($('audit_srv_atualizar')) $('audit_srv_atualizar').onclick = () => carregarAuditServidor(false);
 
 if($('audit-search'))  $('audit-search').addEventListener('input', ()=>{ auditPage=1; renderAudit(); });
 if($('audit-user'))    $('audit-user').addEventListener('change', ()=>{ auditPage=1; renderAudit(); });

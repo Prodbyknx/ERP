@@ -29,7 +29,10 @@ function certificado(host) {
   return r;
 }
 
-export async function supabaseFalso({ host = 'teste144.supabase.co', ttl = 3600, usuarios } = {}) {
+// banco (opcional): em vez de imitar as funções, roda as de VERDADE num
+// PostgreSQL local (tests/util/postgres.mjs -> postgrest()), como o usuário do
+// token — é o jeito de testar o site contra o seguranca/protecao-servidor.sql.
+export async function supabaseFalso({ host = 'teste144.supabase.co', ttl = 3600, usuarios, banco = null } = {}) {
   const st = {
     ttl, foraDoAr: false, revision: 0, ordem: 0,
     desvio: 0,                    // ms somados ao relógio do servidor (simula o tempo passando)
@@ -77,15 +80,15 @@ export async function supabaseFalso({ host = 'teste144.supabase.co', ttl = 3600,
     const cab = dados.length < 126 ? Buffer.from([0x81, dados.length]) : dados.length < 65536 ? Buffer.from([0x81, 126, dados.length >> 8, dados.length & 255]) : (() => { const b = Buffer.alloc(10); b[0] = 0x81; b[1] = 127; b.writeBigUInt64BE(BigInt(dados.length), 2); return b; })();
     sock.write(Buffer.concat([cab, dados]));
   }
-  function mudancaRealtime(tabela, linha) {
+  function mudancaRealtime(tabela, linha, tipo = 'INSERT') {
     for (const s of st.sockets) for (const [topico, j] of s.topicos) {
       if (typeof quem('Bearer ' + j.token) !== 'object') continue;   // só quem está logado recebe (RLS)
       const b = j.ids[tabela];
       if (!b) continue;
       enviarWS(s.sock, { topic: topico, event: 'postgres_changes', ref: null, payload: { ids: [b], data: {
-        schema: 'public', table: tabela, commit_timestamp: new Date().toISOString(), type: 'INSERT', errors: null,
-        columns: [{ name: 'collection', type: 'text' }, { name: 'id', type: 'text' }, { name: 'data', type: 'jsonb' }, { name: 'sync_revision', type: 'int8' }, { name: 'insertion_order', type: 'int8' }],
-        record: linha } } });
+        schema: 'public', table: tabela, commit_timestamp: new Date().toISOString(), type: tipo, errors: null,
+        columns: Object.keys(linha).map(name => ({ name, type: 'text' })),
+        record: linha, ...(tipo === 'UPDATE' ? { old_record: { id: linha.id } } : {}) } } });
     }
   }
   function aoMensagemWS(s, m) {
@@ -140,6 +143,7 @@ export async function supabaseFalso({ host = 'teste144.supabase.co', ttl = 3600,
       const json = (() => { try { return JSON.parse(corpo || '{}'); } catch { return {}; } })();
       // Auth
       if (p === '/auth/v1/token' && u.searchParams.get('grant_type') === 'password') {
+        st.ultimoLogin = json;
         const us = st.usuarios.find(x => x.email === json.email && x.senha === json.password);
         return us ? r(200, sessao(us)) : r(400, { code: 'invalid_credentials', error_code: 'invalid_credentials', msg: 'Invalid login credentials' });
       }
@@ -153,6 +157,20 @@ export async function supabaseFalso({ host = 'teste144.supabase.co', ttl = 3600,
       if (p === '/auth/v1/user') return typeof eu === 'object' ? r(200, sessao(eu).user) : r(403, { code: 'bad_jwt', msg: 'invalid JWT' });
       if (p === '/auth/v1/logout') { for (const t of st.refresh.values()) t.revogado = true; return r(204); }
       // PostgREST
+      if (p.startsWith('/rest/v1/') && banco && (q === 'usuario' || q === 'anon')) {
+        // o PostgREST de verdade: RPC e profiles viram SQL como o usuário do token
+        const uid = q === 'usuario' ? eu.id : null;
+        if (p.startsWith('/rest/v1/rpc/')) (st.rpcs = st.rpcs || []).push({ nome: p.slice(13), uid, restore: json.restore, mudancas: Array.isArray(json.changes) ? json.changes.map(c => c.collection + '/' + c.id) : undefined });
+        const x = p.startsWith('/rest/v1/rpc/') ? banco.rpc(p.slice('/rest/v1/rpc/'.length), json, uid)
+          : p === '/rest/v1/profiles' ? banco.perfis(u.searchParams.get('id')?.replace(/^eq\./, '') || null, uid)
+          : { status: 404, body: { code: 'PGRST205', message: 'not found' } };
+        if (x.status === 200 && p === '/rest/v1/profiles' && /vnd\.pgrst\.object/.test(req.headers.accept || '')) {
+          return x.body.length === 1 ? r(200, x.body[0]) : r(406, { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' });
+        }
+        r(x.status, x.body);
+        avisarBanco();
+        return;
+      }
       if (p.startsWith('/rest/v1/')) {
         if (q === 'vencido') return r(401, { code: 'PGRST303', details: null, hint: null, message: 'JWT expired' });
         if (q === 'invalido') return r(401, { code: 'PGRST301', details: null, hint: null, message: 'JWSError JWSInvalidSignature' });
@@ -182,6 +200,13 @@ export async function supabaseFalso({ host = 'teste144.supabase.co', ttl = 3600,
     log('WS', '/realtime/v1/websocket', 101, 'ws');
     aceitarWS(req, sock);
   });
+  // com banco: o gatilho do servidor sobe erp_sinal.versao; o tempo real manda o UPDATE
+  let versaoSinal = banco ? banco.versaoSinal() : 0;
+  function avisarBanco() {
+    if (!banco) return;
+    const v = banco.versaoSinal();
+    if (v !== versaoSinal) { versaoSinal = v; mudancaRealtime('erp_sinal', { id: 1, versao: v, em: new Date().toISOString() }, 'UPDATE'); }
+  }
   // grava mudanças (como erp_commit_sync) e avisa o tempo real
   function aplicar(changes) {
     const rows = [], deleted = [];
@@ -199,7 +224,7 @@ export async function supabaseFalso({ host = 'teste144.supabase.co', ttl = 3600,
   }
   await new Promise(ok => srv.listen(0, '127.0.0.1', ok));
   return {
-    host, porta: srv.address().port, url: 'https://' + host, estado: st, aplicar,
+    host, porta: srv.address().port, url: 'https://' + host, estado: st, aplicar, avisarBanco,
     // o que o Chromium precisa pra achar este servidor pelo nome *.supabase.co
     // (e sem passar pelo proxy da máquina, se houver)
     argsChromium: () => ['--host-resolver-rules=MAP ' + host + ' 127.0.0.1:' + srv.address().port, '--no-proxy-server', '--ignore-certificate-errors'],
@@ -209,6 +234,8 @@ export async function supabaseFalso({ host = 'teste144.supabase.co', ttl = 3600,
     pedidosDe: (filtro, desde = 0) => st.pedidos.filter(x => x.t >= desde && (!filtro || filtro(x))),
     socketsAbertos: () => st.sockets.size,
     topicosAbertos: () => [...st.sockets].reduce((n, s) => n + s.topicos.size, 0),
+    // tabelas que os canais abertos pediram no tempo real
+    tabelasInscritas: () => [...st.sockets].flatMap(s => [...s.topicos.values()].flatMap(j => Object.keys(j.ids))).sort(),
     fechar() { for (const s of st.sockets) s.sock.destroy(); return new Promise(ok => srv.close(ok)); }
   };
 }

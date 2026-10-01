@@ -32,6 +32,7 @@ export function supabaseFalso(modo) {
       if (p === '/functions/v1/erp-users') return !logado ? (ins ? r(400, { error: 'Usuário não encontrado' }) : r(401, { msg: 'Invalid JWT' })) : (ins ? r(200, { ok: true }) : r(403, { error: 'Requer ADMIN' }));
       if (p === '/rest/v1/profiles' && req.method === 'PATCH') return r(200, ins ? [{ id: UID, perfil: 'VENDEDOR' }] : []);
       if (p === '/rest/v1/profiles' && logado) return r(200, [{ id: UID, perfil: 'VENDEDOR' }]);
+      if (p === '/rest/v1/rpc/erp_usuarios') return ins ? r(404, { code: 'PGRST202', message: 'Could not find the function' }) : logado ? r(200, { protegido: 1, eu: { id: UID, perfil: 'VENDEDOR' }, usuarios: [{ id: UID, perfil: 'VENDEDOR' }] }) : r(401, { message: 'permission denied' });
       if (p.startsWith('/rest/v1/')) return r(200, ins || logado ? [{ id: 'linha-1' }] : []);
       r(404, { message: 'não existe' });
     });
@@ -67,7 +68,7 @@ export async function secaoSupabaseKit({ b, novaPagina, passo, pagina = path.joi
     await passo(pg, 'SEG: projeto INSEGURO com vendedor — "virar ADMIN sozinho" e função de usuários sem checar ADMIN são FALHA', async () => {
       await abrir(ins.url); await pg.fill('#email', 'vend@x.com'); await pg.fill('#senha', 'certa');
       const l = await resultado(pg, '#testar_login');
-      if (!com(l, 'FALHA', /ADMIN sozinho/) || !com(l, 'FALHA', /erp-users com vendedor/)) throw new Error(JSON.stringify(l));
+      if (!com(l, 'FALHA', /ADMIN sozinho/) || !com(l, 'FALHA', /erp-users com vendedor/) || !com(l, 'ATENÇÃO', /Proteção por perfil/)) throw new Error(JSON.stringify(l));
       if (await pg.inputValue('#senha')) throw new Error('a senha ficou no campo');
     });
     await passo(pg, 'SEG: projeto SEGURO — nenhuma falha nem atenção, sem e com vendedor', async () => {
@@ -76,7 +77,7 @@ export async function secaoSupabaseKit({ b, novaPagina, passo, pagina = path.joi
       await pg.fill('#email', 'vend@x.com'); await pg.fill('#senha', 'certa');
       const c = await resultado(pg, '#testar_login');
       const ruins = [...a, ...c].filter(([s]) => s === 'FALHA' || s === 'ATENÇÃO');
-      if (ruins.length || a.length < 7 || c.length < 4) throw new Error(JSON.stringify({ ruins, a, c }));
+      if (ruins.length || a.length < 7 || c.length < 5 || !com(c, 'OK', /Proteção por perfil/)) throw new Error(JSON.stringify({ ruins, a, c }));
     });
     await passo(pg, 'SEG: chave SECRETA no site é FALHA; a página nunca manda pedido que apaga ou muda dado', async () => {
       await abrir(seg.url, 'sb_secret_abc123');

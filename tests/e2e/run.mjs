@@ -490,6 +490,8 @@ async function main() {
   await secaoSupabaseKit({ b, novaPagina, passo, pagina: path.join(teste, 'seguranca', 'verificar-supabase.html'), empacotada: true });
   const { secaoNuvem } = await import('./nuvem.mjs');
   await secaoNuvem({ chromium, passo });
+  const { secaoNuvemProtegida } = await import('./nuvem-protegida.mjs');
+  await secaoNuvemProtegida({ chromium, passo });
   const { secaoMenu } = await import('./menu.mjs');
   await secaoMenu({ b, teste, novaPagina, passo, abrirEstudio, abrirSecao });
 

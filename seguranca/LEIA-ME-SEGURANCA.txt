@@ -1,5 +1,103 @@
-144 LABORATÓRIO 3D — SEGURANÇA ANTES DE LANÇAR (20 ITENS)
-===========================================================
+144 LABORATÓRIO 3D — SEGURANÇA
+==============================
+
+ATUALIZAÇÃO 01/10/2026 — PROTEÇÃO NO SERVIDOR (LEIA PRIMEIRO)
+-------------------------------------------------------------
+O QUE VOCÊ VIU NO F12 É NORMAL
+  Todo site manda o código da tela pro navegador — o de qualquer banco ou
+  loja também aparece no F12. Não dá (e não adianta) esconder. O que importa
+  é que no código NÃO tenha segredo, e não tem:
+  - "SK" que a busca achou na linha 11 = pedaço da imagem do ícone (base64).
+  - "KEY" = @keyframes (animações do CSS).
+  - A única chave no site é a PUBLICÁVEL do Supabase (sb_publishable_...).
+    Ela é feita pra ficar no site, como o endereço de uma loja: quem protege
+    os dados é o login + as regras do banco (RLS e as funções do servidor).
+  - A geração dos pacotes agora PARA se achar chave secreta em qualquer
+    arquivo (Supabase secret/service_role, chave privada, OpenAI, Anthropic,
+    GitHub, Slack, Tripo). Teste: tests/segredos.test.mjs.
+
+O PROBLEMA DE VERDADE QUE EU ACHEI (e corrigi)
+  As caixinhas de permissão do vendedor só valiam na TELA. Pelo F12, um
+  vendedor conseguia ler tudo (gastos, permissões dos outros, e-mails) e
+  mudar preço/custo de produto pela API.
+
+O QUE FOI FEITO
+  1. protecao-servidor.sql (esta pasta) — o banco passa a conferir QUEM pede
+     em toda leitura e gravação:
+     - vendedor sem Painel, Financeiro e Relatórios não recebe os gastos;
+     - ninguém recebe as permissões dos outros nem o e-mail dos colegas;
+     - vendedor não cadastra produto nem muda preço, custo ou ficha técnica
+       (o estoque continua mudando nas vendas e na produção);
+     - excluir, gastos, Configurações e importar backup: só ADMIN;
+     - ninguém lê as tabelas direto: tudo passa pelas funções do servidor;
+       o tempo real só avisa "mudou algo" (sem dados) e o site busca pela
+       função, que filtra;
+     - ninguém vira ADMIN sozinho e o último ADMIN não pode sair;
+     - histórico no servidor: quem mudou o quê e quando (ADMIN vê em
+       Atividade > "Registro do servidor"; não dá pra apagar pelo site);
+     - visitante (sem login) não executa nada.
+     Não desliga RLS, não torna nada público, não usa service_role no site.
+     Testado num PostgreSQL de verdade que imita o seu Supabase: 2 testes
+     com ~60 conferências (tests/protecao-servidor.test.mjs), e o site
+     inteiro rodando contra essas funções (tests/e2e/nuvem-protegida.mjs).
+  2. Site (cloud.js): reconhece sozinho se a proteção está aplicada.
+     Funciona igual antes sem ela, e com ela usa as funções novas.
+  3. CAPTCHA anti-robô no login (Cloudflare Turnstile) — opcional, desligado
+     até você configurar (passo 5 abaixo).
+  4. Backup com SENHA: "Exportar dados" agora pergunta uma senha; o arquivo
+     sai cifrado (AES-256-GCM, chave derivada da senha com PBKDF2 600 mil
+     voltas). Sem a senha ninguém lê. "Baixar sem senha" continua existindo.
+  5. Função erp-users endurecida (supabase/functions/erp-users): confere
+     ADMIN no servidor, valida tudo, não deixa apagar/rebaixar a si mesmo nem
+     o último ADMIN, só aceita chamadas do endereço do ERP, não devolve
+     detalhe interno de erro. A chave de serviço vem da variável de ambiente
+     do próprio Supabase. Testes: tests/erp-users.test.mjs.
+
+COMO APLICAR (NESTA ORDEM)
+  1. Suba o site novo (SUBIR-NO-CLOUDFLARE.zip). Ele funciona com e sem a
+     proteção, então não quebra nada enquanto o passo 2 não é feito.
+  2. Supabase > SQL Editor > New query > cole TODO o protecao-servidor.sql >
+     Run. Tem que aparecer "PRONTO". Se aparecer erro, NADA mudou: me mande
+     a mensagem (ele confere tudo antes e roda numa transação só).
+  3. Abra verificar-supabase.html, entre com uma conta de VENDEDOR e clique
+     "Verificar com esta conta". Tem que aparecer "Proteção por perfil: OK".
+  4. Teste no ERP: entre como vendedor (vende, vê só as telas dele) e como
+     ADMIN (vê tudo; Atividade mostra o "Registro do servidor").
+  5. CAPTCHA (opcional):
+     a) Cloudflare > Turnstile > Add widget > domínio erp.144labstore.com.br.
+        Você recebe a chave do SITE (pública) e a SECRETA.
+     b) Coloque a chave do SITE em config.js (turnstile: '0x...') e suba.
+     c) Supabase > Authentication > Attack Protection > Enable Captcha >
+        Turnstile > cole a chave SECRETA. (Nessa ordem: se ligar no Supabase
+        antes do site ter a chave, ninguém consegue entrar.)
+  6. Função de usuários: se o verificar-supabase.html apontar FALHA em
+     "erp-users", publique a da pasta supabase/functions/erp-users
+     (Edge Functions > erp-users > colar index.ts e logica.js > Deploy, com
+     "Verify JWT" ligado).
+  PARA VOLTAR ATRÁS: desfazer-protecao.sql (volta tudo como era).
+
+O QUE AINDA TEM LIMITE (honesto)
+  - Custos e margens: vendedor SEM "Ver custos" não vê na tela, mas os
+    números de custo ainda chegam no navegador dele, porque a calculadora e o
+    orçamento calculam o preço ali. Esconder de verdade exige levar esse
+    cálculo pro servidor (projeto maior; posso fazer se você quiser).
+  - Dados de cliente (telefone, endereço) chegam pra quem vende — as telas de
+    venda e orçamento precisam deles.
+  - Eu não consigo entrar no seu Supabase daqui (a rede bloqueia). Por isso o
+    SQL confere o seu banco antes de mexer e se recusa se algo for diferente
+    do esperado.
+  - O aviso "Unsafe attempt to load URL file:///..." no console do PACOTE DE
+    TESTE é do Chrome com arquivo aberto do disco (file://): cada arquivo
+    local é tratado como um site separado. Não acontece no site (https) e
+    não atrapalha nada. Não consegui reproduzir aqui (Chromium no Linux);
+    corrigi o único ponto do sistema que mandava um quadro carregar a
+    própria página (a prévia do PDF agora usa about:blank).
+  - Bloquear F12/DevTools não protege nada e não foi feito, de propósito.
+
+-------------------------------------------------------------
+
+AUDITORIA ANTERIOR — SEGURANÇA ANTES DE LANÇAR (20 ITENS)
+--------------------------------------------------------
 Auditoria de 27/09/2026. Cada item diz: o que eu encontrei, a prova e o que
 falta VOCÊ fazer (o que depende do painel do Supabase ou do Cloudflare).
 
@@ -167,6 +265,9 @@ OS 20 ITENS
     Não auditado: os extras de GPU (PyTorch/Hunyuan), que não instalei aqui.
 
 ARQUIVOS DESTA PASTA
+  protecao-servidor.sql     proteção por perfil no banco (SQL Editor)
+  desfazer-protecao.sql     volta o banco a como era antes da proteção
   verificar-supabase.html   teste de fora (visitante e vendedor)
   auditoria-supabase.sql    teste de dentro (SQL Editor, só leitura)
+  supabase/functions/erp-users   função de usuários endurecida (opcional)
   LEIA-ME-SEGURANCA.txt     este arquivo

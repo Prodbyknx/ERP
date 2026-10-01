@@ -17,6 +17,25 @@ COMO USAR
    de exemplo: Gabriel (admin) e Ana (vendedora).
 
 
+NOVIDADES DESTA VERSÃO (13) — SEGURANÇA NO SERVIDOR + COPIAR/COLAR
+--------------------------------------------------------------------
+Detalhes e passo a passo em seguranca/LEIA-ME-SEGURANCA.txt.
+- PROTEÇÃO NO SERVIDOR (seguranca/protecao-servidor.sql): o banco confere
+  o perfil em toda leitura e gravação. Vendedor não recebe gastos (sem
+  Painel/Financeiro/Relatórios), nem permissões e e-mails dos outros; não
+  cadastra produto nem muda preço/custo; excluir, gastos, Configurações e
+  importar backup só ADMIN. Histórico no servidor em Atividade (ADMIN).
+- BACKUP COM SENHA: Configurações > Exportar pede senha; o arquivo sai
+  cifrado. Importar pede a senha de volta.
+- CAPTCHA no login (opcional, desligado até configurar o Turnstile).
+- BOTÃO DIREITO: "Copiar" (o texto embaixo do mouse ou o selecionado) e
+  "Colar" (no campo que você estava digitando). Shift + botão direito abre
+  o menu do navegador. Em campo de texto continua o menu do navegador.
+ARQUIVOS PRA SUBIR: o pacote SUBIR-NO-CLOUDFLARE inteiro (mudaram app.js,
+cloud.js, index.html, config.js e _headers). Os .sql NÃO vão pro
+Cloudflare: rodam no SQL Editor do Supabase.
+
+
 NOVIDADES DESTA VERSÃO (12) — O QUE "AINDA NÃO FAZIA" AGORA FAZ
 -----------------------------------------------------------------
 Detalhes em FERRAMENTAS.txt.

@@ -9,7 +9,9 @@ export async function secaoMenu({ b, teste, novaPagina, passo, abrirEstudio, abr
   const consoleMsgs = []; pg.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') consoleMsgs.push(m.text().slice(0, 200)); });
   // registra se o menu do navegador foi suprimido (defaultPrevented depois do nosso ouvinte)
   await pg.addInitScript(() => { window.__nativo = []; window.addEventListener('contextmenu', e => window.__nativo.push(!e.defaultPrevented)); });
-  const itens = () => pg.evaluate(() => [...document.querySelectorAll('.menu-ctx button')].map(b => b.textContent.replace(/(Ctrl\+.|Delete|F)$/, '').trim() + (b.getAttribute('aria-disabled') === 'true' ? ' (off)' : '')));
+  // as ações de cada lugar (Copiar/Colar, que dependem do texto embaixo do mouse, têm passo próprio)
+  const itens = () => pg.evaluate(() => [...document.querySelectorAll('.menu-ctx button')].map(b => b.textContent.replace(/(Ctrl\+.|Delete|F)$/, '').trim() + (b.getAttribute('aria-disabled') === 'true' ? ' (off)' : '')).filter(t => !/^(Copiar|Colar)/.test(t)));
+  const todosItens = () => pg.evaluate(() => [...document.querySelectorAll('.menu-ctx button')].map(b => b.firstChild.textContent));
   const menus = () => pg.evaluate(() => document.querySelectorAll('.menu-ctx').length);
   const ultimoNativo = () => pg.evaluate(() => window.__nativo[window.__nativo.length - 1]);
   const clicarItem = rot => pg.evaluate(r => [...document.querySelectorAll('.menu-ctx button')].find(b => b.firstChild.textContent === r).click(), rot);
@@ -72,6 +74,56 @@ export async function secaoMenu({ b, teste, novaPagina, passo, abrirEstudio, abr
       await pg.mouse.click(vp.width - 3, vp.height - 3, { button: 'right' });
       const r = await pg.evaluate(() => { const q = document.querySelector('.menu-ctx').getBoundingClientRect(); return { l: q.left, t: q.top, r: q.right, b: q.bottom }; });
       if (r.l < 0 || r.t < 0 || r.r > vp.width || r.b > vp.height) throw new Error('menu saiu da tela: ' + JSON.stringify(r));
+      await pg.keyboard.press('Escape');
+    });
+    await passo(pg, 'MENU: copiar e colar pelo botão direito — texto embaixo do mouse, seleção e colar no campo que estava editando', async () => {
+      await pg.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+      await pg.evaluate(() => showTab('prod'));
+      await pg.waitForTimeout(300);
+      // um nome de produto na lista (texto comum, sem selecionar)
+      const alvo = await pg.evaluate(() => {
+        const w = document.createTreeWalker(document.getElementById('view-prod'), NodeFilter.SHOW_TEXT);
+        for (let n; (n = w.nextNode());) {
+          if (!/Dragão/.test(n.textContent) || n.parentElement.closest('button, input, select, textarea, a')) continue;
+          const r = document.createRange(); r.selectNodeContents(n); const q = r.getBoundingClientRect();
+          if (q.width > 20) return { x: q.left + 10, y: q.top + q.height / 2, t: n.textContent.replace(/\s+/g, ' ').trim() };
+        }
+        return null;
+      });
+      if (!alvo) throw new Error('não achei o nome do produto na tela');
+      await pg.mouse.click(alvo.x, alvo.y, { button: 'right' });
+      let l = await todosItens();
+      if (!l[0] || !l[0].startsWith('Copiar "')) throw new Error('sem Copiar: ' + JSON.stringify(l));
+      if (!l.includes('Atualizar visualização')) throw new Error('perdeu as ações do lugar: ' + JSON.stringify(l));
+      await clicarItem(l[0]);
+      await pg.waitForTimeout(100);
+      if ((await pg.evaluate(() => navigator.clipboard.readText())) !== alvo.t) throw new Error('copiou: ' + (await pg.evaluate(() => navigator.clipboard.readText())) + ' esperado ' + alvo.t);
+      // colar: estava digitando num campo, clica com o direito fora dele -> "Colar" cola lá
+      await pg.evaluate(() => showTab('calc'));
+      await pg.fill('#c_nome', 'Peça ');
+      await pg.focus('#c_nome');
+      await pg.evaluate(() => { const i = document.getElementById('c_nome'); i.setSelectionRange(5, 5); });
+      await pg.evaluate(() => navigator.clipboard.writeText('colada'));
+      await pg.click('#view-calc', { button: 'right', position: { x: 300, y: 20 } });
+      l = await todosItens();
+      if (!l.includes('Colar')) throw new Error('sem Colar: ' + JSON.stringify(l));
+      await clicarItem('Colar');
+      await pg.waitForFunction(() => document.getElementById('c_nome').value === 'Peça colada', null, { timeout: 5000 });
+      // texto selecionado + direito fora dele: "Copiar seleção"
+      // texto selecionado + direito EM CIMA dele: o menu do navegador (com Copiar)
+      const sel = await pg.evaluate(() => {
+        const h = document.querySelector('#view-calc h2, #view-calc h3'); const r = document.createRange(); r.selectNodeContents(h);
+        const s = getSelection(); s.removeAllRanges(); s.addRange(r); const q = h.getBoundingClientRect(); return { x: q.left + 8, y: q.top + q.height / 2 };
+      });
+      await pg.mouse.click(sel.x, sel.y, { button: 'right' });
+      if (await menus()) throw new Error('em cima da seleção abriu o menu do sistema');
+      if (!(await ultimoNativo())) throw new Error('em cima da seleção suprimiu o menu do navegador');
+      await pg.keyboard.press('Escape');
+      await pg.evaluate(() => getSelection().removeAllRanges());
+      // Shift + direito: sempre o menu do navegador
+      await pg.click('#view-calc', { button: 'right', position: { x: 300, y: 400 }, modifiers: ['Shift'] });
+      if (await menus()) throw new Error('Shift+direito abriu o menu do sistema');
+      if (!(await ultimoNativo())) throw new Error('Shift+direito suprimiu o menu do navegador');
       await pg.keyboard.press('Escape');
     });
     const centro = i => pg.evaluate(k => { const e = window.Estudio3D.estudio, c = e.cena.caixaExata(e.cena.objetos[k]); return e.visor.telaDe((c.min[0] + c.max[0]) / 2, (c.min[1] + c.max[1]) / 2, (c.min[2] + c.max[2]) / 2); }, i);

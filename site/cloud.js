@@ -14,6 +14,10 @@
   let client, baseline = {}, live = {}, dirty = new Set(), timer, started = false;
   let pending = null, sending = false, refreshing = null, lastToast = null, startup = false;
   let cursor='0', lastReconcile=0, realtimeTimer, busyTimer, reconcileRequested=false;
+  // Servidor com a proteção por perfil (seguranca/protecao-servidor.sql): o banco
+  // filtra o que cada um recebe, o tempo real só avisa "mudou algo" e os usuários
+  // vêm de uma função. Sem ela, o site segue do jeito antigo.
+  let protegido=false;
   const rowVersions=new Map(), rowOrder=new Map(), incoming=new Map();
   const RECONCILE_MS=5*60*1000;
   const pendingKey = '144erp_pending_v1';
@@ -104,6 +108,7 @@
     refreshing=(async()=>{
       const packet=await rpc('erp_changes',{since_revision:cursor});
       if(packet.reset_required)throw Error('O banco foi restaurado. Recarregue a página antes de continuar.');
+      if(packet.protegido)protegido=true;
       receive(packet);
       // Cursor avança só após TODAS as linhas/exclusões entrarem na fila local.
       cursor=String(packet.cursor);lastReconcile=Date.now();reconcileRequested=false;
@@ -120,6 +125,16 @@
       applyIncoming();
       if(reconcileRequested&&Date.now()-lastReconcile>5000)refresh().catch(()=>{});
     },50);
+  }
+  // Servidor protegido: o tempo real só avisa que algo mudou; os dados vêm pela
+  // função, já filtrados para esta conta. Um aviso que chega no meio de uma
+  // busca gera outra busca logo depois (senão a mudança ficaria para trás).
+  function signal(){
+    reconcileRequested=true;
+    clearTimeout(realtimeTimer);realtimeTimer=setTimeout(async()=>{
+      if(refreshing){try{await refreshing;}catch{}}
+      refresh().catch(()=>{});
+    },120);
   }
   async function showFailure(error){
     sending=false;notice('Alteração ainda não confirmada');
@@ -194,11 +209,27 @@
         await Cloud.loadUsers();window.ERP_APP?.setUsers(Cloud.users);return data;
       }finally{unblock();}
     },
-    async loadUsers(){const {data,error}=await client.from('profiles').select('id,nome,login,perfil').order('nome');if(error)throw error;Cloud.users=data;},
-    exportBackup(){download({...copy(window.ERP_APP.values()),meta:copy(live.meta||{}),formato:'144lab-completo-v1',exportado:new Date().toISOString()},'144lab-backup-completo-'+new Date().toISOString().slice(0,10)+'.json');},
-    async importBackup(file){
+    async loadUsers(){
+      if(protegido){const r=await rpc('erp_usuarios',{});Cloud.users=r.usuarios||[];return;}
+      const {data,error}=await client.from('profiles').select('id,nome,login,perfil').order('nome');if(error)throw error;Cloud.users=data;
+    },
+    // Histórico gravado pelo banco em toda alteração (só ADMIN, só com a proteção).
+    async historico(antes){if(!protegido)return null;return rpc('erp_historico',{limite:200,antes_de:antes??null});},
+    // Com senha, o arquivo sai cifrado (AES-256-GCM, chave derivada da senha com
+    // PBKDF2-SHA256): sem a senha ninguém lê os dados, nem quem achar o arquivo.
+    async exportBackup(senha){
+      const dados={...copy(window.ERP_APP.values()),meta:copy(live.meta||{}),formato:'144lab-completo-v1',exportado:new Date().toISOString()};
+      const dia=new Date().toISOString().slice(0,10);
+      if(!senha){download(dados,'144lab-backup-completo-'+dia+'.json');return;}
+      download(await cifrar(dados,senha),'144lab-backup-protegido-'+dia+'.json');
+    },
+    async importBackup(file,pedirSenha){
       if(Cloud.user.perfil!=='ADMIN')throw Error('Importação requer ADMIN');
-      const data=JSON.parse(await file.text());
+      let data=JSON.parse(await file.text());
+      if(data&&data.formato===CIFRADO){
+        const senha=pedirSenha?await pedirSenha():null;if(!senha)throw Error('Backup protegido: informe a senha');
+        data=await decifrar(data,senha);
+      }
       const values=validateBackup(data);
       block('Preparando importação completa…');
       try{
@@ -209,9 +240,30 @@
       }catch(e){if(pending)await showFailure(e);else unblock();throw e;}
     },
     // Exposto para a validação automatizada do adaptador e dos backups.
-    _test:{diff,validateBackup,realtime,refresh,applyIncoming,
+    _test:{diff,validateBackup,realtime,signal,refresh,applyIncoming,cifrar,decifrar,protegido:()=>protegido,
       state:()=>({cursor,pending:!!pending,sending,dirty:dirty.size,queued:incoming.size,refreshing:!!refreshing})}
   };
+  const CIFRADO='144lab-cifrado-v1', ITERACOES=600000;
+  const b64=u=>{let s='';for(let i=0;i<u.length;i+=32768)s+=String.fromCharCode.apply(null,u.subarray(i,i+32768));return btoa(s);};
+  const deB64=t=>Uint8Array.from(atob(t),c=>c.charCodeAt(0));
+  async function chaveDe(senha,sal,iter){
+    const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(senha),'PBKDF2',false,['deriveKey']);
+    return crypto.subtle.deriveKey({name:'PBKDF2',hash:'SHA-256',salt:sal,iterations:iter},base,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+  }
+  async function cifrar(obj,senha){
+    if(String(senha).length<8)throw Error('A senha do backup precisa de pelo menos 8 caracteres');
+    const sal=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12));
+    const dados=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},await chaveDe(senha,sal,ITERACOES),new TextEncoder().encode(JSON.stringify(obj))));
+    return {formato:CIFRADO,cifra:'AES-256-GCM',kdf:'PBKDF2-SHA256',iteracoes:ITERACOES,sal:b64(sal),iv:b64(iv),dados:b64(dados),exportado:new Date().toISOString()};
+  }
+  async function decifrar(pacote,senha){
+    const iter=Number(pacote.iteracoes);
+    if(pacote.formato!==CIFRADO||!(iter>=100000&&iter<=10000000))throw Error('Backup protegido inválido');
+    try{
+      const txt=await crypto.subtle.decrypt({name:'AES-GCM',iv:deB64(pacote.iv)},await chaveDe(senha,deB64(pacote.sal),iter),deB64(pacote.dados));
+      return JSON.parse(new TextDecoder().decode(txt));
+    }catch{throw Error('Senha errada (ou arquivo corrompido)');}
+  }
   function validateBackup(input){
     if(!input||typeof input!=='object'||Array.isArray(input))throw Error('Backup inválido');
     const aliases={crm_logs:'crmLogs',stock_snapshots:'stockSnapshots',prod_log:'prodLog',consig_history:'consigHistory',est_cfg:'estCfg'};
@@ -250,15 +302,17 @@
     // anônimo e (com RLS) não recebe nenhuma mudança.
     await client.realtime.setAuth().catch(()=>{});
     if(gen!==realtimeGen)return; // saiu da página ou a sessão acabou enquanto esperava
-    channel=client.channel('144erp')
+    channel=client.channel('144erp');
+    if(protegido)channel.on('postgres_changes',{event:'UPDATE',schema:'public',table:'erp_sinal'},signal);
+    else channel
       .on('postgres_changes',{event:'*',schema:'public',table:'erp_records'},realtime)
-      .on('postgres_changes',{event:'*',schema:'public',table:'erp_deleted'},realtime)
-      .subscribe(state=>{
-        if(state==='SUBSCRIBED'){
-          // Fecha a janela entre o bootstrap e a inscrição, e recupera reconexões.
-          reconcileRequested=true;refresh().catch(()=>{});notice('Nuvem conectada');
-        }else if(state==='CHANNEL_ERROR'||state==='TIMED_OUT')notice('Reconectando sincronização…');
-      });
+      .on('postgres_changes',{event:'*',schema:'public',table:'erp_deleted'},realtime);
+    channel.subscribe(state=>{
+      if(state==='SUBSCRIBED'){
+        // Fecha a janela entre o bootstrap e a inscrição, e recupera reconexões.
+        reconcileRequested=true;refresh().catch(()=>{});notice('Nuvem conectada');
+      }else if(state==='CHANNEL_ERROR'||state==='TIMED_OUT')notice('Reconectando sincronização…');
+    });
   }
   // Sair da página com o WebSocket aberto impede o BFCache (a página recarrega ao
   // voltar) ou faz o navegador derrubar a conexão ("Page entered Back-Forward Cache").
@@ -292,11 +346,21 @@
     if(started||startup)return;startup=true;el('btn_login').disabled=true;
     try{
       const {data:{user},error}=await client.auth.getUser();if(error||!user)throw error||Error('Entre com sua conta');
-      const {data:profile,error:profileError}=await client.from('profiles').select('id,nome,login,perfil').eq('id',user.id).single();
-      if(profileError)throw profileError;Cloud.user=profile;
-      await Cloud.loadUsers();
+      // A 1ª sincronização diz se o servidor tem a proteção por perfil (marca
+      // "protegido" na resposta). Com ela, "quem sou eu" e a lista de usuários vêm
+      // de uma função (o vendedor só recebe o próprio perfil); sem ela, jeito antigo.
       for(const c of collections)baseline[c]=single.has(c)?null:[];
       await refresh(true);live=copy(baseline);
+      Cloud.protegido=protegido;
+      if(protegido){
+        const sessao=await rpc('erp_usuarios',{});
+        if(!sessao||!sessao.eu||sessao.eu.id!==user.id)throw Error('Perfil da conta não confere');
+        Cloud.user=sessao.eu;Cloud.users=sessao.usuarios||[sessao.eu];
+      }else{
+        const {data:profile,error:profileError}=await client.from('profiles').select('id,nome,login,perfil').eq('id',user.id).single();
+        if(profileError)throw profileError;Cloud.user=profile;
+        await Cloud.loadUsers();
+      }
       const marker=JSON.parse(sessionStorage.getItem(pendingKey)||'null');
       const recovered=marker?await recoveryStore('get',marker.id):null;
       if(marker&&!recovered)sessionStorage.removeItem(pendingKey);
@@ -317,7 +381,7 @@
       });
       notice('Nuvem conectada');
     }catch(e){notice(e.message||String(e));el('login_pass').value='';}
-    finally{startup=false;el('btn_login').disabled=false;}
+    finally{startup=false;el('btn_login').disabled=!!captcha&&!captcha.token;}
   }
   window.addEventListener('beforeunload',e=>{if(pending||dirty.size){e.preventDefault();e.returnValue='';}});
   window.addEventListener('offline',()=>notice('Sem internet — gravações exigem conexão'));
@@ -329,9 +393,38 @@
   if(!window.supabase){notice('Biblioteca Supabase indisponível');return;}
   client=window.supabase.createClient(config.url,config.publicKey);
   el('login_user').type='email';el('login_user').placeholder='Seu e-mail';
+  // CAPTCHA anti-robô no login (Cloudflare Turnstile), só se config.js tiver a
+  // chave do SITE (pública) em "turnstile". O Supabase confere o token com a
+  // chave secreta, que fica no painel dele (Authentication > Attack Protection).
+  let captcha=null;
+  if(typeof config.turnstile==='string'&&/^[0-9A-Za-z_-]{10,}$/.test(config.turnstile)){
+    captcha={token:null,id:null};
+    const caixa=document.createElement('div');caixa.id='login_captcha';caixa.style.cssText='margin:10px 0;min-height:65px;display:flex;justify-content:center';
+    el('btn_login').before(caixa);el('btn_login').disabled=true;
+    window.aoCarregarTurnstile=()=>{
+      captcha.id=window.turnstile.render(caixa,{sitekey:config.turnstile,action:'login',language:'pt-br',
+        callback:t=>{captcha.token=t;el('btn_login').disabled=false;},
+        'expired-callback':()=>{captcha.token=null;el('btn_login').disabled=true;},
+        'error-callback':()=>{captcha.token=null;el('btn_login').disabled=true;notice('A verificação anti-robô falhou. Recarregue a página.');}});
+    };
+    const sc=document.createElement('script');sc.async=true;
+    sc.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=aoCarregarTurnstile';
+    sc.onerror=()=>notice('Não carregou a verificação anti-robô (internet ou bloqueador?). Recarregue a página.');
+    document.head.appendChild(sc);
+  }
+  const loginLiberado=()=>!captcha||!!captcha.token;
   el('btn_login').onclick=async()=>{
+    if(!loginLiberado()){notice('Confirme a verificação anti-robô');return;}
     el('btn_login').disabled=true;notice('Entrando…');
-    try{const {error}=await client.auth.signInWithPassword({email:el('login_user').value.trim(),password:el('login_pass').value});if(error)throw error;await start();}catch(e){notice(e.message||String(e));}finally{el('btn_login').disabled=false;}
+    try{
+      const {error}=await client.auth.signInWithPassword({email:el('login_user').value.trim(),password:el('login_pass').value,...(captcha?{options:{captchaToken:captcha.token}}:{})});
+      if(error)throw error;await start();
+    }catch(e){notice(e.message||String(e));}
+    finally{
+      // o token do CAPTCHA vale uma vez: depois de cada tentativa, pede outro
+      if(captcha&&captcha.token){captcha.token=null;try{window.turnstile.reset(captcha.id);}catch{}}
+      el('btn_login').disabled=!loginLiberado();
+    }
   };
   el('login_pass').addEventListener('keydown',e=>{if(e.key==='Enter')el('btn_login').click();});
   client.auth.getSession().then(({data:{session}})=>{if(session)start();else notice('Entre para acessar a nuvem');});

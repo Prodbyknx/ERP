@@ -97,11 +97,14 @@ resultado as (
   select 5, 'Mass assignment: perfil (item 8)', 'profiles.perfil',
          case when not p.existe then 'INFO'
               when p.coluna_gravavel and p.politicas_gravar is not null and p.gatilhos is null then 'FALHA'
+              when p.coluna_gravavel and p.politicas_gravar is not null and p.gatilhos ~ 'erp144_proteger_perfil' and p.politicas_gravar ~ 'erp_eh_admin' then 'OK'
               when p.coluna_gravavel and p.politicas_gravar is not null then 'ATENÇÃO'
               else 'OK' end,
          case when not p.existe then 'Tabela profiles não existe.'
               when p.coluna_gravavel and p.politicas_gravar is not null and p.gatilhos is null then
                 'Usuário logado pode gravar a coluna perfil e há política que deixa (' || p.politicas_gravar || '). Um vendedor pode virar ADMIN. Corrija: revoke update (perfil) on public.profiles from authenticated; (ou revoke update/insert na tabela e grave só pela função erp-users).'
+              when p.coluna_gravavel and p.politicas_gravar is not null and p.gatilhos ~ 'erp144_proteger_perfil' and p.politicas_gravar ~ 'erp_eh_admin' then
+                'Só ADMIN grava perfis (políticas com erp_eh_admin) e o gatilho erp144_proteger_perfil impede que alguém se promova ou tire o último ADMIN.'
               when p.coluna_gravavel and p.politicas_gravar is not null then
                 'A coluna perfil é gravável e há política (' || p.politicas_gravar || '), mas existe gatilho (' || p.gatilhos || '). Confira se ele impede um não-ADMIN de mudar perfil.'
               else 'Usuário comum não consegue gravar a coluna perfil.' end

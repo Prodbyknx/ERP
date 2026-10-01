@@ -155,6 +155,13 @@
 
       for (var t of ['erp_records', 'profiles']) st.push(await tabela(t, token));
 
+      // proteção por perfil (protecao-servidor.sql): o vendedor só recebe o próprio perfil
+      var pu = await pedir('/rest/v1/rpc/erp_usuarios', { method: 'POST', headers: cab(token, { 'Content-Type': 'application/json' }), body: '{}' });
+      if (pu.erro) st.push(linha('ATENÇÃO', 'Proteção por perfil', 'Não consegui perguntar (' + pu.erro + ').'));
+      else if (pu.status === 404) st.push(linha('ATENÇÃO', 'Proteção por perfil', 'NÃO aplicada: as caixinhas de permissão do vendedor só valem na tela e ele recebe todos os dados. Rode o protecao-servidor.sql (esta pasta) no SQL Editor.'));
+      else if (pu.status === 200 && pu.json && pu.json.protegido && Array.isArray(pu.json.usuarios) && pu.json.usuarios.length === 1) st.push(linha('OK', 'Proteção por perfil', 'Aplicada: o banco confere o perfil em toda leitura e gravação, e o vendedor só recebe o próprio perfil.'));
+      else st.push(linha('FALHA', 'Proteção por perfil', 'Resposta inesperada (HTTP ' + pu.status + '): ' + (pu.texto || '').slice(0, 200)));
+
       // mass assignment: grava o MESMO perfil (não muda nada)
       var m = await pedir('/rest/v1/profiles?id=eq.' + encodeURIComponent(uid), { method: 'PATCH', headers: cab(token, { 'Content-Type': 'application/json', Prefer: 'return=representation' }), body: JSON.stringify({ perfil: perfil }) });
       if (!m.erro && m.status >= 200 && m.status < 300 && Array.isArray(m.json) && m.json.length) st.push(linha('FALHA', 'Virar ADMIN sozinho (item 8)', 'O servidor aceitou que o vendedor grave o próprio campo "perfil" (gravei o mesmo valor, nada mudou). Trocando para ADMIN, ele viraria administrador. Corrija: revoke update (perfil) on public.profiles from authenticated;'));
