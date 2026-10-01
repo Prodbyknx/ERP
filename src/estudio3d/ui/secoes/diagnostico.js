@@ -59,10 +59,15 @@ export function montarDiagnostico(est) {
     const o = est.objetoAtual();
     if (!o) { avisar('Escolha um objeto.', 'warn'); return; }
     const resultados = [];
-    for (const p of o.partes) {
-      try { resultados.push({ p, r: await est.rodar('reparar', { parte: est.parteParaMotor(p), opc: {} }, 'Reparar') }); }
-      catch (e) { return; }
-    }
+    // modelo de várias cores = uma peça por vez; a barra mostra "peça 2 de 6" e o % do total
+    est.lote = { n: o.partes.length, i: 0, desde: performance.now() };
+    try {
+      for (const p of o.partes) {
+        est.lote.i++; est.lote.nome = p.nome;
+        try { resultados.push({ p, r: await est.rodar('reparar', { parte: est.parteParaMotor(p), opc: {} }, 'Reparar ' + p.nome) }); }
+        catch (e) { return; }
+      }
+    } finally { est.lote = null; }
     const mudou = resultados.filter(x => x.r.passos.length);
     ultimoReparo = resultados.map(x => ({ nome: x.p.nome, passos: x.r.passos, solido: x.r.solido }));
     if (mudou.length) {
@@ -159,6 +164,7 @@ export function montarDiagnostico(est) {
       if (soma('componentesInternos')) extra.appendChild(el('button', { class: 'btn', onclick: removerInternos }, 'Remover sobras internas'));
       if (esp.length && Math.min(...esp) < lim) extra.appendChild(el('button', { class: 'btn', onclick: () => est.definirModoVisual('espessura') }, 'Ver onde está fino'));
       if (!fechada) extra.appendChild(el('button', { class: 'btn', onclick: () => est.definirModoVisual('problemas') }, 'Ver os defeitos'));
+      else if (auto > 0) extra.appendChild(el('button', { class: 'btn', title: 'Pinta de rosa onde a superfície se cruza', onclick: () => est.definirModoVisual('problemas') }, 'Ver onde se cruza'));
       extra.className = 'e3d-botoes';
     }
     if (sugestaoUnidade && sugestaoUnidade.objeto === o.id) {

@@ -2,7 +2,7 @@
 // tipados), pra rodar igual no Web Worker, na thread principal e no Node.
 import { importarArquivo } from '../core/importar.js';
 import { validar, espessuras, facesInternas } from '../core/validador.js';
-import { reparar as repararMalha } from '../core/reparo.js';
+import { reparar as repararMalha, desfazerAutoInterseccoes } from '../core/reparo.js';
 import { comContexto, manifold, temManifold } from '../core/solidos.js';
 import { cortarPorPlano } from '../core/corte.js';
 import { cortarLocal, sugerirSeparacao } from '../core/corteLocal.js';
@@ -19,7 +19,7 @@ import { escrever3MF } from '../core/formatos/tmf.js';
 import { escreverSTL } from '../core/formatos/stl.js';
 import { escreverZip } from '../core/formatos/zip.js';
 import { transformar, juntar, volume, caixa, semFaces, compactar, subMalha } from '../core/malha.js';
-import { arestas, componentes, listasPorRotulo } from '../core/topologia.js';
+import { unirCascas, juntarComCores } from '../core/unirCascas.js';
 import { gerarForma } from '../core/formas.js';
 import { combinar, aplicarFuros, aplicarFurosNaCena } from '../core/modelagem.js';
 import { fotosPara3D, prepararVistas } from '../core/ia/reconstrucao.js';
@@ -121,28 +121,63 @@ export const OPERACOES = {
         comContexto(ctx => {
           // peças que se atravessam (ou uma dentro da outra) viram um sólido só,
           // do jeito que o fatiador imprimiria — sem isso o laudo nunca fica limpo
-          const u = opc.unir !== false ? unirCascas(ctx, { malha, cor, paleta: malha.cor ? paleta : null }, parte.nome) : null;
-          if (u) passos.push('juntou ' + u.antes + ' partes que se atravessavam num sólido só' + (u.depois > 1 ? ' (ficaram ' + u.depois + ' peças separadas)' : ''));
-          const man = u ? u.man : ctx.solido({ malha, cor, paleta: malha.cor ? paleta : null }, parte.nome);
-          const p = ctx.parte(man, parte.nome, cor);
+          const entrada = { malha, cor, paleta: malha.cor ? paleta : null };
+          const u = opc.unir !== false ? unirCascas(ctx, entrada, parte.nome) : null;
+          if (u) passos.push('juntou ' + u.antes + ' partes que se atravessavam num sólido só' + (u.depois > 1 ? ' (ficaram ' + u.depois + ' peças separadas)' : '') +
+            (u.nFora ? '; ' + u.nFora + ' casca(s) que não fecham ficaram como estavam' : ''));
+          const man = u ? u.man : ctx.solido(entrada, parte.nome);
+          const p = juntarComCores(ctx.parte(man, parte.nome, cor), u && u.fora, entrada);
           malha = p.malha; cor = p.cor; paleta = p.paleta;
         });
         solido = true;
       } catch (e) { passos.push('ainda não é um sólido fechado: ' + e.message); }
     }
     progresso(0.75, 'Conferindo o resultado');
-    const depois = resumoValidacao(validar(malha, { completo: opc.completo !== false }));
+    let v = validar(malha, { completo: opc.completo !== false });
+    // 2ª passada: sobrou cruzamento (casca que o motor de sólidos recusou
+    // juntar, ou arredondamento ao virar sólido) -> refaz esses pontos e confere de novo
+    // (só pra resto pequeno: remendo local em muito cruzamento mudaria a peça)
+    if (v.autoInterseccoes > 0 && opc.segundaPassada !== false && v.autoInterseccoes <= Math.max(300, v.triangulos * 0.001)) {
+      progresso(0.85, 'Refazendo os cruzamentos que sobraram');
+      const ai = desfazerAutoInterseccoes(malha, { todas: true });
+      if (ai.removidas) {
+        let m2 = ai.malha, ok2 = false;
+        if (temManifold()) {
+          try {
+            comContexto(ctx => {
+              const ent = { malha: m2, cor, paleta: m2.cor ? paleta : null };
+              const u = unirCascas(ctx, ent, parte.nome);
+              const p = juntarComCores(ctx.parte(u ? u.man : ctx.solido(ent, parte.nome), parte.nome, cor), u && u.fora, ent);
+              m2 = p.malha; cor = p.cor; paleta = p.paleta; ok2 = true;
+            });
+          } catch (e) { /* fica a malha consertada em JS */ }
+        }
+        const v2 = validar(m2, { completo: true });
+        // aceita só se melhorou, fechou e não mudou o volume da peça (> 1%)
+        if (v2.autoInterseccoes < v.autoInterseccoes && v2.fechada && Math.abs(v2.volume - v.volume) <= 0.01 * Math.abs(v.volume)) {
+          malha = m2; v = v2; solido = solido || ok2;
+          passos.push('2ª passada: refez ' + ai.removidas + ' face(s) onde ainda se cruzava');
+        }
+      }
+      if (v.autoInterseccoes > 0) passos.push('sobraram ' + v.autoInterseccoes + ' cruzamento(s) — use "Ver onde se cruza"');
+    }
+    progresso(0.98, 'Pronto');
+    const depois = resumoValidacao(v);
     return { parte: { nome: parte.nome, malha, cor, paleta }, passos, antes, depois, solido };
   },
 
   // cascas que se atravessam viram um sólido só (o que o fatiador faria)
   unirSobrepostos({ parte }) {
+    // vazio fechado (bolso da tag NFC, peça oca) continua vazio
     return comContexto(ctx => {
-      const { Manifold } = manifold();
-      const s = ctx.solido(parte, parte.nome);
-      const comps = s.decompose().map(c => ctx.guardar(c));
-      const u = comps.length > 1 ? ctx.guardar(Manifold.union(comps)) : s;
-      return { parte: ctx.parte(u, parte.nome, parte.cor), antes: comps.length, depois: u.decompose().map(c => { c.delete(); return 1; }).length };
+      const u = unirCascas(ctx, parte, parte.nome);
+      if (!u) {
+        const s = ctx.solido(parte, parte.nome);
+        const n = s.decompose().map(c => { c.delete(); return 1; }).length;
+        return { parte: ctx.parte(s, parte.nome, parte.cor), antes: n, depois: n };
+      }
+      const p = juntarComCores(ctx.parte(u.man, parte.nome, parte.cor), u.fora, parte);
+      return { parte: p, antes: u.antes, depois: u.depois };
     });
   },
 
@@ -324,40 +359,4 @@ export function transferiveis(obj, lista = [], vistos = new Set()) {
   if (obj instanceof ArrayBuffer) { lista.push(obj); return lista; }
   for (const k in obj) transferiveis(obj[k], lista, vistos);
   return lista;
-}
-
-// Junta as cascas fechadas que se atravessam ou ficam uma dentro da outra
-// (positivas = peça; negativas = vazio de peça oca, que continua vazio).
-// Devolve null se nada se sobrepõe (a malha fica como está).
-function unirCascas(ctx, parte, nome) {
-  const m = parte.malha;
-  const top = arestas(m);
-  for (let e = 0; e < top.nE; e++) if (top.inicio[e + 1] - top.inicio[e] !== 2) return null;   // aberta: não dá
-  const comp = componentes(m, top);
-  if (comp.n < 2 || comp.n > 3000) return null;
-  const { Manifold } = manifold();
-  const listas = listasPorRotulo(comp.rotulo, comp.n);
-  const pos = [], neg = [];
-  let somaPos = 0, somaNeg = 0;
-  for (let c = 0; c < comp.n; c++) {
-    const sub = subMalha(m, listas.lista.subarray(listas.inicio[c], listas.inicio[c + 1])).malha;
-    const v = volume(sub);
-    if (Math.abs(v) < 1e-9) continue;
-    let alvo = sub;
-    if (v < 0) {
-      const idx = Uint32Array.from(sub.idx);
-      for (let t = 0; t < idx.length; t += 3) { const x = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = x; }
-      alvo = criar(sub.pos, idx, sub.cor);
-    }
-    let man;
-    try { man = ctx.solido({ malha: alvo, cor: parte.cor, paleta: alvo.cor ? parte.paleta : null }, nome); } catch (e) { return null; }
-    if (v > 0) { pos.push(man); somaPos += v; } else { neg.push(man); somaNeg -= v; }
-  }
-  if (pos.length < 2) return null;
-  let u = ctx.guardar(Manifold.union(pos));
-  if (neg.length) u = ctx.guardar(u.subtract(ctx.guardar(Manifold.union(neg))));
-  const partes = u.decompose(); const depois = partes.filter(c => c.volume() > 0).length; for (const c of partes) c.delete();
-  const esperado = somaPos - somaNeg;
-  if (depois === pos.length && Math.abs(u.volume() - esperado) <= 1e-5 * Math.max(1, esperado)) return null;
-  return { man: u, antes: pos.length, depois };
 }

@@ -350,7 +350,8 @@ export function taparBuracos(m, opc = {}) {
 // superfície, comum em modelo de IA): tira as faces que se cruzam e o anel em
 // volta, e fecha o buraco de novo com tampa alisada. Repete algumas vezes.
 // Cascas diferentes que se atravessam não entram aqui: viram um sólido só
-// pelo Manifold (motor/operacoes.js), sem perder nada.
+// pelo Manifold (motor/operacoes.js), sem perder nada. opc.todas inclui os
+// cruzamentos entre cascas (2ª passada, quando o Manifold recusou juntar).
 export function desfazerAutoInterseccoes(m, opc = {}) {
   let removidas = 0, rodadas = 0, restantes = 0;
   for (; rodadas < (opc.rodadas || 4); rodadas++) {
@@ -361,7 +362,7 @@ export function desfazerAutoInterseccoes(m, opc = {}) {
     let n = 0;
     for (let i = 0; i < pares.length; i += 2) {
       const a = pares[i], b = pares[i + 1];
-      if (comp.rotulo[a] !== comp.rotulo[b]) continue;
+      if (!opc.todas && comp.rotulo[a] !== comp.rotulo[b]) continue;
       if (!marca[a]) { marca[a] = 1; n++; }
       if (!marca[b]) { marca[b] = 1; n++; }
     }

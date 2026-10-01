@@ -162,3 +162,34 @@ test('consertar: boneco de IA sujo sai sem nenhum cruzamento (antes sobrava auto
   const limpo = volume(gerarBoneco('limpo').malha);
   assert.ok(Math.abs(volume(r.parte.malha) - limpo) / limpo < 0.005, 'detalhe/volume preservado');
 });
+
+test('chaveiro com tag NFC fechada: o bolso continua vazio ao abrir no Estúdio (antes era tapado)', async () => {
+  const fs = await import('node:fs');
+  const { lerImagem } = await import('../mcp/imagem.mjs');
+  const { analisar } = await import('../src/gerador/analise.js');
+  const { construir } = await import('../src/gerador/chaveiro.js');
+  const { pecasDoGerador } = await import('../src/estudio3d/core/pecasGerador.js');
+  const img = lerImagem(new Uint8Array(fs.readFileSync(new URL('./fixtures/logos/sol-4cores.png', import.meta.url))), 'x.png');
+  const r = construir(analisar({ px: img.px, w: img.largura, h: img.altura }), { nfc: { ligado: true, modo: 'fechado', diametroMM: 25 }, altBase: 3 });
+  const b = r.partes[0], m0 = criar(b.malha.pos, b.malha.idx);
+  assert.equal(validar(m0).cavidades, 1, 'o gerador faz o bolso');
+  const ps = await pecasDoGerador(r.partes.map(p => ({ nome: p.nome, cor: p.cor, malha: p.malha, fatias: p.fatias })), (op, a) => OPERACOES[op](a));
+  const base = ps.find(p => p.nome === b.nome).malha;
+  assert.equal(validar(base).cavidades, 1, 'bolso continua lá');
+  assert.ok(Math.abs(volume(base) - volume(m0)) < 0.5, volume(base) + ' x ' + volume(m0));
+  // "Unir partes sobrepostas" e "Consertar" também não tapam
+  assert.equal(validar(OPERACOES.unirSobrepostos({ parte: { nome: 'b', malha: base, cor: '#999999' } }).parte.malha).cavidades, 1);
+  assert.equal(validar(consertar(base).parte.malha).cavidades, 1);
+});
+
+test('consertar: 2ª passada refaz o resto pequeno de cruzamento que a 1ª não pegou, sem mudar o volume', () => {
+  const m = juntar([esfera(10, 6), esfera(10, 6, 19.95, 0, 0)]);
+  assert.ok(validar(m).autoInterseccoes > 0);
+  const sem = OPERACOES.reparar({ parte: { nome: 'p', malha: m, cor: '#999999' }, opc: { unir: false, segundaPassada: false } });
+  assert.ok(sem.depois.autoInterseccoes > 0, 'sem a 2ª passada sobra');
+  const com = OPERACOES.reparar({ parte: { nome: 'p', malha: m, cor: '#999999' }, opc: { unir: false } });
+  assert.equal(com.depois.autoInterseccoes, 0);
+  assert.ok(com.depois.fechada);
+  assert.ok(Math.abs(volume(com.parte.malha) - volume(m)) / volume(m) < 0.001);
+  assert.match(com.passos.join(' '), /2ª passada/);
+});

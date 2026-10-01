@@ -670,14 +670,17 @@ export class Estudio {
     this._progDe = info && info.desde;
     this._tick = null;
     if (on) {
-      const ini = info && info.desde || performance.now();
-      this.ocupadoEl.querySelector('[data-o=rot]').textContent = (info && NOMES_OP[info.op] || 'Calculando') + '…';
+      // lote (uma operação por peça, ex.: consertar 6 cores): "peça 2 de 6", tempo e % do lote todo
+      const lote = this.lote && this.lote.n > 1 ? this.lote : null;
+      const ini = lote ? lote.desde : (info && info.desde || performance.now());
+      this.ocupadoEl.querySelector('[data-o=rot]').textContent = (info && NOMES_OP[info.op] || 'Calculando') + '…' + (lote ? ' peça ' + lote.i + ' de ' + lote.n + (lote.nome ? ' (' + lote.nome + ')' : '') : '');
       const barra = this.ocupadoEl.querySelector('[data-o=barra]');
       const tick = () => {
         const s = (performance.now() - ini) / 1000, p = this._prog;
-        this.ocupadoEl.querySelector('[data-o=tempo]').textContent = (p ? (p.etapa ? p.etapa + ' · ' : '') + Math.round(p.f * 100) + '% · ' : '') + fmt(s, 1) + ' s' + (n > 1 ? ' · ' + (n - 1) + ' na fila' : '');
+        const f = p ? (lote ? (lote.i - 1 + p.f) / lote.n : p.f) : null;
+        this.ocupadoEl.querySelector('[data-o=tempo]').textContent = (p ? (p.etapa ? p.etapa + ' · ' : '') + Math.round(f * 100) + '% · ' : '') + fmt(s, 1) + ' s' + (n > 1 ? ' · ' + (n - 1) + ' na fila' : '');
         barra.style.display = p ? '' : 'none';
-        if (p) barra.firstChild.style.width = Math.round(p.f * 100) + '%';
+        if (p) barra.firstChild.style.width = Math.round(f * 100) + '%';
         this.ocupadoEl.querySelector('[data-o=cancelar]').style.display = s > 1.2 && !this.motor.local ? '' : 'none';
       };
       this._tick = tick;

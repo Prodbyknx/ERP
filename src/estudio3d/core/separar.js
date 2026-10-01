@@ -18,6 +18,7 @@
 //    detalhe vira uma camada que acompanha a superfície e o resto ganha o
 //    bolso do mesmo formato (ex.: olho pintado numa cabeça redonda).
 import { comContexto, manifold } from './solidos.js';
+import { unirCascas } from './unirCascas.js';
 import { prepararAdjacencia, limpar, regioes, expandir } from './selecao.js';
 import { criar, subMalha, areaFace, compactar, volume } from './malha.js';
 import { triangularLaco, refinarEAlisar, reparar } from './reparo.js';
@@ -607,19 +608,13 @@ function unirCascasComMascara(parte, mascara) {
   const adj = prepararAdjacencia(parte.malha);
   for (let h = 0; h < adj.viz.length; h++) if (adj.viz[h] < 0) return null;   // aberta: o erro claro vem depois
   return comContexto(ctx => {
-    const { Manifold } = manifold();
-    let man;
-    try { man = ctx.solido(parte, parte.nome); } catch (e) { return null; }
-    const comps = man.decompose();
-    if (comps.length < 2) { for (const c of comps) c.delete(); return null; }
-    let soma = 0; for (const c of comps) soma += c.volume();
-    const u = ctx.guardar(Manifold.union(comps));
-    for (const c of comps) c.delete();
-    if (soma - u.volume() <= 1e-6 * Math.max(1, soma)) return null;
-    const pu = ctx.parte(u, parte.nome, parte.cor, true);
+    // vazio fechado (peça oca) continua vazio: só as peças se juntam
+    const u = unirCascas(ctx, parte, parte.nome);
+    if (!u || u.fora) return null;
+    const pu = ctx.parte(u.man, parte.nome, parte.cor, true);
     const m2 = new Uint8Array(pu.malha.idx.length / 3);
     for (let f = 0; f < m2.length; f++) { const o = pu.origem[f]; if (o >= 0 && mascara[o]) m2[f] = 1; }
-    return { parte: { nome: parte.nome, malha: pu.malha, cor: pu.cor, paleta: pu.paleta }, mascara: m2, aviso: 'Juntei ' + comps.length + ' cascas que se atravessavam num sólido só.' };
+    return { parte: { nome: parte.nome, malha: pu.malha, cor: pu.cor, paleta: pu.paleta }, mascara: m2, aviso: 'Juntei ' + u.antes + ' cascas que se atravessavam num sólido só.' };
   });
 }
 
