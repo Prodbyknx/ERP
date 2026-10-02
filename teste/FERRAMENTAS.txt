@@ -245,6 +245,50 @@ FORMAS — adicionar peças prontas (novo)
    Ctrl+D duplica, Delete apaga. Em Ajustar: Duplicar em série (cópias,
    distância e direção). No rodapé do 3D: Ímã (1 mm / 15°).
 
+FOTO — foto de referência (novo, como no Blender)
+   Ponha a foto do que você quer modelar: botão "Adicionar foto",
+   arrastar a imagem pro 3D, ou colar com Ctrl+V. Ela fica:
+     De frente ........ em pé, olhando da vista Frente
+     De lado .......... em pé, olhando da vista Lado
+     Deitada na mesa .. no chão, olhando da vista Topo
+   Opacidade (mais clara = dá pra ver a peça por cima), largura e altura em
+   mm, posição, girar, espelhar e "mostrar por cima das peças". Dá pra pôr
+   várias (frente + lado). Com o painel aberto, ARRASTE a foto pra mudar
+   ela de lugar.
+   MEDIR NA FOTO: clique em 2 pontos de uma medida que você conhece (ex.:
+   a largura da peça), digite quanto mede de verdade e a foto fica em
+   escala real — o que você modelar por cima já sai no tamanho certo.
+   A foto é só guia: não vai pro 3MF/STL, nem pra miniatura, nem pro
+   Desfazer. Desenhar "Em pé" desenha em cima dela.
+
+MODELAR — ponto a ponto por cima da foto (novo, o modo de edição do Blender)
+   Começar com: Pontos (ligar os pontos), Um quadrado ou Um cubo.
+   ESPELHO (Esquerda ↔ Direita ou Frente ↔ Trás): você faz um lado e o
+   outro aparece sozinho (azul claro). Mexer do lado espelhado mexe nos
+   dois. O que encosta na linha verde do meio gruda nela.
+   CRIAR PONTOS
+     clique na foto ........ ponto novo, já ligado ao anterior (laranja)
+     clique no 1º ponto .... fecha o contorno: vira FACE (o 1º fica verde)
+     clique numa borda e
+     depois na foto ........ nasce uma face nova até ali (face por face);
+                             continue clicando pra seguir a faixa
+     arrastar um ponto ..... move (na vista Lado/Topo dá fundura)
+     Esc ................... solta a linha
+     Com espelho: comece na linha verde, contorne só um lado e termine
+     na linha verde; feche no 1º ponto.
+   ESCOLHER E MOVER: clique em ponto, borda ou dentro de uma face (Shift
+   soma); arraste pra mover. Botões: Fazer face (F), Juntar pontos (M),
+   Dividir borda, Puxar face (mm) e Apagar (Delete). X/Y/Z do ponto em mm.
+   PUXAR FACE numa placa sai um BLOCO maciço (a base fica no lugar); numa
+   peça fechada a face sai pra fora e nascem as laterais.
+   A PEÇA: Espessura (malha aberta vira placa de N mm), Suavizar (Não /
+   Um pouco / Bem liso), Aplicar o espelho, raio-X (ver através). Embaixo
+   o painel diz se está pronta: "sólido fechado", "placa fechada", ou o
+   que falta ("a peça se cruza: arraste os pontos", "borda com 3 faces").
+   Ctrl+Z desfaz cada clique (antes da 1ª face, tira o último ponto).
+   "Pronto" termina; "Editar a malha" volta pros pontos depois. Se outra
+   ferramenta mudou a peça (Consertar, Esculpir…), ele pergunta antes.
+
 CONSERTAR — conferir e consertar
    Laudo: Malha fechada · Arestas abertas · Non-manifold · Faces
    invertidas · Degeneradas · Repetidas · Vértices duplicados (costura

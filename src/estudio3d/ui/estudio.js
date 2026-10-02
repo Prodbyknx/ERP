@@ -20,6 +20,7 @@ import { montarModificar } from './secoes/modificar.js';
 import { montarEsculpir } from './secoes/esculpir.js';
 import { montarDesenhar } from './secoes/desenhar.js';
 import { montarReferencia, ehImagem } from './secoes/referencia.js';
+import { montarMalha } from './secoes/malha.js';
 import { prepararParaImpressao } from './preparar.js';
 import { alinhar, duplicarEmSerie } from '../core/modelagem.js';
 import { icone } from './icones.js';
@@ -36,6 +37,7 @@ const FERRAMENTAS = [
   { sec: 'esc', ico: 'esculpir', rot: 'Esculpir', titulo: 'Esculpir e deformar', desc: 'Pincel pra puxar, empurrar, inflar, achatar e suavizar — com simetria ao vivo. Torcer, afunilar e dobrar a peça inteira.' },
   { sec: 'des', ico: 'desenhar', rot: 'Desenhar', titulo: 'Desenhar e criar', desc: 'Desenhe um contorno na mesa e ele vira peça: com espessura, girado (vaso, puxador) ou tubo.' },
   { sec: 'ref', ico: 'imagem', rot: 'Foto', titulo: 'Foto de referência', desc: 'Ponha uma foto de frente, de lado ou na mesa, deixe mais clara e modele por cima, como no Blender. O tamanho fica em mm: meça na própria foto.' },
+  { sec: 'malha', ico: 'malha', rot: 'Modelar', titulo: 'Modelar ponto a ponto', desc: 'Crie a peça clicando por cima da foto: pontos, bordas e faces, como no Blender. Com o espelho, você faz um lado e o outro aparece sozinho.' },
   { sec: 'diag', ico: 'escudo', rot: 'Consertar', titulo: 'Conferir e consertar', desc: 'Vê se o arquivo imprime e conserta buracos, faces viradas, cruzamentos e partes sobrepostas, sem perder detalhe.' },
   { sec: 'transf', ico: 'ajustar', rot: 'Ajustar', titulo: 'Posição, tamanho e cor', desc: 'Medidas em mm, girar, deitar pra imprimir sem suporte e a cor de cada peça.' },
   { sec: 'sel', ico: 'selecionar', rot: 'Selecionar', titulo: 'Selecionar uma parte', desc: 'Clique numa orelha, olho ou detalhe: a seleção para sozinha na dobra.' },
@@ -190,6 +192,7 @@ export class Estudio {
     this.secoes.esculpir = montarEsculpir(this);
     this.secoes.desenhar = montarDesenhar(this);
     this.secoes.referencia = montarReferencia(this);
+    this.secoes.malha = montarMalha(this);
     this.secoes.diagnostico = montarDiagnostico(this);
     this.secoes.transformar = montarTransformar(this);
     this.secoes.selecionar = montarSelecionar(this);
@@ -215,6 +218,8 @@ export class Estudio {
 
     this.furados = new Map();
     this.visor.exibir = (o, p) => {
+      // arrastando ponto no Modelar: a peça acompanha sem entrar no Desfazer
+      if (this.previaMalha && this.previaMalha.id === o.id) return this.previaMalha.malha;
       if (o.papel === 'furo') return p.malha;
       const f = this.furados.get(o.id);
       if (!f || f.chave !== this.chaveFuros(o)) return p.malha;
@@ -427,7 +432,7 @@ export class Estudio {
       ini = { x: ev.clientX, y: ev.clientY, b: ev.button };
       if (ev.button === 2) this._direitoEm = performance.now();
       // Desenhar: pegar um ponto já marcado pra arrastar
-      const arrastavel = this.ferramenta === 'desenhar' ? this.secoes.desenhar : this.ferramenta === 'referencia' ? this.secoes.referencia : null;
+      const arrastavel = this.ferramenta === 'desenhar' ? this.secoes.desenhar : this.ferramenta === 'referencia' ? this.secoes.referencia : this.ferramenta === 'malha' ? this.secoes.malha : null;
       if (ev.button === 0 && arrastavel && !this.previaAtiva && arrastavel.segurar(ev)) {
         this.arrastandoPonto = arrastavel;
         this.visor.controles.enabled = false;
@@ -565,6 +570,8 @@ export class Estudio {
       const alvo = ev.target;
       if (alvo && (alvo.tagName === 'INPUT' || alvo.tagName === 'TEXTAREA' || alvo.tagName === 'SELECT' || alvo.isContentEditable)) return;
       const k = ev.key.toLowerCase();
+      // modelando ponto a ponto: Esc, Delete, F, M, Tab são do Modelar
+      if (this.ferramenta === 'malha' && !ev.ctrlKey && !ev.metaKey && !ev.altKey && this.secoes.malha.tecla(ev)) { ev.preventDefault(); return; }
       if ((ev.ctrlKey || ev.metaKey) && k === 'z' && !ev.shiftKey) { ev.preventDefault(); this.desfazer(); }
       else if ((ev.ctrlKey || ev.metaKey) && (k === 'y' || (k === 'z' && ev.shiftKey))) { ev.preventDefault(); this.refazer(); }
       else if ((ev.ctrlKey || ev.metaKey) && k === 'a') { ev.preventDefault(); this.cena.selecionarTodos(); }
@@ -591,6 +598,7 @@ export class Estudio {
     if (this.previaAtiva) return;
     if (this.ferramenta === 'desenhar') { this.emitir('clique-mesa', { ponto: this.visor.pontoNaMesa(ev), ev }); return; }
     if (this.ferramenta === 'referencia' && this.secoes.referencia.estaMedindo()) { this.emitir('clique-ref', { ev }); return; }
+    if (this.ferramenta === 'malha') { this.secoes.malha.clique(ev); return; }
     const hit = this.visor.intersectar(ev);
     if (this.ferramenta === 'navegar' || !hit) {
       if (hit) this.cena.selecionar(hit.objeto, hit.parte, ev.shiftKey);
@@ -619,6 +627,7 @@ export class Estudio {
       : f === 'esculpir' ? 'arraste sobre a peça pra esculpir · começando fora dela, gira a vista'
       : f === 'desenhar' ? 'clique na mesa pra marcar pontos · clique no 1º pra fechar · arraste um ponto pra mudar'
       : f === 'referencia' ? 'arraste a foto pra mudar de lugar · arrastar fora dela gira a vista · rodinha: zoom'
+      : f === 'malha' ? 'clique por cima da foto pra pôr pontos · arraste um ponto pra mover · Esc solta a linha · arrastar no vazio gira a vista'
       : 'clique na peça · Shift soma · Alt tira · Esc volta';
     this.atualizarVazio();
     this.emitir('ferramenta', f);
@@ -627,7 +636,7 @@ export class Estudio {
   // ou quando a ferramenta trabalha na mesa vazia (Desenhar, Foto)
   atualizarVazio() {
     const refs = this.secoes.referencia ? this.secoes.referencia.lista().length : 0;
-    this.vazio.style.display = this.cena.objetos.length || refs || this.ferramenta === 'desenhar' || this.ferramenta === 'referencia' ? 'none' : '';
+    this.vazio.style.display = this.cena.objetos.length || refs || this.ferramenta === 'desenhar' || this.ferramenta === 'referencia' || this.ferramenta === 'malha' ? 'none' : '';
   }
   definirGizmoSilencioso(m) {
     this.topo.querySelectorAll('[data-g]').forEach(x => x.classList.toggle('ativo', x.dataset.g === m));
@@ -929,7 +938,7 @@ export class Estudio {
     const o = this.cena.objeto(id);
     if (!o) return;
     const c = this.cena.caixaExata(o);
-    const d = novoObjeto({ nome: o.nome + ' (cópia)', transform: M4.multiplicar(M4.translacao(c ? c.tam[0] + 6 : 10, 0, 0), o.transform), papel: o.papel, forma: o.forma, partes: o.partes.map(p => ({ ...p, id: undefined })) });
+    const d = novoObjeto({ nome: o.nome + ' (cópia)', transform: M4.multiplicar(M4.translacao(c ? c.tam[0] + 6 : 10, 0, 0), o.transform), papel: o.papel, forma: o.forma, gaiola: o.gaiola, partes: o.partes.map(p => ({ ...p, id: undefined })) });
     // a seleção passa pra CÓPIA (só ela): senão Excluir logo depois apagava as duas
     this.cena.aplicar('Duplicar', () => { this.cena.objetos.push(d); this.cena.sel = { objeto: d.id, parte: d.partes.length === 1 ? d.partes[0].id : null }; this.cena.multi = [d.id]; });
     return d;
@@ -1280,7 +1289,11 @@ export class Estudio {
     ];
   }
 
-  desfazer() { if (this.previaAtiva) this.cancelarPrevia(); const r = this.cena.desfazer(); if (r) avisar('Desfeito: ' + r); }
+  desfazer() {
+    if (this.previaAtiva) this.cancelarPrevia();
+    if (this.secoes.malha && this.secoes.malha.desfazerRascunho()) return;     // rascunho do Modelar: tira o último ponto
+    const r = this.cena.desfazer(); if (r) avisar('Desfeito: ' + r);
+  }
   refazer() { if (this.previaAtiva) this.cancelarPrevia(); const r = this.cena.refazer(); if (r) avisar('Refeito: ' + r); }
   enquadrar() {
     const o = this.cena.objetoSel();

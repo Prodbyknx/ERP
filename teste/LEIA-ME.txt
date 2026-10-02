@@ -17,7 +17,27 @@ COMO USAR
    de exemplo: Gabriel (admin) e Ana (vendedora).
 
 
-NOVIDADES DESTA VERSÃO (14) — CORREÇÕES DA AUDITORIA DO 3D
+NOVIDADES DESTA VERSÃO (15) — MODELAR POR CIMA DE UMA FOTO
+--------------------------------------------------------------------
+Como no Blender, mas pra quem nunca usou. Detalhes em FERRAMENTAS.txt.
+- FOTO (trilho da esquerda): ponha a foto de frente, de lado ou na mesa,
+  deixe mais clara (opacidade) e acerte o tamanho em mm clicando em 2
+  pontos de uma medida conhecida. Arraste a foto pra mudar de lugar.
+  Também entra arrastando a imagem pro 3D ou colando (Ctrl+V).
+- MODELAR: crie a peça clicando por cima da foto — cada clique é um
+  ponto, clicar no 1º fecha e vira face, clicar numa borda e depois na
+  foto puxa uma face nova até ali. Arraste pontos pra ajustar (na vista
+  de lado dá fundura). "Puxar face" dá volume.
+- ESPELHO: faça um lado, o outro aparece sozinho; mexer do lado
+  espelhado mexe nos dois.
+- A peça sai sempre SÓLIDA e fechada (espessura e suavizar), vai pro
+  Consertar e pro 3MF como qualquer outra, e continua editável.
+- O painel avisa se a peça se cruzar (o "8" sem querer) e como consertar.
+ARQUIVOS PRA SUBIR: o estudio3d.js mudou (e o cloud.js, na versão 14):
+suba o pacote inteiro.
+
+
+NOVIDADES DA VERSÃO 14 — CORREÇÕES DA AUDITORIA DO 3D
 --------------------------------------------------------------------
 Relatório completo da auditoria e o que foi corrigido: docs/AUDITORIA-3D.md
 (no repositório). Todas as abas do ERP continuam iguais.

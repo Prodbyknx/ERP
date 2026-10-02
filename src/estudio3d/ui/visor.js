@@ -315,8 +315,9 @@ export class Visor {
         it.parte = p;
         it.mesh.visible = p.visivel !== false;
         // furo: vermelho translúcido (mostra o que vai sair da peça)
-        const mat = it.mesh.material;
-        if (mat.transparent !== furo) { mat.transparent = furo; mat.opacity = furo ? 0.42 : 1; mat.depthWrite = !furo; mat.needsUpdate = true; }
+        // modelando por cima da foto: a peça fica translúcida (raio-X) pra foto aparecer
+        const mat = it.mesh.material, transl = furo || o.id === this.raioX, op = furo ? 0.42 : transl ? 0.45 : 1;
+        if (mat.transparent !== transl || mat.opacity !== op) { mat.transparent = transl; mat.opacity = op; mat.depthWrite = !transl; mat.needsUpdate = true; }
         it.mesh.renderOrder = furo ? 5 : 0;
         const chave = (furo ? 'furo|' : '') + p.cor + '|' + (p.paleta ? p.paleta.join(',') : '') + '|' + it.malha.idx.length;
         if (chave !== it.chaveCor) { it.chaveCor = chave; it.base = furo ? this.coresFuro(it.malha) : this.coresBase({ ...p, malha: it.malha }); }
@@ -544,6 +545,52 @@ export class Visor {
       }
     });
     return out;
+  }
+
+  /* ------------------------------------------------ malha editável (Modelar) */
+  // d = { matriz, pos: [x,y,z,...], corPonto: [r,g,b,...], seg: [i,j,...], corSeg: [r,g,b por ponta],
+  //       faces: [x,y,z,... triângulos escolhidos], espelho: [x0,y0,z0,x1,y1,z1] }
+  // Sempre por cima de tudo (a gente precisa ver os pontos atrás da peça/da foto).
+  mostrarGaiola(d) {
+    this.limparAjudas('gaiola');
+    if (!d) return;
+    const raiz = new THREE.Group(); raiz.userData.tipo = 'gaiola';
+    if (d.matriz) { raiz.matrixAutoUpdate = false; raiz.matrix.fromArray(d.matriz); }
+    const sem = x => { x.raycast = () => {}; x.frustumCulled = false; return x; };
+    if (d.faces && d.faces.length) {
+      const b = new THREE.BufferGeometry(); b.setAttribute('position', new THREE.Float32BufferAttribute(d.faces, 3));
+      const m = sem(new THREE.Mesh(b, new THREE.MeshBasicMaterial({ color: '#e54c00', transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthTest: false, depthWrite: false })));
+      m.renderOrder = 12; raiz.add(m);
+    }
+    if (d.espelho) {
+      const b = new THREE.BufferGeometry(); b.setAttribute('position', new THREE.Float32BufferAttribute(d.espelho, 3));
+      const l = sem(new THREE.LineSegments(b, new THREE.LineBasicMaterial({ color: '#2da44e', depthTest: false, transparent: true, opacity: 0.9 })));
+      l.renderOrder = 13; raiz.add(l);
+    }
+    if (d.seg && d.seg.length) {
+      const pos = [];
+      for (let k = 0; k < d.seg.length; k++) { const i = d.seg[k]; pos.push(d.pos[i * 3], d.pos[i * 3 + 1], d.pos[i * 3 + 2]); }
+      const b = new THREE.BufferGeometry();
+      b.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      b.setAttribute('color', new THREE.Float32BufferAttribute(d.corSeg, 3));
+      const l = sem(new THREE.LineSegments(b, new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true })));
+      l.renderOrder = 13; raiz.add(l);
+    }
+    if (d.pos && d.pos.length) {
+      if (!this._bolinha) {
+        const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+        const c = cv.getContext('2d'); c.fillStyle = '#fff'; c.beginPath(); c.arc(32, 32, 26, 0, Math.PI * 2); c.fill();
+        c.lineWidth = 8; c.strokeStyle = 'rgba(0,0,0,0.55)'; c.stroke();
+        this._bolinha = new THREE.CanvasTexture(cv);
+      }
+      const b = new THREE.BufferGeometry();
+      b.setAttribute('position', new THREE.Float32BufferAttribute(d.pos, 3));
+      b.setAttribute('color', new THREE.Float32BufferAttribute(d.corPonto, 3));
+      const p = sem(new THREE.Points(b, new THREE.PointsMaterial({ size: 11, sizeAttenuation: false, vertexColors: true, map: this._bolinha, alphaTest: 0.4, transparent: true, depthTest: false })));
+      p.renderOrder = 14; raiz.add(p);
+    }
+    this.raizAjuda.add(raiz);
+    this.pedirRender();
   }
 
   /* ------------------------------------------------ fotos de referência */

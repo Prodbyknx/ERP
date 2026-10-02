@@ -4,6 +4,7 @@
 import * as M4 from '../core/mat4.js';
 import { caixa, juntarCaixas, transformar } from '../core/malha.js';
 import { normalizarHex, COR_PADRAO, PALETA_PECAS } from '../core/cores.js';
+import { transformarGaiola } from '../core/gaiola.js';
 
 let seq = 1;
 
@@ -62,6 +63,7 @@ export function novoObjeto(o) {
     forma: o.forma || null,                             // { id, params, texto? } quando veio da biblioteca
     esticado: o.esticado ? Float64Array.from(o.esticado) : undefined,   // escala que já foi pra malha (só pra mostrar %)
     desenho: o.desenho || undefined,                    // peça feita no Desenhar: pontos pra editar depois
+    gaiola: o.gaiola || undefined,                      // peça modelada ponto a ponto (Modelar): a malha editável
     operacoes: o.forma && o.operacoes ? o.operacoes : undefined   // Modificar feitos na forma (refeitos ao mudar medida)
   };
 }
@@ -185,7 +187,10 @@ export class Cena {
       const sep = M4.separarEsticar(o.transform);
       if (!sep) continue;
       const S = sep.esticar;
+      const geradaAntes = o.gaiola && o.partes.length === 1 && o.gaiola.gerada === o.partes[0].malha;
       for (const p of o.partes) p.malha = transformar(p.malha, S);
+      // malha editável acompanha a escala (senão editar de novo voltava ao tamanho antigo)
+      if (o.gaiola) o.gaiola = { ...transformarGaiola(o.gaiola, S), gerada: geradaAntes ? o.partes[0].malha : null };
       o.transform = sep.rigida;
       o.esticado = M4.multiplicar(S, o.esticado || M4.identidade());
       if (M4.ehIdentidade(o.esticado, 1e-9)) o.esticado = undefined;
