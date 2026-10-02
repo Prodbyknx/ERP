@@ -257,7 +257,7 @@ export class Estudio {
   mostrarCabecalho(sec) {
     const f = FERRAMENTAS.find(x => x.sec === sec) || FERRAMENTAS[0];
     this.trilho.querySelectorAll('button[data-ferr]').forEach(b => b.classList.toggle('ativo', b.dataset.ferr === f.sec));
-    this.painelCab.innerHTML = '<div class="rot"><i>' + icone(f.ico, 19) + '</i><h3>' + f.titulo + '</h3></div><p>' + f.desc + '</p>';
+    this.painelCab.innerHTML = '<div class="rot"><i>' + icone(f.ico, 19) + '</i><h3>' + esc(f.titulo) + '</h3></div><p>' + esc(f.desc) + '</p>';
     this.painel.classList.toggle('inicio', f.sec === 'inicio');
     if (f.sec === 'inicio') this.renderInicio();
     this.painelCorpo.scrollTop = 0;

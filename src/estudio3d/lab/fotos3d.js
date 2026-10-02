@@ -65,7 +65,7 @@ async function gerar() {
 function mostrar(r, entradas, alturaMM) {
   const a = r.relatorio.avaliacao, malha = r.objeto.partes[0].malha;
   const pct = x => (x * 100).toFixed(1) + '%';
-  $('#numeros').innerHTML = [
+  $('#numeros').innerHTML = [   // html-seguro: cada célula passa por esc() no .map abaixo
     ['Imprimível (fechado, sem auto-interseção)', a.imprimivel ? 'sim' : 'NÃO'],
     ['Fidelidade média / pior vista', pct(a.fidelidadeMedia) + ' / ' + pct(a.fidelidadeMinima)],
     ['Medidas (mm)', a.medidasMM.join(' × ')], ['Volume', a.volumeCm3.toFixed(1) + ' cm³'],

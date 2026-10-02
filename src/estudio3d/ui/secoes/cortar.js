@@ -1,5 +1,5 @@
 // Painel 5 — cortar por plano (X/Y/Z ou inclinado) com conectores.
-import { el, fmt, lerNumero, avisar } from '../util.js';
+import { el, esc, fmt, lerNumero, avisar } from '../util.js';
 import { novaParte, novoObjeto } from '../cena.js';
 import { TIPOS_CONECTOR, medidaTexto } from '../../core/conectores.js';
 import { planoParaLocal } from '../../core/corte.js';
@@ -202,9 +202,9 @@ export function montarCortar(est) {
       const r = await est.rodar('sugerirSeparacao', { partes: o.partes.map(p => est.parteParaMotor(p)), ponto, opc: { encaixe: q('tipo').value !== 'nenhum' } }, 'Achar onde separar');
       sug = { objId: o.id, plano: r.plano, centro: r.centro, raio: r.raio, ponto };
       q('pos').value = 50;
-      q('res').innerHTML = '<div class="e3d-nota ok">Achei o ponto mais fino (≈ Ø ' + fmt(2 * r.raio, 1) + ' mm). Ajuste com a seta ou ↑ ↓ e clique em Cortar.' + (r.avisos.length ? '<br>' + r.avisos.join('<br>') : '') + '</div>';
+      q('res').innerHTML = '<div class="e3d-nota ok">Achei o ponto mais fino (≈ Ø ' + fmt(2 * r.raio, 1) + ' mm). Ajuste com a seta ou ↑ ↓ e clique em Cortar.' + (r.avisos.length ? '<br>' + r.avisos.map(esc).join('<br>') : '') + '</div>';
       mostrarPlano();
-    } catch (e) { sug = null; q('res').innerHTML = '<div class="e3d-nota erro">' + (e.message || e) + '</div>'; est.visor.limparAjudas('corte'); }
+    } catch (e) { sug = null; q('res').innerHTML = '<div class="e3d-nota erro">' + esc(e.message || e) + '</div>'; est.visor.limparAjudas('corte'); }
   }
   q('lado2').addEventListener('click', ev => { const b = ev.target.closest('button'); if (!b) return; ladoPino = b.dataset.v; q('lado2').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b)); });
 
@@ -241,7 +241,7 @@ export function montarCortar(est) {
     q('res').innerHTML = '<div class="e3d-nota">Separando…</div>';
     let r;
     try { r = await est.rodar('cortarLocal', { partes: o.partes.map(x => est.parteParaMotor(x)), plano: p.local, ponto: sug.ponto, opc: { conector: cfgConector(), nomeParte: o.nome + ' – parte' } }, 'Separar parte'); }
-    catch (e) { q('res').innerHTML = '<div class="e3d-nota erro">' + (e.message || e) + '</div>'; return; }
+    catch (e) { q('res').innerHTML = '<div class="e3d-nota erro">' + esc(e.message || e) + '</div>'; return; }
     finally { q('ir').disabled = false; }
     est.visor.limparAjudas('corte');
     const afasta = Math.max(6, sug.raio * 3), n = p.mundo.n;
@@ -266,7 +266,7 @@ export function montarCortar(est) {
           est.cena.sel = { objeto: A.id, parte: A.partes.length === 1 ? A.partes[0].id : null };
         });
         sug = null;
-        q('res').innerHTML = '<div class="e3d-nota ok">Parte separada' + (r.relatorio.length ? ' com encaixe (' + r.relatorio.map(x => x.pino + '/' + x.furo).join(', ') + ')' : '') + '. Clique em outra parte pra continuar.</div>';
+        q('res').innerHTML = '<div class="e3d-nota ok">Parte separada' + (r.relatorio.length ? ' com encaixe (' + esc(r.relatorio.map(x => x.pino + '/' + x.furo).join(', ')) + ')' : '') + '. Clique em outra parte pra continuar.</div>';
         refazerTudo();
       },
       cancelar: () => { q('res').innerHTML = ''; mostrarPlano(); }
@@ -285,7 +285,7 @@ export function montarCortar(est) {
     q('res').innerHTML = '<div class="e3d-nota">Cortando…</div>';
     let r;
     try { r = await est.rodar('cortar', { partes: o.partes.map(p => est.parteParaMotor(p)), plano, opc }, 'Cortar'); }
-    catch (e) { q('res').innerHTML = '<div class="e3d-nota erro">' + (e.message || e) + '</div>'; return; }
+    catch (e) { q('res').innerHTML = '<div class="e3d-nota erro">' + esc(e.message || e) + '</div>'; return; }
     finally { q('ir').disabled = false; }
     est.visor.limparAjudas('corte');
     const c = est.cena.caixaObjeto(o);
@@ -300,7 +300,7 @@ export function montarCortar(est) {
     // pediu conector e não saiu nenhum: diz em destaque e por quê (antes só cortava calado)
     const semConector = opc.conector && !r.relatorio.length;
     const alerta = semConector ? 'Saiu SEM conector: ' + (r.avisos.find(a => /encaixe|conector|pino|espessura|largura/i.test(a)) || 'não coube encaixe nesse corte.') : null;
-    q('res').innerHTML = semConector ? '<div class="e3d-nota aviso">' + alerta + '</div>' : '<div class="e3d-nota ok">Prévia: confirme em cima do 3D. Área do corte: ' + fmt(r.areaSecao, 1) + ' mm².</div>';
+    q('res').innerHTML = semConector ? '<div class="e3d-nota aviso">' + esc(alerta) + '</div>' : '<div class="e3d-nota ok">Prévia: confirme em cima do 3D. Área do corte: ' + fmt(r.areaSecao, 1) + ' mm².</div>';
     est.mostrarPrevia({
       titulo: 'Corte em 2 partes', legenda: [['#0659f2', 'face do corte / conector']], objetos, explodir: 1, notas: semConector ? notas.filter(a => a !== alerta.replace('Saiu SEM conector: ', '')) : notas, alerta, textoConfirmar: semConector ? 'Cortar sem conector' : 'Confirmar corte',
       confirmar: () => {
@@ -314,7 +314,7 @@ export function montarCortar(est) {
           for (const x of extras) { est.cena.colocarNaMesa(x); }
           est.cena.sel = { objeto: A.id, parte: A.partes.length === 1 ? A.partes[0].id : null };
         });
-        q('res').innerHTML = '<div class="e3d-nota ' + (semConector ? 'aviso' : 'ok') + '">Cortado' + (semConector ? ' SEM conector' : '') + '. As partes ficaram no lugar; use <b>Organizar mesa</b> pra imprimir.' + (r.relatorio.length ? ' Conectores: ' + r.relatorio.map(x => x.pino ? x.pino + '/' + x.furo : x.tipo).join(', ') + (r.extras.length ? ' + ' + r.extras.length + ' pino(s) solto(s) pra imprimir' : '') + '.' : '') + '</div>';
+        q('res').innerHTML = '<div class="e3d-nota ' + (semConector ? 'aviso' : 'ok') + '">Cortado' + (semConector ? ' SEM conector' : '') + '. As partes ficaram no lugar; use <b>Organizar mesa</b> pra imprimir.' + (r.relatorio.length ? ' Conectores: ' + esc(r.relatorio.map(x => x.pino ? x.pino + '/' + x.furo : x.tipo).join(', ')) + (r.extras.length ? ' + ' + r.extras.length + ' pino(s) solto(s) pra imprimir' : '') + '.' : '') + '</div>';
         refazerTudo();
       },
       cancelar: () => { q('res').innerHTML = ''; mostrarPlano(); }

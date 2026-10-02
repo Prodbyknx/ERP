@@ -1,6 +1,6 @@
 // Painel 4 — separar para impressão: região selecionada vira peça
 // independente, as DUAS fechadas; separar por cor/material e por casca.
-import { el, fmt, lerNumero, avisar } from '../util.js';
+import { el, esc, fmt, lerNumero, avisar } from '../util.js';
 import { novaParte, novoObjeto } from '../cena.js';
 import { nomeDaCor } from '../../core/cores.js';
 import { caixa } from '../../core/malha.js';
@@ -56,7 +56,7 @@ export function montarSeparar(est) {
   atualizarCon();
   est.on('faces', ({ parte, n }) => {
     q('status').className = 'e3d-nota' + (n ? ' ok' : '');
-    q('status').innerHTML = n ? '<b>' + n.toLocaleString('pt-BR') + ' faces</b> selecionadas em ' + parte.nome + '. Ajuste abaixo e veja a prévia.' : 'Nenhum detalhe selecionado — clique nele no 3D.';
+    q('status').innerHTML = n ? '<b>' + n.toLocaleString('pt-BR') + ' faces</b> selecionadas em ' + esc(parte.nome) + '. Ajuste abaixo e veja a prévia.' : 'Nenhum detalhe selecionado — clique nele no 3D.';
   });
   est.on('nome-sugerido', n => { if (!q('nome').value || q('nome').dataset.auto) { q('nome').value = n; q('nome').dataset.auto = '1'; } });
   q('nome').addEventListener('input', () => { delete q('nome').dataset.auto; });
@@ -79,7 +79,7 @@ export function montarSeparar(est) {
     q('res').innerHTML = '<div class="e3d-nota">Separando…</div>';
     let r;
     try { r = await est.rodar('separarDetalhe', { parte: est.parteParaMotor(p), mascara: mask, opc }, 'Separar'); }
-    catch (e) { q('res').innerHTML = '<div class="e3d-nota erro">' + (e.message || e) + '</div>'; return; }
+    catch (e) { q('res').innerHTML = '<div class="e3d-nota erro">' + esc(e.message || e) + '</div>'; return; }
     finally { q('ir').disabled = false; }
     const cd = caixa(r.detalhe.malha);
     const tam = cd ? Math.max(...cd.tam) : 10;
@@ -93,7 +93,7 @@ export function montarSeparar(est) {
     // pediu pino e não saiu: em destaque (não só numa nota pequena)
     const semConector = !!opc.conector && !r.relatorio.length;
     const alerta = semConector ? 'Saiu SEM pino: ' + (r.avisos.find(a => /encaixe|conector|pino|espessura|largura|fina/i.test(a)) || 'não coube pino nesse detalhe.') : null;
-    q('res').innerHTML = '<div class="e3d-nota ' + (semConector ? 'aviso' : 'ok') + '">' + (semConector ? alerta + '<br>' : 'Prévia pronta: confira e confirme em cima do 3D.<br>') + 'Peça separada: ' + fmt(r.volumes.detalhe / 1000, 2) + ' cm³ · fica: ' + fmt(r.volumes.principal / 1000, 2) + ' cm³</div>';
+    q('res').innerHTML = '<div class="e3d-nota ' + (semConector ? 'aviso' : 'ok') + '">' + (semConector ? esc(alerta) + '<br>' : 'Prévia pronta: confira e confirme em cima do 3D.<br>') + 'Peça separada: ' + fmt(r.volumes.detalhe / 1000, 2) + ' cm³ · fica: ' + fmt(r.volumes.principal / 1000, 2) + ' cm³</div>';
     est.mostrarPrevia({
       alerta,
       titulo: 'Separar "' + nome + '"',
@@ -116,8 +116,8 @@ export function montarSeparar(est) {
           est.cena.sel = { objeto: novo.id, parte: novo.partes[0].id };
         });
         const enc = r.relatorio && r.relatorio.length ? r.relatorio[0] : null;
-        q('res').innerHTML = '<div class="e3d-nota ' + (semConector ? 'aviso' : 'ok') + '">"' + nome + '" virou um objeto próprio, na mesma posição' + (semConector ? ', SEM pino' : '') + '.' +
-          (enc && enc.filamento ? ' Encaixe: furo Ø2 mm dos dois lados — use ' + r.relatorio.length + ' pedaço(s) de filamento 1,75 mm com ' + fmt(enc.comprimentoPino, 1) + ' mm como pino.' : enc ? ' Encaixe: pino ' + enc.pino + '.' : '') +
+        q('res').innerHTML = '<div class="e3d-nota ' + (semConector ? 'aviso' : 'ok') + '">"' + esc(nome) + '" virou um objeto próprio, na mesma posição' + (semConector ? ', SEM pino' : '') + '.' +
+          (enc && enc.filamento ? ' Encaixe: furo Ø2 mm dos dois lados — use ' + r.relatorio.length + ' pedaço(s) de filamento 1,75 mm com ' + fmt(enc.comprimentoPino, 1) + ' mm como pino.' : enc ? ' Encaixe: pino ' + esc(enc.pino) + '.' : '') +
           ((r.pinos || []).length ? ' ' + r.pinos.length + ' pino(s) solto(s) na mesa pra imprimir.' : '') + ' Pra imprimir separado, use <b>Organizar mesa</b> ou mova a peça.</div>';
         q('nome').value = '';
       },

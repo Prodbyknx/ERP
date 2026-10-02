@@ -17,7 +17,20 @@ COMO USAR
    de exemplo: Gabriel (admin) e Ana (vendedora).
 
 
-NOVIDADES DESTA VERSÃO (13) — SEGURANÇA NO SERVIDOR + COPIAR/COLAR
+NOVIDADES DESTA VERSÃO (14) — AUDITORIA DO 3D, PARTE 1: SEGURANÇA
+--------------------------------------------------------------------
+Relatório completo da auditoria: docs/AUDITORIA-3D.md (no repositório).
+- ARQUIVO 3D NÃO RODA MAIS CÓDIGO: um 3MF/OBJ baixado da internet com
+  código escondido no nome da peça, do objeto ou do material executava
+  dentro do ERP só de abrir (e de novo no Consertar, no Separar e no
+  Exportar). Agora todo nome, erro e aviso aparece como TEXTO.
+  Teste novo (E2E "XSS 3D") abre arquivos maliciosos e passa por
+  abrir, exportar, consertar, selecionar e separar; e um teste que lê o
+  código e falha se algum nome/erro voltar a entrar como HTML.
+ARQUIVOS PRA SUBIR: só o estudio3d.js mudou (o pacote inteiro serve).
+
+
+NOVIDADES DA VERSÃO 13 — SEGURANÇA NO SERVIDOR + COPIAR/COLAR
 --------------------------------------------------------------------
 Detalhes e passo a passo em seguranca/LEIA-ME-SEGURANCA.txt.
 - PROTEÇÃO NO SERVIDOR (seguranca/protecao-servidor.sql): o banco confere

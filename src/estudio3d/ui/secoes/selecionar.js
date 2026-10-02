@@ -1,6 +1,6 @@
 // Painel 3 — selecionar região (sem editar triângulo por triângulo) e
 // detectar partes. Tudo roda na thread principal: é rápido (BFS em arrays).
-import { el, fmt, fmtInt, avisar } from '../util.js';
+import { el, esc, fmt, fmtInt, avisar } from '../util.js';
 import { crescerRegiao, parteAlemDoPlano, componenteConectado, expandir, reduzir, inverter, similar, suavizarBorda, limpar, contar, areaSelecionada, uniao, subtrair } from '../../core/selecao.js';
 import { corDeRotulo } from './diagnostico.js';
 import * as M4 from '../../core/mat4.js';
@@ -211,7 +211,7 @@ export function montarSelecionar(est) {
     const m = est.visor.selecao(p.id);
     const n = m ? contar(m) : 0;
     const total = p.malha.idx.length / 3;
-    box.innerHTML = n ? '<b>' + fmtInt(n) + '</b> de ' + fmtInt(total) + ' faces selecionadas · ' + fmt(areaSelecionada(p.malha, m), 1) + ' mm² — agora use <b>Separar</b>.' : 'Nada selecionado em <b>' + p.nome + '</b>.';
+    box.innerHTML = n ? '<b>' + fmtInt(n) + '</b> de ' + fmtInt(total) + ' faces selecionadas · ' + fmt(areaSelecionada(p.malha, m), 1) + ' mm² — agora use <b>Separar</b>.' : 'Nada selecionado em <b>' + esc(p.nome) + '</b>.';
     est.emitir('faces', { parte: p, n, total });
   }
 

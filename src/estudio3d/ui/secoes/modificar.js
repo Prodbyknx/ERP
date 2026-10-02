@@ -2,7 +2,7 @@
 // deixar oca (casca) e espelhar. Geometria real no motor, sempre com prévia
 // antes de aplicar e Desfazer. Em peça criada no Estúdio a operação entra na
 // lista de operações da forma (dá pra mudar o valor depois).
-import { el, fmt, lerNumero, avisar } from '../util.js';
+import { el, esc, fmt, lerNumero, avisar } from '../util.js';
 import { detectarArestas, arestaPerto } from '../../core/arestas.js';
 import { limites } from '../../core/arredondar.js';
 import { facePlana } from '../../core/modificar.js';
@@ -237,7 +237,7 @@ export function montarModificar(est) {
     q('res').innerHTML = '<div class="e3d-nota">Calculando…</div>';
     let r;
     try { r = await est.rodar('modificar', { parte: est.parteParaMotor(p), op }, NOME_OP[ferr]); }
-    catch (e) { q('res').innerHTML = '<div class="e3d-nota erro">' + (e.message || e) + '</div>'; return; }
+    catch (e) { q('res').innerHTML = '<div class="e3d-nota erro">' + esc(e.message || e) + '</div>'; return; }
     finally { q('ir').disabled = false; }
     q('res').innerHTML = '';
     est.visor.limparAjudas('bordas');

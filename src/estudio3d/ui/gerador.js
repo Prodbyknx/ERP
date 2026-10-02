@@ -549,7 +549,7 @@ export class Gerador {
     if (!this.origem) { this.antesEl.classList.remove('on'); return; }
     this.antesEl.classList.add('on');
     const sim = this.cfg.modelo === 'litofania' ? this.urlSimulacao() : null;
-    this.antesEl.innerHTML = '<img alt="" src="' + (sim || this.origem.url) + '">' + bt('data-b="comparar2" title="' + (sim ? 'Como fica contra a luz' : 'Comparar com a original') + '"', null, sim ? 'Contra a luz × peça' : 'Original × chaveiro');
+    this.antesEl.innerHTML = '<img alt="" src="' + esc(sim || this.origem.url) + '">' + bt('data-b="comparar2" title="' + (sim ? 'Como fica contra a luz' : 'Comparar com a original') + '"', null, sim ? 'Contra a luz × peça' : 'Original × chaveiro');
     this.antesEl.querySelector('[data-b=comparar2]').onclick = () => this.alternarComparar();
   }
 
@@ -614,7 +614,7 @@ export class Gerador {
     const an = this.an, r = this.res;
     // logo
     const logo = el('div', { class: 'e3g-logo' });
-    logo.innerHTML = '<img alt="" src="' + this.origem.url + '"><div class="txt"><b>' + esc(this.origem.nome) + '</b>' +
+    logo.innerHTML = '<img alt="" src="' + esc(this.origem.url) + '"><div class="txt"><b>' + esc(this.origem.nome) + '</b>' +
       (this.cfg.modelo === 'litofania' ? 'Litofania · a foto em tons, contra a luz' : esc(MODO_RECORTE[an.modo]) + ' · ' + an.cores.length + (an.cores.length === 1 ? ' cor' : ' cores') + (an.coresBrutas > 4 && !an.poster ? ' (de ' + an.coresBrutas + ' tons)' : '')) + '</div>';
     logo.appendChild(el('button', { type: 'button', class: 'btn mini', onclick: () => this.input.click() }, 'Trocar'));
     c.appendChild(logo);

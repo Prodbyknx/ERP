@@ -1,5 +1,5 @@
 // Painel 7 — exportar 3MF (Bambu Studio) e STL
-import { el, baixar, avisar, nomeArquivo } from '../util.js';
+import { el, esc, baixar, avisar, nomeArquivo } from '../util.js';
 import { nomeDaCor } from '../../core/cores.js';
 import * as M4 from '../../core/mat4.js';
 
@@ -59,7 +59,7 @@ export function montarExportar(est) {
     const cores = new Map();
     for (const o of objs) for (const p of o.partes) { cores.set(p.cor, (cores.get(p.cor) || 0) + 1); if (p.paleta) p.paleta.forEach(h => cores.set(h, cores.get(h) || 0)); }
     q('cores').innerHTML = objs.length
-      ? '<b>' + objs.length + ' objeto(s), ' + cores.size + ' cor(es):</b> ' + [...cores.keys()].map((h, i) => '<span style="white-space:nowrap"><span class="e3d-bola" style="display:inline-block;vertical-align:-2px;background:' + h + '"></span> ' + (i + 1) + ': ' + nomeDaCor(h) + ' <span class="e3d-cores-hex">' + h + '</span></span>').join(' · ')
+      ? '<b>' + objs.length + ' objeto(s), ' + cores.size + ' cor(es):</b> ' + [...cores.keys()].map((h, i) => '<span style="white-space:nowrap"><span class="e3d-bola" style="display:inline-block;vertical-align:-2px;background:' + esc(h) + '"></span> ' + (i + 1) + ': ' + esc(nomeDaCor(h)) + ' <span class="e3d-cores-hex">' + esc(h) + '</span></span>').join(' · ')
       : 'Nada pra exportar.';
     if (!q('nome').value && objs[0]) q('nome').placeholder = nomeArquivo(objs[0].nome);
   }
@@ -74,7 +74,7 @@ export function montarExportar(est) {
       const miniatura = await est.visor.miniatura(256).catch(() => null);
       const r = await est.rodar('exportar3MF', { cena: { objetos: objs }, opc: { titulo: q('nome').value || objs[0].nome, miniatura } }, 'Exportar 3MF');
       baixar(r.bytes, nome + (escopo === 'placa' ? ' - placa ' + (est.cena.placaAtiva + 1) : '') + '.3mf', 'model/3mf');
-      q('res').innerHTML = '<div class="e3d-nota ok">3MF gerado: ' + r.cores.length + ' filamento(s) na ordem ' + r.cores.map((h, i) => (i + 1) + '=' + h).join(', ') + '.' + (r.avisos.length ? '<br>' + r.avisos.join('<br>') : '') + (fora.length ? '<br>Atenção: tem objeto abaixo da mesa (Z negativo) — o Bambu vai subir ele.' : '') + '</div>';
+      q('res').innerHTML = '<div class="e3d-nota ok">3MF gerado: ' + r.cores.length + ' filamento(s) na ordem ' + esc(r.cores.map((h, i) => (i + 1) + '=' + h).join(', ')) + '.' + (r.avisos.length ? '<br>' + r.avisos.map(esc).join('<br>') : '') + (fora.length ? '<br>Atenção: tem objeto abaixo da mesa (Z negativo) — o Bambu vai subir ele.' : '') + '</div>';
     } finally { q('3mf').disabled = false; }
   }
   // TODAS AS PLACAS: um 3MF por placa, cada um com as peças na placa 1

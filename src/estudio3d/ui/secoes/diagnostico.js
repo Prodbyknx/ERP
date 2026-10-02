@@ -1,5 +1,5 @@
 // Painel 1 — abrir e conferir a malha (diagnóstico + reparo)
-import { el, fmt, fmtInt, avisar } from '../util.js';
+import { el, esc, fmt, fmtInt, avisar } from '../util.js';
 import { facesProblematicas } from '../../core/validador.js';
 import { componentes } from '../../core/topologia.js';
 import { srgbParaLinear } from '../../core/cores.js';
@@ -44,7 +44,7 @@ export function montarDiagnostico(est) {
         try {
           const rel = await est.rodar('analisar', { parte: est.parteParaMotor(p), opc: { completo: true } }, 'Analisar');
           est.diag.set(p.id, { rel, malha: p.malha });
-        } catch (e) { $('resultado').innerHTML = '<div class="e3d-nota erro">' + (e.message || e) + '</div>'; return; }
+        } catch (e) { $('resultado').innerHTML = '<div class="e3d-nota erro">' + esc(e.message || e) + '</div>'; return; }
       }
     } finally {
       o.partes.forEach(p => est.analisando.delete(p.malha));
@@ -157,7 +157,7 @@ export function montarDiagnostico(est) {
         : '<div class="e3d-nota aviso">' + (fechada ? 'A malha fecha, mas tem pontos de atenção acima.' : 'A malha tem defeitos que o fatiador pode interpretar errado. Use <b>Consertar automaticamente</b>.') + '</div>';
       if (ultimoReparo) {
         const ps = ultimoReparo.filter(x => x.passos.length);
-        if (ps.length) h += '<div class="e3d-nota"><b>Reparo:</b> ' + ps.map(x => x.nome + ': ' + x.passos.join('; ')).join(' · ') + '</div>';
+        if (ps.length) h += '<div class="e3d-nota"><b>Reparo:</b> ' + ps.map(x => esc(x.nome) + ': ' + esc(x.passos.join('; '))).join(' · ') + '</div>';
       }
       res.innerHTML = h;
       if (auto > 0 && soma('componentes') > 1) extra.appendChild(el('button', { class: 'btn', title: 'Cascas que se atravessam viram um sólido só (o fatiador faria isso)', onclick: unirSobrepostos }, 'Unir partes sobrepostas'));

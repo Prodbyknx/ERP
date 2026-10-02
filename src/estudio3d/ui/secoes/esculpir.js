@@ -3,7 +3,7 @@
 // (torcer, afunilar, dobrar, inflar) e suavizar de verdade. O pincel roda
 // aqui na tela e só mexe no que está debaixo dele; ao soltar, o traço vira
 // uma etapa do Desfazer (e é desfeito sozinho se a peça se cruzar).
-import { el, fmt, lerNumero, avisar } from '../util.js';
+import { el, esc, fmt, lerNumero, avisar } from '../util.js';
 import { criarSessao, tocar, concluir, arestaMedia } from '../../core/esculpir.js';
 import { analisarSuavizar, raioDaIntensidade } from '../../core/suavizar.js';
 import * as M4 from '../../core/mat4.js';
@@ -138,7 +138,7 @@ export function montarEsculpir(est) {
     const r = concluir(s);
     if (!r.mudou) {
       est.visor.descartarItem(p.id); est.visor.sincronizar();     // volta a malha de antes na tela
-      if (r.erro) q('info').innerHTML = '<span class="aviso">' + r.erro + '</span>';
+      if (r.erro) q('info').innerHTML = '<span class="aviso">' + esc(r.erro) + '</span>';
       return;
     }
     est.cena.aplicar('Esculpir ' + o.nome, () => trocar(o, p, r.malha));
@@ -165,8 +165,8 @@ export function montarEsculpir(est) {
     q('res').innerHTML = '<div class="e3d-nota">Calculando…</div>';
     let r;
     try { r = await est.rodar(op, { parte: est.parteParaMotor(p), ...args }, titulo); }
-    catch (e) { q('res').innerHTML = e && e.codigo === 'cancelado' ? '' : '<div class="e3d-nota erro">' + (e.message || e) + '</div>'; return; }
-    q('res').innerHTML = relatorio ? '<div class="e3d-nota ok">' + relatorio(r) + '</div>' : '';
+    catch (e) { q('res').innerHTML = e && e.codigo === 'cancelado' ? '' : '<div class="e3d-nota erro">' + esc(e.message || e) + '</div>'; return; }
+    q('res').innerHTML = relatorio ? '<div class="e3d-nota ok">' + relatorio(r) + '</div>' : '';   // html-seguro: relatorio só monta números (relSuave)
     est.mostrarPrevia({
       titulo, legenda: [], explodir: 0, textoConfirmar: 'Aplicar',
       objetos: [{ transform: o.transform, partes: o.partes.map(x => x.id === p.id ? { malha: r.parte.malha, cor: p.cor, paleta: p.paleta, papel: 'normal' } : { malha: x.malha, cor: x.cor, paleta: x.paleta, papel: 'normal' }) }],

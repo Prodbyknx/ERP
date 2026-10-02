@@ -1,6 +1,6 @@
 // Painel 6 — texto, logo, desenho ou SVG na FRENTE ou no VERSO da peça,
 // como alto-relevo, baixo-relevo, recorte ou peça colorida embutida.
-import { el, fmt, lerNumero, avisar, debounce } from '../util.js';
+import { el, esc, fmt, lerNumero, avisar, debounce } from '../util.js';
 import { novaParte } from '../cena.js';
 import { MODOS_RELEVO, referencialSuperficie } from '../../core/relevo.js';
 import { formaDeTexto, formaDeImagem, FONTES } from '../formas2d.js';
@@ -129,7 +129,7 @@ export function montarRelevo(est) {
     const p = o && o.partes.find(x => x.id === q('alvo').value);
     if (!d.open || !o || !p || est.previaAtiva || suprimir) { est.visor.limparAjudas('contorno'); return; }
     let f;
-    try { f = await obterForma(); } catch (e) { est.visor.limparAjudas('contorno'); q('res').innerHTML = '<div class="e3d-nota aviso">' + (e.message || e) + '</div>'; return; }
+    try { f = await obterForma(); } catch (e) { est.visor.limparAjudas('contorno'); q('res').innerHTML = '<div class="e3d-nota aviso">' + esc(e.message || e) + '</div>'; return; }
     q('res').innerHTML = '';
     const pr = params();
     const F = referencial(p, pr);
@@ -159,7 +159,7 @@ export function montarRelevo(est) {
     q('ir').disabled = true;
     let r;
     try { r = await est.rodar('relevo', { partes: o.partes.map(x => est.parteParaMotor(x)), alvo: alvoIdx, forma: { aneis: f.aneis }, opc }, 'Relevo'); }
-    catch (e) { q('res').innerHTML = '<div class="e3d-nota erro">' + (e.message || e) + '</div>'; return; }
+    catch (e) { q('res').innerHTML = '<div class="e3d-nota erro">' + esc(e.message || e) + '</div>'; return; }
     finally { q('ir').disabled = false; }
     est.visor.limparAjudas('contorno');
     est.mostrarPrevia({
@@ -173,7 +173,7 @@ export function montarRelevo(est) {
         });
         suprimir = true;
         est.visor.limparAjudas('contorno');
-        q('res').innerHTML = '<div class="e3d-nota ok">Aplicado. ' + (r.indiceNova >= 0 ? 'A peça colorida entra no 3MF com a cor ' + pr.cor + '. ' : '') + 'Mexa em qualquer campo pra pôr outro desenho.</div>';
+        q('res').innerHTML = '<div class="e3d-nota ok">Aplicado. ' + (r.indiceNova >= 0 ? 'A peça colorida entra no 3MF com a cor ' + esc(pr.cor) + '. ' : '') + 'Mexa em qualquer campo pra pôr outro desenho.</div>';
       },
       cancelar: () => contorno()
     });
