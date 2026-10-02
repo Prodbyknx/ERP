@@ -99,7 +99,8 @@ export function montarReferencia(est) {
     </div>
   </div>`;
   const q = s => d.querySelector('[data-a="' + s + '"]');
-  const input = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif,image/bmp,.png,.jpg,.jpeg,.webp,.gif,.bmp', multiple: true, style: 'display:none' });
+  // uma foto por vez aqui (o campo de vários arquivos é o do Abrir); várias de uma vez: arraste ou cole
+  const input = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif,image/bmp,.png,.jpg,.jpeg,.webp,.gif,.bmp', style: 'display:none' });
   d.appendChild(input);
 
   const refs = [];
