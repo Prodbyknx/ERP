@@ -274,7 +274,7 @@ export function montarModificar(est) {
           else if (oa.forma && oa.partes.length === 1) oa.operacoes = [...(oa.operacoes || []), op];
         });
         limparSel();
-        q('res').innerHTML = '<div class="e3d-nota ok">' + titulo + ' aplicado.' + (forma && !deforma ? ' Dá pra mudar o valor depois em <b>Formas</b> → Operações.' : '') + '</div>';
+        q('res').innerHTML = '<div class="e3d-nota ok">' + esc(titulo) + ' aplicado.' + (forma && !deforma ? ' Dá pra mudar o valor depois em <b>Formas</b> → Operações.' : '') + '</div>';
       },
       cancelar: () => { atualizar(); }
     });
