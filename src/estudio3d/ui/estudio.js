@@ -2,7 +2,7 @@
 import { Cena, novoObjeto, novaParte } from './cena.js';
 import { Visor } from './visor.js';
 import { Motor } from '../motor/cliente.js';
-import { el, esc, fmt, fmtInt, avisar, lerArquivo } from './util.js';
+import { el, esc, fmt, fmtInt, avisar, lerArquivo, baixar } from './util.js';
 import * as M4 from '../core/mat4.js';
 import { prepararAdjacencia } from '../core/selecao.js';
 import { transformar } from '../core/malha.js';
@@ -216,6 +216,17 @@ export class Estudio {
     this.ligarPalco();
     this.ligarAtalhos();
     this.cena.on('mudou', () => this.aoMudar());
+    // trabalho não exportado: o navegador pergunta antes de fechar/recarregar
+    // (o Estúdio não salva nada sozinho; antes se perdia tudo sem aviso)
+    // (só abrir arquivo não conta: dá pra abrir de novo)
+    this.cena.on('mudou', d => { if (!this.cena.objetos.length) this.naoExportado = false; else if (!(d && /^Abrir /.test(d.rotulo || ''))) this.naoExportado = true; });
+    window.addEventListener('beforeunload', ev => { if (this.temTrabalho()) { ev.preventDefault(); ev.returnValue = ''; } });
+    // modelo grande: o histórico encurta pra caber na memória — avisa uma vez
+    this.cena.on('historico-podado', ({ resta }) => {
+      if (this._avisouPoda) return;
+      this._avisouPoda = true;
+      avisar('Modelo grande: pra não faltar memória, o Desfazer guarda só os últimos ' + resta + ' passos.', 'warn');
+    });
     this.cena.on('selecao', () => this.aoSelecionar());
     this.visor.on('gizmo-fim', g => this.fimGizmo(g));
     this.visor.on('gizmo-mudou', () => this.atualizarHud());
@@ -737,6 +748,18 @@ export class Estudio {
     this.cena.aplicar(rotulo, () => fn(...objs));
     return true;
   }
+  // tem peça na mesa mexida depois da última exportação?
+  temTrabalho() { return !!this.naoExportado && this.cena.objetos.length > 0; }
+  // baixa tudo o que está na mesa num 3MF (usado quando a sessão do ERP
+  // acaba: dá pra salvar antes de entrar de novo, que recarrega a página)
+  async baixarTudo3MF() {
+    const objs = this.cena.objetos.filter(o => o.visivel !== false).map(o => ({ ...this.paraMotor(o), partes: o.partes.filter(p => p.visivel !== false).map(p => this.parteParaMotor(p)) })).filter(o => o.partes.length);
+    if (!objs.length) return false;
+    const r = await this.rodar('exportar3MF', { cena: { objetos: objs }, opc: { titulo: 'Estúdio 3D' } }, 'Baixar 3MF');
+    baixar(r.bytes, 'estudio-3d-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.3mf', 'model/3mf');
+    this.naoExportado = false;
+    return true;
+  }
   avisarMudou(rotulo) {
     avisar((rotulo ? rotulo + ': ' : '') + 'a peça mudou enquanto calculava (desfazer, excluir ou outra operação). Nada foi aplicado — faça de novo.', 'warn');
   }
@@ -1243,12 +1266,23 @@ export class Estudio {
     this.visor.definirModo(m);
     this.recalcularMapas();
   }
+  // O mapa de cor de cada modo depende só da malha (e do laudo/partes dela),
+  // não da posição: mover, girar ou renomear não recalcula nada. Antes cada
+  // mudança refazia tudo na tela (0,3–0,7 s travado com 1,3 M triângulos).
   recalcularMapas() {
     const m = this.visor.modo;
+    if (!this._mapas) this._mapas = new Map();            // parte.id -> { modo, malha, diag, segm, mapa }
+    const vivas = new Set();
     for (const o of this.cena.objetos) for (const p of o.partes) {
-      const mapa = this.emitirMapa(m, p);
+      vivas.add(p.id);
+      const diag = this.diag.get(p.id) || null, segm = this.segm.get(p.id) || null;
+      const c = this._mapas.get(p.id);
+      let mapa;
+      if (c && c.modo === m && c.malha === p.malha && c.diag === diag && c.segm === segm) mapa = c.mapa;
+      else { mapa = this.emitirMapa(m, p); this._mapas.set(p.id, { modo: m, malha: p.malha, diag, segm, mapa }); }
       if (mapa) this.visor.mapas.set(p.id, mapa); else this.visor.mapas.delete(p.id);
     }
+    for (const id of [...this._mapas.keys()]) if (!vivas.has(id)) this._mapas.delete(id);
     this.visor.pintarTudo();
   }
   emitirMapa(modo, parte) {

@@ -39,6 +39,9 @@
     // Evita piscar um modal em gravações rápidas, mantendo a proteção do lote.
     if(!busyTimer)busyTimer=setTimeout(()=>{busyTimer=null;block(text);},600);
   }
+  // Estúdio 3D com trabalho não exportado: antes de "Entrar" (que recarrega a
+  // página e apaga a mesa do Estúdio) oferece baixar o 3MF
+  function acaoEstudio(){try{const e=window.Estudio3D&&window.Estudio3D.estudio;return e&&e.temTrabalho&&e.temTrabalho()?[['Baixar o 3MF do Estúdio 3D antes',()=>e.baixarTudo3MF().catch(()=>{})]]:[];}catch(x){return [];}}
   function unblock(){clearTimeout(busyTimer);busyTimer=null;barrier.style.display='none';el('app-wrapper').inert=false;}
   function notice(msg){status.textContent=msg;}
   function download(data,name){const a=document.createElement('a'),url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
@@ -145,7 +148,7 @@
     pending.rejected=rejected;await persist().catch(()=>{});
     const actions=[['Verificar / tentar novamente',()=>send()],['Baixar alteração pendente',()=>download(pending,'144lab-alteracao-pendente.json')]];
     // Sessão encerrada: a alteração já está guardada nesta aba e volta depois de entrar de novo.
-    if(error.noSession&&sessionEnded)actions.unshift(['Entrar novamente',()=>location.reload()]);
+    if(error.noSession&&sessionEnded)actions.unshift(...acaoEstudio(),['Entrar novamente',()=>location.reload()]);
     if(rejected)actions.push(['Descartar e atualizar',async()=>{try{await refresh(true);await clearPending();dirty.clear();lastToast=null;applyIncoming(true);unblock();}catch(e){showFailure(e);}}]);
     block('A gravação não foi confirmada. '+(error.message||String(error))+' Seus dados pendentes foram preservados nesta aba.',actions);
   }
@@ -374,7 +377,7 @@
       else window.ERP_APP.afterLogin();
       startSync();
       client.auth.onAuthStateChange(event=>{
-        if(event==='SIGNED_OUT'){sessionEnded=true;stopSync();el('app-wrapper').style.display='none';block('Sessão encerrada. Entre novamente.',[['Entrar',()=>location.reload()]]);}
+        if(event==='SIGNED_OUT'){sessionEnded=true;stopSync();el('app-wrapper').style.display='none';block('Sessão encerrada. Entre novamente.',[...acaoEstudio(),['Entrar',()=>location.reload()]]);}
         // Token renovado depois de uma falha: recupera o que ficou para trás (fora do
         // callback, que o Supabase chama segurando a trava da sessão).
         else if(event==='TOKEN_REFRESHED'&&reconcileRequested)setTimeout(()=>refresh().catch(()=>{}),0);

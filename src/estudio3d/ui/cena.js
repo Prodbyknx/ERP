@@ -76,6 +76,10 @@ export class Cena {
     this.multi = [];                           // seleção múltipla (Shift+clique); a principal é sel.objeto
     this.mesa = { x: 256, y: 256 };            // Bambu A1 / P1 / X1
     this.limite = 40;
+    // além dos 40 passos, um teto de MEMÓRIA: cada passo guarda a malha inteira
+    // de antes (≈90 MB por conserto num modelo de 3,7 M triângulos). Passou do
+    // teto, os passos mais antigos saem (auditoria A4: a aba caía)
+    this.limiteBytes = 400 * 1024 * 1024;
     // PLACAS: mesma grade do Bambu Studio (colunas = ⌈√n⌉, passo = 1,2 × a
     // mesa, linhas descendo em −Y). A peça é da placa onde está o centro dela.
     this.placas = 1;
@@ -167,6 +171,7 @@ export class Cena {
     this.pilhaDesfazer.push({ rotulo, estado: antes, sel: selAntes, placas: placasAntes });
     if (this.pilhaDesfazer.length > this.limite) this.pilhaDesfazer.shift();
     this.pilhaRefazer = [];
+    this.podarHistorico();
     this.conferirSelecao();
     this.emitir('mudou', { rotulo });
     return r;
@@ -193,6 +198,31 @@ export class Cena {
         o.operacoes = ops.length ? ops : undefined;
       }
     }
+  }
+  // bytes das malhas que SÓ o histórico segura (as da cena atual não contam)
+  bytesHistorico() {
+    const atuais = new Set();
+    for (const o of this.objetos) for (const p of o.partes) atuais.add(p.malha);
+    const vistas = new Set();
+    let total = 0;
+    const contar = estado => {
+      for (const o of estado) for (const p of o.partes) {
+        const m = p.malha;
+        if (!m || atuais.has(m) || vistas.has(m)) continue;
+        vistas.add(m);
+        total += m.pos.byteLength + m.idx.byteLength + (m.cor ? m.cor.byteLength : 0);
+      }
+    };
+    for (const u of this.pilhaDesfazer) contar(u.estado);
+    for (const u of this.pilhaRefazer) contar(u.estado);
+    return total;
+  }
+  // passou do teto: tira os passos mais antigos (sempre fica pelo menos 1)
+  podarHistorico() {
+    let tirou = 0;
+    while (this.pilhaDesfazer.length > 1 && this.bytesHistorico() > this.limiteBytes) { this.pilhaDesfazer.shift(); tirou++; }
+    if (tirou) this.emitir('historico-podado', { tirou, resta: this.pilhaDesfazer.length });
+    return tirou;
   }
   podeDesfazer() { return this.pilhaDesfazer.length > 0; }
   podeRefazer() { return this.pilhaRefazer.length > 0; }

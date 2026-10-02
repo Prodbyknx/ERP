@@ -152,6 +152,16 @@ export function juntar(lista, coresBase) {
 
 // Pega só as faces pedidas e renumera os vértices usados.
 // faces: array/typed array de índices OU máscara Uint8Array(nT)
+// Mapa vértice -> novo índice reaproveitado entre chamadas (sempre volta todo
+// em -1). Antes cada chamada criava um array do tamanho de TODOS os vértices:
+// em peça de milhares de cascas, conferir/consertar virava O(cascas × vértices)
+// — o boneco "sujo" ficava 60 s parado em "Conferindo a malha 2%" (auditoria M6).
+let MAPA = new Int32Array(0);
+function mapaVazio(nv) {
+  if (MAPA.length < nv) MAPA = new Int32Array(Math.max(nv, MAPA.length * 2)).fill(-1);
+  return MAPA;
+}
+
 export function subMalha(m, faces) {
   const nt = m.idx.length / 3;
   let lista = faces;
@@ -160,25 +170,28 @@ export function subMalha(m, faces) {
     lista = new Uint32Array(c); c = 0;
     for (let t = 0; t < nt; t++) if (faces[t]) lista[c++] = t;
   }
-  const mapa = new Int32Array(m.pos.length / 3).fill(-1);
+  const mapa = mapaVazio(m.pos.length / 3);
+  const usados = new Int32Array(Math.min(lista.length * 3, m.pos.length / 3));
   const idx = new Uint32Array(lista.length * 3);
   let nv = 0;
   for (let k = 0; k < lista.length; k++) {
     const t = lista[k];
     for (let j = 0; j < 3; j++) {
       const v = m.idx[t * 3 + j];
-      if (mapa[v] < 0) mapa[v] = nv++;
+      if (mapa[v] < 0) { mapa[v] = nv; usados[nv] = v; nv++; }
       idx[k * 3 + j] = mapa[v];
     }
   }
   const pos = new Float64Array(nv * 3);
-  for (let v = 0; v < mapa.length; v++) {
-    const n = mapa[v];
-    if (n >= 0) { pos[n * 3] = m.pos[v * 3]; pos[n * 3 + 1] = m.pos[v * 3 + 1]; pos[n * 3 + 2] = m.pos[v * 3 + 2]; }
+  for (let n = 0; n < nv; n++) {
+    const v = usados[n];
+    pos[n * 3] = m.pos[v * 3]; pos[n * 3 + 1] = m.pos[v * 3 + 1]; pos[n * 3 + 2] = m.pos[v * 3 + 2];
+    mapa[v] = -1;                     // devolve o mapa limpo pra próxima chamada
   }
   let cor = null;
   if (m.cor) { cor = new Uint16Array(lista.length); for (let k = 0; k < lista.length; k++) cor[k] = m.cor[lista[k]]; }
-  return { malha: criar(pos, idx, cor), faces: lista, mapaV: mapa };
+  // vertices: índice ORIGINAL de cada vértice novo (o mapa inverso)
+  return { malha: criar(pos, idx, cor), faces: lista, vertices: usados.subarray(0, nv) };
 }
 
 export function compactar(m) {

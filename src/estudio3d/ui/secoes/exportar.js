@@ -74,6 +74,7 @@ export function montarExportar(est) {
       const miniatura = await est.visor.miniatura(256).catch(() => null);
       const r = await est.rodar('exportar3MF', { cena: { objetos: objs }, opc: { titulo: q('nome').value || objs[0].nome, miniatura } }, 'Exportar 3MF');
       baixar(r.bytes, nome + (escopo === 'placa' ? ' - placa ' + (est.cena.placaAtiva + 1) : '') + '.3mf', 'model/3mf');
+      if (escopo !== 'sel' && escopo !== 'placa') est.naoExportado = false;     // a mesa inteira foi pro arquivo
       q('res').innerHTML = '<div class="e3d-nota ok">3MF gerado: ' + r.cores.length + ' filamento(s) na ordem ' + esc(r.cores.map((h, i) => (i + 1) + '=' + h).join(', ')) + '.' + (r.avisos.length ? '<br>' + r.avisos.map(esc).join('<br>') : '') + (fora.length ? '<br>Atenção: tem objeto abaixo da mesa (Z negativo) — o Bambu vai subir ele.' : '') + '</div>';
     } finally { q('3mf').disabled = false; }
   }
@@ -91,6 +92,7 @@ export function montarExportar(est) {
         feitos.push({ k: g.k, n: g.objs.length, cores: r.cores.length });
         await new Promise(res => setTimeout(res, 350));      // o navegador aceita vários downloads seguidos
       }
+      est.naoExportado = false;
       q('res').innerHTML = '<div class="e3d-nota ok">' + feitos.length + ' arquivo(s): ' + feitos.map(f => '<b>placa ' + (f.k + 1) + '</b> (' + f.n + ' objeto(s), ' + f.cores + ' cor(es))').join(' · ') +
         '<br>Cada arquivo abre no Bambu Studio com as peças na placa, prontas pra fatiar.' + (est.cena.placas > feitos.length ? '<br>Placas vazias ficaram de fora.' : '') + '</div>';
     } finally { q('3mf').disabled = false; }
@@ -102,6 +104,7 @@ export function montarExportar(est) {
     const nome = nomeArquivo(q('nome').value || objs[0].nome);
     if (r.zip) baixar(r.bytes, nome + '-stl.zip', 'application/zip');
     else baixar(r.bytes, r.nome || nome + '.stl', 'model/stl');
+    if (escopo !== 'sel' && escopo !== 'placa') est.naoExportado = false;
     q('res').innerHTML = '<div class="e3d-nota ok">' + (r.zip ? r.arquivos.length + ' arquivos STL no zip.' : 'STL gerado.') + '</div>';
   }
   q('3mf').onclick = exp3mf;

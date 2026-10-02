@@ -61,3 +61,25 @@ test('triângulo degenerado ("tampa": vértice em cima da aresta) some sem abrir
   assert.ok(Math.abs(volume(r.malha) - 4 / 3) < 1e-9, 'volume ' + volume(r.malha));
   assert.equal(r.trocas, 1);
 });
+
+// subMalha não pode custar o tamanho da malha inteira a cada casca (auditoria M6:
+// 60 s parado em "Conferindo a malha 2%" no boneco com milhares de cascas)
+test('subMalha: mil cascas de 1 triângulo numa malha de 2 milhões de vértices em menos de 1 s, e certa', async () => {
+  const { subMalha, criar } = await import('../src/estudio3d/core/malha.js');
+  const nv = 2000000, pos = new Float64Array(nv * 3);
+  for (let i = 0; i < pos.length; i++) pos[i] = i * 0.001;
+  const idx = new Uint32Array(3000);
+  for (let t = 0; t < 1000; t++) { idx[t * 3] = t * 1999; idx[t * 3 + 1] = t * 1999 + 1; idx[t * 3 + 2] = t * 1999 + 2; }
+  const m = criar(pos, idx);
+  const t0 = Date.now();
+  for (let t = 0; t < 1000; t++) {
+    const s = subMalha(m, Uint32Array.of(t)).malha;
+    assert.equal(s.pos.length, 9);
+    assert.equal(s.pos[0], pos[t * 1999 * 3]);
+    assert.deepEqual(Array.from(s.idx), [0, 1, 2]);
+  }
+  assert.ok(Date.now() - t0 < 1000, (Date.now() - t0) + ' ms');
+  // vértice repetido entre chamadas não vaza (mapa volta limpo)
+  const a = subMalha(m, Uint32Array.of(0, 1)).malha, b = subMalha(m, Uint32Array.of(1, 0)).malha;
+  assert.equal(a.pos.length, 18); assert.equal(b.pos.length, 18);
+});
