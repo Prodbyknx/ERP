@@ -64,6 +64,8 @@ export class Visor {
     this.raizObjetos = new THREE.Group(); s.add(this.raizObjetos);
     this.raizPrevia = new THREE.Group(); s.add(this.raizPrevia);
     this.raizAjuda = new THREE.Group(); s.add(this.raizAjuda);
+    this.raizRef = new THREE.Group(); s.add(this.raizRef);      // fotos de referência (só guia)
+    this.refMeshes = new Map();
     this.montarMesa();
 
     const c = this.controles = new OrbitControls(this.camera, r.domElement);
@@ -544,6 +546,50 @@ export class Visor {
     return out;
   }
 
+  /* ------------------------------------------------ fotos de referência */
+  // Cada foto é um plano com a imagem (frente: de pé olhando de −Y; lado: de pé
+  // olhando de +X; mesa: deitada). Nunca é clicável (não pega clique nem sombra)
+  // e não entra na miniatura do 3MF. refs: ver secoes/referencia.js
+  definirReferencias(refs) {
+    const vivos = new Set();
+    const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+    const qz = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
+    const Q = { mesa: new THREE.Quaternion(), frente: qx.clone(), lado: qz.clone().multiply(qx) };
+    for (const r of refs) {
+      vivos.add(r.id);
+      let m = this.refMeshes.get(r.id);
+      if (m && m.userData.imagem !== r.imagem) { this.descartarRef(r.id); m = null; }
+      if (!m) {
+        const tex = new THREE.CanvasTexture(r.imagem);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy ? this.renderer.capabilities.getMaxAnisotropy() : 1);
+        m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthWrite: false, toneMapped: false }));
+        m.raycast = () => {};
+        m.userData.imagem = r.imagem; m.userData.ref = r.id;
+        this.refMeshes.set(r.id, m); this.raizRef.add(m);
+      }
+      m.visible = r.visivel !== false;
+      const mat = m.material;
+      mat.opacity = r.opacidade;
+      if (mat.depthTest !== !r.porCima) { mat.depthTest = !r.porCima; mat.needsUpdate = true; }
+      // por cima das peças, mas abaixo das linhas de desenho/medida (renderOrder 10+)
+      m.renderOrder = r.porCima ? 9 : -1;
+      const c = r.plano === 'mesa' ? [r.cx, r.cy, 0.03] : r.plano === 'frente' ? [r.cx, r.prof, r.cy] : [r.prof, r.cx, r.cy];
+      m.position.set(c[0], c[1], c[2]);
+      m.quaternion.copy(Q[r.plano] || Q.frente).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), r.giro * Math.PI / 180));
+      m.scale.set(r.largura * (r.espelhar ? -1 : 1), r.largura * r.aspecto, 1);
+    }
+    for (const id of [...this.refMeshes.keys()]) if (!vivos.has(id)) this.descartarRef(id);
+    this.pedirRender();
+  }
+  descartarRef(id) {
+    const m = this.refMeshes.get(id);
+    if (!m) return;
+    this.raizRef.remove(m);
+    m.geometry.dispose(); if (m.material.map) m.material.map.dispose(); m.material.dispose();
+    this.refMeshes.delete(id);
+  }
+
   /* ------------------------------------------------ ajudas visuais */
 
   limparAjudas(tipo) {
@@ -819,8 +865,8 @@ export class Visor {
   // PNG da vista atual (miniatura do 3MF)
   async miniatura(tam = 256) {
     const velho = { w: this.renderer.domElement.width, h: this.renderer.domElement.height, asp: this.camera.aspect };
-    const ajudaVis = this.raizAjuda.visible, gizVis = this.gizmoHelper.visible, cxVis = this.caixaSel.visible;
-    this.raizAjuda.visible = false; this.gizmoHelper.visible = false; this.caixaSel.visible = false;
+    const ajudaVis = this.raizAjuda.visible, gizVis = this.gizmoHelper.visible, cxVis = this.caixaSel.visible, refVis = this.raizRef.visible;
+    this.raizAjuda.visible = false; this.gizmoHelper.visible = false; this.caixaSel.visible = false; this.raizRef.visible = false;   // a foto de referência não vai pro 3MF
     this.renderer.setSize(tam, tam, false);
     this.camera.aspect = 1; this.camera.updateProjectionMatrix();
     const fundo = this.scene.background;
@@ -828,7 +874,7 @@ export class Visor {
     this.renderer.render(this.scene, this.camera);
     this.scene.background = fundo;
     const blob = await new Promise(r => this.renderer.domElement.toBlob(r, 'image/png'));
-    this.raizAjuda.visible = ajudaVis; this.gizmoHelper.visible = gizVis; this.caixaSel.visible = cxVis;
+    this.raizAjuda.visible = ajudaVis; this.gizmoHelper.visible = gizVis; this.caixaSel.visible = cxVis; this.raizRef.visible = refVis;
     this.renderer.setSize(velho.w / this.renderer.getPixelRatio(), velho.h / this.renderer.getPixelRatio(), false);
     this.redimensionar();
     return blob ? new Uint8Array(await blob.arrayBuffer()) : null;

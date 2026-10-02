@@ -58,9 +58,12 @@ export function montarDesenhar(est) {
   seg('linha', v => { linha = v; });
   seg('onde', v => { if (v !== onde && pts.length) { pts = []; fechado = false; sel = -1; } onde = v; plano = null; alvo = null; });
 
-  // plano em pé: passa pelo meio da peça escolhida (ou pela origem)
+  // plano em pé: o da FOTO DE REFERÊNCIA de frente/lado (desenha em cima dela);
+  // sem foto, passa pelo meio da peça escolhida (ou pela origem)
   function planoAtual() {
     if (plano) return plano;
+    const daFoto = est.secoes.referencia && est.secoes.referencia.planoPara(onde);
+    if (daFoto) { plano = daFoto; return plano; }
     const o = est.objetoAtual(), c = o && est.cena.caixaExata(o);
     const m = c ? [(c.min[0] + c.max[0]) / 2, (c.min[1] + c.max[1]) / 2, 0] : [0, 0, 0];
     plano = onde === 'frente' ? { o: [0, m[1], 0], u: [1, 0, 0], v: [0, 0, 1], n: [0, 1, 0], d: m[1] }

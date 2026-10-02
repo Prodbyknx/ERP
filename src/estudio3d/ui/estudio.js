@@ -19,6 +19,7 @@ import { montarFormas } from './secoes/formas.js';
 import { montarModificar } from './secoes/modificar.js';
 import { montarEsculpir } from './secoes/esculpir.js';
 import { montarDesenhar } from './secoes/desenhar.js';
+import { montarReferencia, ehImagem } from './secoes/referencia.js';
 import { prepararParaImpressao } from './preparar.js';
 import { alinhar, duplicarEmSerie } from '../core/modelagem.js';
 import { icone } from './icones.js';
@@ -34,6 +35,7 @@ const FERRAMENTAS = [
   { sec: 'mod', ico: 'modificar', rot: 'Modificar', titulo: 'Modificar a peça', desc: 'Arredondar e chanfrar bordas, puxar ou empurrar uma face, deixar oca com parede em mm e espelhar. Geometria de verdade, com prévia.' },
   { sec: 'esc', ico: 'esculpir', rot: 'Esculpir', titulo: 'Esculpir e deformar', desc: 'Pincel pra puxar, empurrar, inflar, achatar e suavizar — com simetria ao vivo. Torcer, afunilar e dobrar a peça inteira.' },
   { sec: 'des', ico: 'desenhar', rot: 'Desenhar', titulo: 'Desenhar e criar', desc: 'Desenhe um contorno na mesa e ele vira peça: com espessura, girado (vaso, puxador) ou tubo.' },
+  { sec: 'ref', ico: 'imagem', rot: 'Foto', titulo: 'Foto de referência', desc: 'Ponha uma foto de frente, de lado ou na mesa, deixe mais clara e modele por cima, como no Blender. O tamanho fica em mm: meça na própria foto.' },
   { sec: 'diag', ico: 'escudo', rot: 'Consertar', titulo: 'Conferir e consertar', desc: 'Vê se o arquivo imprime e conserta buracos, faces viradas, cruzamentos e partes sobrepostas, sem perder detalhe.' },
   { sec: 'transf', ico: 'ajustar', rot: 'Ajustar', titulo: 'Posição, tamanho e cor', desc: 'Medidas em mm, girar, deitar pra imprimir sem suporte e a cor de cada peça.' },
   { sec: 'sel', ico: 'selecionar', rot: 'Selecionar', titulo: 'Selecionar uma parte', desc: 'Clique numa orelha, olho ou detalhe: a seleção para sozinha na dobra.' },
@@ -187,6 +189,7 @@ export class Estudio {
     this.secoes.modificar = montarModificar(this);
     this.secoes.esculpir = montarEsculpir(this);
     this.secoes.desenhar = montarDesenhar(this);
+    this.secoes.referencia = montarReferencia(this);
     this.secoes.diagnostico = montarDiagnostico(this);
     this.secoes.transformar = montarTransformar(this);
     this.secoes.selecionar = montarSelecionar(this);
@@ -424,8 +427,9 @@ export class Estudio {
       ini = { x: ev.clientX, y: ev.clientY, b: ev.button };
       if (ev.button === 2) this._direitoEm = performance.now();
       // Desenhar: pegar um ponto já marcado pra arrastar
-      if (ev.button === 0 && this.ferramenta === 'desenhar' && !this.previaAtiva && this.secoes.desenhar.segurar(ev)) {
-        this.arrastandoPonto = true;
+      const arrastavel = this.ferramenta === 'desenhar' ? this.secoes.desenhar : this.ferramenta === 'referencia' ? this.secoes.referencia : null;
+      if (ev.button === 0 && arrastavel && !this.previaAtiva && arrastavel.segurar(ev)) {
+        this.arrastandoPonto = arrastavel;
         this.visor.controles.enabled = false;
         cv.setPointerCapture(ev.pointerId);
         return;
@@ -458,7 +462,7 @@ export class Estudio {
       }
     });
     cv.addEventListener('pointermove', ev => {
-      if (this.arrastandoPonto) { this.secoes.desenhar.mover(ev); return; }
+      if (this.arrastandoPonto) { this.arrastandoPonto.mover(ev); return; }
       const a = this.arrasteObj;
       if (a) {
         if (!a.ativo) {
@@ -502,10 +506,11 @@ export class Estudio {
         }
       }
       if (this.arrastandoPonto) {
-        this.arrastandoPonto = false;
+        const a = this.arrastandoPonto;
+        this.arrastandoPonto = null;
         this.visor.controles.enabled = true;
         try { cv.releasePointerCapture(ev.pointerId); } catch (e) { /* ok */ }
-        if (this.secoes.desenhar.soltar()) { ini = null; return; }   // arrastou: não é clique
+        if (a.soltar()) { ini = null; return; }   // arrastou: não é clique
       }
       if (this.pintando) {
         this.pintando = false;
@@ -535,7 +540,23 @@ export class Estudio {
     const p = this.palco;
     ['dragenter', 'dragover'].forEach(e => p.addEventListener(e, ev => { ev.preventDefault(); p.classList.add('sobre'); }));
     ['dragleave', 'drop'].forEach(e => p.addEventListener(e, ev => { ev.preventDefault(); p.classList.remove('sobre'); }));
-    p.addEventListener('drop', ev => { const f = [...(ev.dataTransfer && ev.dataTransfer.files || [])]; if (f.length) this.importarArquivos(f); });
+    p.addEventListener('drop', ev => {
+      const f = [...(ev.dataTransfer && ev.dataTransfer.files || [])];
+      // imagem (PNG/JPG…) vira foto de referência; o resto abre como modelo
+      const imgs = f.filter(ehImagem), modelos = f.filter(x => !ehImagem(x));
+      if (imgs.length) this.secoes.referencia.adicionar(imgs);
+      if (modelos.length) this.importarArquivos(modelos);
+    });
+    // Ctrl+V com uma imagem copiada: vira foto de referência
+    document.addEventListener('paste', ev => {
+      if (!this.visivel()) return;
+      const alvo = ev.target;
+      if (alvo && (alvo.tagName === 'INPUT' || alvo.tagName === 'TEXTAREA' || alvo.isContentEditable)) return;
+      const imgs = [...(ev.clipboardData && ev.clipboardData.files || [])].filter(ehImagem);
+      if (!imgs.length) return;
+      ev.preventDefault();
+      this.secoes.referencia.adicionar(imgs);
+    });
   }
 
   ligarAtalhos() {
@@ -569,6 +590,7 @@ export class Estudio {
   clique(ev) {
     if (this.previaAtiva) return;
     if (this.ferramenta === 'desenhar') { this.emitir('clique-mesa', { ponto: this.visor.pontoNaMesa(ev), ev }); return; }
+    if (this.ferramenta === 'referencia' && this.secoes.referencia.estaMedindo()) { this.emitir('clique-ref', { ev }); return; }
     const hit = this.visor.intersectar(ev);
     if (this.ferramenta === 'navegar' || !hit) {
       if (hit) this.cena.selecionar(hit.objeto, hit.parte, ev.shiftKey);
@@ -596,9 +618,16 @@ export class Estudio {
       : f === 'modificar' ? 'clique na borda ou na face da peça · Esc volta'
       : f === 'esculpir' ? 'arraste sobre a peça pra esculpir · começando fora dela, gira a vista'
       : f === 'desenhar' ? 'clique na mesa pra marcar pontos · clique no 1º pra fechar · arraste um ponto pra mudar'
+      : f === 'referencia' ? 'arraste a foto pra mudar de lugar · arrastar fora dela gira a vista · rodinha: zoom'
       : 'clique na peça · Shift soma · Alt tira · Esc volta';
-    this.vazio.style.display = this.cena.objetos.length || f === 'desenhar' ? 'none' : '';
+    this.atualizarVazio();
     this.emitir('ferramenta', f);
+  }
+  // cartão "Arraste seu modelo aqui": some quando tem peça, foto de referência
+  // ou quando a ferramenta trabalha na mesa vazia (Desenhar, Foto)
+  atualizarVazio() {
+    const refs = this.secoes.referencia ? this.secoes.referencia.lista().length : 0;
+    this.vazio.style.display = this.cena.objetos.length || refs || this.ferramenta === 'desenhar' || this.ferramenta === 'referencia' ? 'none' : '';
   }
   definirGizmoSilencioso(m) {
     this.topo.querySelectorAll('[data-g]').forEach(x => x.classList.toggle('ativo', x.dataset.g === m));
@@ -612,8 +641,7 @@ export class Estudio {
     this.visor.sincronizar();
     this.renderCena();
     this.atualizarHud();
-    // desenhando na mesa vazia: o cartão "Arraste seu modelo" sai da frente
-    this.vazio.style.display = this.cena.objetos.length || this.ferramenta === 'desenhar' ? 'none' : '';
+    this.atualizarVazio();
     this.objetosEl.style.display = this.cena.objetos.length ? '' : 'none';
     this.renderSaude();
     if (this.painel.classList.contains('inicio')) this.renderInicio();
