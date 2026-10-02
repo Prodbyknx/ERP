@@ -17,17 +17,61 @@ COMO USAR
    de exemplo: Gabriel (admin) e Ana (vendedora).
 
 
-NOVIDADES DESTA VERSÃO (14) — AUDITORIA DO 3D, PARTE 1: SEGURANÇA
+NOVIDADES DESTA VERSÃO (14) — CORREÇÕES DA AUDITORIA DO 3D
 --------------------------------------------------------------------
-Relatório completo da auditoria: docs/AUDITORIA-3D.md (no repositório).
+Relatório completo da auditoria e o que foi corrigido: docs/AUDITORIA-3D.md
+(no repositório). Todas as abas do ERP continuam iguais.
+
+1) SEGURANÇA
 - ARQUIVO 3D NÃO RODA MAIS CÓDIGO: um 3MF/OBJ baixado da internet com
   código escondido no nome da peça, do objeto ou do material executava
   dentro do ERP só de abrir (e de novo no Consertar, no Separar e no
   Exportar). Agora todo nome, erro e aviso aparece como TEXTO.
-  Teste novo (E2E "XSS 3D") abre arquivos maliciosos e passa por
-  abrir, exportar, consertar, selecionar e separar; e um teste que lê o
-  código e falha se algum nome/erro voltar a entrar como HTML.
-ARQUIVOS PRA SUBIR: só o estudio3d.js mudou (o pacote inteiro serve).
+  Teste novo abre arquivos maliciosos em todas essas telas, e outro lê
+  o código e falha se algum nome/erro voltar a entrar como HTML.
+
+2) MEXER DURANTE UM CÁLCULO
+- Desfazer, excluir ou mexer na peça enquanto o motor calcula: o
+  resultado é descartado com aviso "a peça mudou enquanto calculava"
+  (antes podia cair em outra peça ou fazer um objeto sumir).
+- Clique duplo em Consertar, Preparar, Exportar etc. roda uma vez só.
+- "Consertar tudo" com várias peças aplica as que deram certo e lista as
+  que falharam (antes uma falha jogava fora todas).
+
+3) LAUDO × CONSERTAR
+- Laudo e conserto usam a mesma régua: peça perfeita não ganha
+  "consertos" fantasmas; pontos onde duas partes só se encostam aparecem
+  como informação (normal), não como defeito.
+- Espessura sem alarme falso (cabeça feita por IA: 0,0002 → 14,7 mm);
+  região crítica só conta acima de 0,1 mm².
+- "Pronto pra imprimir" segue uma regra só em todas as telas.
+- Avisos de quando o arquivo foi aberto ficam escritos no Consertar.
+
+4) NÃO PERDER TRABALHO E NÃO TRAVAR
+- Peça mexida e não exportada: o navegador pergunta antes de fechar.
+- Sessão do ERP caiu: a tela de login oferece "Baixar o 3MF do Estúdio
+  3D antes".
+- Desfazer guarda até ~400 MB (antes crescia até travar o navegador).
+- Modo Defeitos/Espessura ligado: mover a peça não refaz o mapa de cor.
+- Modelo com milhares de cascas: conferir/consertar 25× mais rápido
+  (boneco "sujo": 62,7 s → 2,5 s).
+
+5) MENSAGENS E DIAGNÓSTICO
+- Clique no estado do motor (canto de cima): copia o DIAGNÓSTICO (as
+  últimas operações, tempo e o erro com onde quebrou) — cole na conversa
+  quando algo der errado.
+- Se o motor 3D parar fora de uma operação, a tela não fica mais
+  "calculando" pra sempre: avisa e o motor volta sozinho.
+- STL cortado (download incompleto) abre o que veio, com aviso; lixo é
+  recusado; OBJ com índice errado avisa; 3MF fatiado com G-code grande
+  abre na hora.
+- Mensagens mandam pro botão que existe ("Consertar automaticamente",
+  painel Consertar).
+- "Juntar" da lista virou "Agrupar" e respeita as peças escolhidas.
+  "Unir partes sobrepostas" saiu (repetia o Consertar).
+
+ARQUIVOS PRA SUBIR: estudio3d.js e cloud.js mudaram (o pacote inteiro
+serve).
 
 
 NOVIDADES DA VERSÃO 13 — SEGURANÇA NO SERVIDOR + COPIAR/COLAR
@@ -449,7 +493,7 @@ O QUE TESTAR NESTA VERSÃO
 - Orçamentos: gerar o PDF
 - Ferramentas → Gerador: baixar o 3MF e abrir no Bambu (confira as cores)
 - Ferramentas → Gerador: "Abrir no Estúdio 3D"
-- Ferramentas → Estúdio 3D: abrir um STL seu, "Analisar e reparar",
+- Ferramentas → Estúdio 3D: abrir um STL seu, "Consertar automaticamente",
   cortar com pino, separar um detalhe, texto no verso, exportar 3MF
 - Desfazer / refazer (Ctrl+Z / Ctrl+Y) no Estúdio
 

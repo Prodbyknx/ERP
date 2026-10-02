@@ -36,7 +36,7 @@ self.onmessage = async ev => {
   } catch (e) {
     // pane no WASM: a tela reinicia este worker (o módulo pode ter ficado
     // corrompido); a peça não mudou — a operação só aplica quando dá certo
-    if (ehErroWasm(e)) { self.postMessage({ id, ok: false, codigo: 'wasm', reiniciar: true, erro: 'O motor 3D teve uma pane interna nessa operação e foi reiniciado. Nada mudou na peça — tente de novo com outro ajuste (ex.: espessura, posição) ou rode "Analisar e reparar" antes.' }); return; }
-    self.postMessage({ id, ok: false, erro: String(e && e.message || e), codigo: e && e.codigo });
+    if (ehErroWasm(e)) { self.postMessage({ id, ok: false, codigo: 'wasm', reiniciar: true, erro: 'O motor 3D teve uma pane interna nessa operação e foi reiniciado. Nada mudou na peça — tente de novo com outro ajuste (ex.: espessura, posição) ou use "Consertar automaticamente" (painel Consertar) antes.' }); return; }
+    self.postMessage({ id, ok: false, erro: String(e && e.message || e), codigo: e && e.codigo, pilha: e && e.stack ? String(e.stack).slice(0, 2000) : null });
   }
 };

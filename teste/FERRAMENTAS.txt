@@ -177,6 +177,9 @@ nunca é alterado.
 COMO A TELA É ORGANIZADA
   Em cima    Abrir, Desfazer, Refazer · Escolher / Mover / Girar /
              Escalar · Organizar mesa · Tela cheia · estado do motor
+             (clique nele: copia o DIAGNÓSTICO — as últimas operações, o
+             tempo de cada uma e o erro com o ponto onde quebrou; é só
+             colar na conversa quando algo der errado)
   Esquerda   o trilho de tarefas (abaixo)
   Meio       o 3D. No canto: lista de Objetos, bolinha "Pronto pra
              imprimir", vistas (3D, Frente, Topo, Lado), o que mostrar
@@ -232,6 +235,9 @@ FORMAS — adicionar peças prontas (novo)
                            (⇄ troca quem fica)
      Parte comum ......... fica só onde elas se encostam
      Agrupar ............. um objeto com várias peças, cada uma com sua cor
+                           (o botão Agrupar da lista de Objetos faz o mesmo
+                           com as escolhidas; sem nada escolhido, agrupa
+                           todas — antes se chamava "Juntar" e pegava todas)
      Alinhar ............. esquerda / centro / direita, frente / trás,
                            embaixo / em cima, espalhar igual, empilhar
      Aplicar furos ....... os furos viram geometria
@@ -241,8 +247,21 @@ FORMAS — adicionar peças prontas (novo)
 
 CONSERTAR — conferir e consertar
    Laudo: Malha fechada · Arestas abertas · Non-manifold · Faces
-   invertidas · Degeneradas · Repetidas · Auto-interseção · Cascas soltas
-   · Espessura mínima · Volume · Peso · Dimensão total.
+   invertidas · Degeneradas · Repetidas · Vértices duplicados (costura
+   aberta) · Pontos onde partes se encostam (normal, não é defeito) ·
+   Auto-interseção · Cascas soltas · Sobras internas · Espessura mínima e
+   Regiões críticas (só conta região com pelo menos 0,1 mm²) · Volume ·
+   Peso · Dimensão total.
+   O laudo e o "Consertar automaticamente" usam a MESMA régua: o que o
+   laudo aponta como defeito é o que o conserto mexe; peça perfeita não
+   muda. "Pronto pra imprimir" (bolinha, Início, Preparar e laudo) segue
+   uma regra só.
+   Avisos de quando o arquivo foi aberto (STL incompleto, face com índice
+   que não existe, unidade, peça de suporte que ficou de fora) ficam
+   escritos no alto do painel até você clicar em "Entendi".
+   Partes que se atravessam e o Consertar não resolveu: "Ver onde se
+   cruza" mostra o lugar (o antigo "Unir partes sobrepostas" saiu: fazia
+   a mesma coisa que o Consertar).
    "Consertar automaticamente" fecha buraco acompanhando a curva, desvira
    face, separa vértice non-manifold, tira face degenerada e repetida e
    lixo solto, refaz o pedacinho onde a superfície atravessa ela mesma, e
@@ -536,9 +555,24 @@ FASE DE REFINAMENTO — o que foi medido (não "parece que funciona")
                  triângulo não) é alisada antes: o inserto não sai com
                  dente de 0,3 mm. 9 cenários: peças fechadas, sem
                  cruzamento, sem sobrepor, volume somado = original.
-   PANE DO MOTOR se o motor 3D (WASM) tiver pane numa operação: aviso
-                 claro, a peça não muda, o motor sobe de novo sozinho e a
-                 próxima operação funciona.
+   PANE DO MOTOR se o motor 3D (WASM) tiver pane numa operação — ou
+                 parar fora de uma operação —: aviso claro, a peça não
+                 muda, nada fica "calculando" pra sempre, o motor sobe de
+                 novo sozinho e a próxima operação funciona.
+   ARQUIVO RUIM  STL cortado (download incompleto) abre o que veio, com
+                 aviso; bytes que não são modelo 3D são recusados; OBJ
+                 com índice inexistente perde a face inteira (com aviso);
+                 3MF fatiado com G-code grande abre na hora (só o modelo
+                 é lido).
+   SEM PERDER    peça mexida e não exportada: o navegador pergunta antes
+                 de fechar/recarregar. Se a sessão do ERP cair, a tela de
+                 login oferece "Baixar o 3MF do Estúdio 3D antes".
+                 Desfazer guarda até ~400 MB; passou disso, os passos mais
+                 antigos saem (com aviso).
+   DURANTE O     desfazer, excluir ou mexer na peça enquanto uma operação
+   CÁLCULO       calcula: o resultado é descartado com aviso (antes podia
+                 cair em outra peça). Clicar duas vezes no mesmo botão não
+                 roda duas vezes.
    PROGRESSO     Consertar, Analisar, Cortar, Separar, Combinar e Exportar
                  3MF agora mostram a etapa e o % (antes só "calculando").
                  Tudo pode ser cancelado.

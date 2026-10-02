@@ -59,11 +59,18 @@ export class Contexto {
       runIndex: Uint32Array.of(0, nt * 3)
     });
     mesh.merge();
-    const man = new Manifold(mesh);
+    let man;
+    // o construtor lança "Not manifold" (inglês, sem dizer o quê): vira mensagem que dá pra agir
+    try { man = new Manifold(mesh); }
+    catch (x) {
+      if (ehErroWasm(x)) throw x;
+      const e = new Error((nome || 'A peça') + ' não é um sólido fechado (tem buraco ou aresta solta). Use "Consertar automaticamente" (painel Consertar) antes.');
+      e.codigo = 'NotManifold'; throw e;
+    }
     const st = man.status();
     if (st !== 'NoError') {
       man.delete();
-      const e = new Error((nome || 'A peça') + ' não é um sólido fechado (' + st + '). Rode "Analisar e reparar" antes.');
+      const e = new Error((nome || 'A peça') + ' não é um sólido fechado (' + st + '). Use "Consertar automaticamente" (painel Consertar) antes.');
       e.codigo = st; throw e;
     }
     this.vivos.push(man);

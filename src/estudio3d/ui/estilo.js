@@ -32,7 +32,7 @@ html[data-tema=escuro] .e3d{ --e3d-fundo-a:#20242b; --e3d-fundo-b:#121418;
 .e3d-bt.primario{ background:var(--brand); color:#fff; padding:0 14px; box-shadow:0 6px 16px -8px rgba(229,76,0,.8) }
 .e3d-bt.primario:hover{ background:var(--amber-2); color:#fff }
 .e3d-bt.so-ico{ width:34px; padding:0; justify-content:center }
-.e3d-motor{ display:inline-flex; align-items:center; gap:7px; height:30px; padding:0 11px; border-radius:99px; background:var(--bg-2);
+.e3d-motor{ cursor:pointer; display:inline-flex; align-items:center; gap:7px; height:30px; padding:0 11px; border-radius:99px; background:var(--bg-2);
   font:600 11.5px var(--sans); color:var(--ink-dim); white-space:nowrap }
 .e3d-motor i{ width:8px; height:8px; border-radius:50%; background:#9ca3af }
 .e3d-motor.ok i{ background:#16a34a; box-shadow:0 0 0 3px rgba(22,163,74,.18) }

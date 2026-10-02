@@ -20,6 +20,9 @@ Base de comparação, antes desta auditoria:
 
 Nada foi alterado no sistema. Este arquivo é o único acréscimo.
 
+As correções vieram depois, em 5 partes; o que foi feito e o que ficou está em
+**[M. Status das correções](#m-status-das-correções)**, no fim.
+
 ---
 
 ## A. Resumo executivo
@@ -551,3 +554,48 @@ Os roteiros usados ficaram fora do repositório. Viram teste de regressão junto
   - `x10`: tolerâncias;
   - `x11`: bundle;
   - `x12`: exports mortos.
+
+---
+
+## M. Status das correções
+
+Feitas em 5 partes, cada uma com teste que falhava antes e passa depois. Commits:
+`64476fb` (parte 1), `1248228` (2), `7dda079` (3), `8651230` (4) e o da parte 5.
+
+| Achado | Status | Como | Teste |
+|---|---|---|---|
+| **S1** XSS pelo nome da peça | Corrigido | `esc()` em todo nome, erro e aviso que entra em `innerHTML` | E2E `xss3d` (3MF e OBJ maliciosos em abrir, consertar, selecionar, separar, exportar) + `seguranca-html.test` (lê o código e falha com dado sem `esc`) |
+| **A1, A2, M2** Desfazer/excluir durante o cálculo | Corrigido | "Ficha" da operação (id + malhas + posição); resultado vencido é descartado com aviso; `cena.aplicar` desfaz se der erro no meio | E2E `corrida` (6 passos), `cena.test` |
+| **A3, B3** Duplo clique | Corrigido | `umaVez()` trava o botão; Consertar/Preparar com guarda própria | E2E `corrida` |
+| **A4** Histórico sem limite | Corrigido | Teto de 400 MB por bytes; passos antigos saem com aviso | `cena.test` |
+| **A5, B10** Conserto fantasma | Corrigido | `core/tolerancias.js`: mesma `tolSolda` no laudo e no conserto; só solda vértice de borda; vértice entre cascas = informação | `laudo.test`, E2E `laudo` |
+| **A6** Espessura 0,00 falsa | Corrigido | Raio com contagem de entrada/saída, pula a face vizinha, recontagem para fora; região mínima 0,1 mm² (cabeça IA: 0,0002 → 14,7 mm) | `laudo.test` |
+| **A7** Lote de conserto | Corrigido | Aplica o que deu certo, lista o que falhou | E2E `corrida` |
+| **A8** Sessão encerrada apaga trabalho | Corrigido | `beforeunload` com trabalho não exportado; "Baixar o 3MF do Estúdio 3D antes" no bloqueio de sessão | E2E `trabalho` |
+| **A9, B8** Erro sem diagnóstico; worker que quebra fora da operação | Corrigido | Worker manda a pilha; registro das últimas 60 operações; `unhandledrejection`/`error` globais; clique no estado do motor copia o diagnóstico; `onerror` depois de pronto rejeita a fila e reinicia o canal | E2E `diagnostico` |
+| **M1** Aviso de importação some | Corrigido | Nota fixa no Consertar até "Entendi" | E2E `laudo` |
+| **M3** Quatro regras de "pronto" | Corrigido | `defeitosGraves()` única, usada por laudo, bolinha, Início e Preparar | `laudo.test` |
+| **M4** STL truncado | Corrigido | Lê o que veio + aviso; lixo é recusado | `arquivos-ruins.test`, E2E `diagnostico` |
+| **M5** Mapas refeitos ao mover | Corrigido | Cache por malha | E2E `trabalho` |
+| **M6** Tempo ao quadrado com muitas cascas | Corrigido | `subMalha` com mapa reaproveitado (boneco "sujo": 62,7 s → 2,5 s) | `desempenho.test` |
+| **M7** Furos aplicados ao abrir ferramenta | Parcial | A aplicação agora usa a ficha (não corre mais com a operação seguinte) e a prévia que falha avisa (B5). Continua aplicando ao abrir Selecionar/Separar/Cortar/Texto/Consertar, com aviso e desfazer: perguntar antes mudaria o fluxo da tela | — (os E2E de furo que já existiam continuam passando) |
+| **M8** "Unir partes sobrepostas" | Corrigido | Botão e operações mortas (`booleana`, `espessura`) removidos | E2E `diagnostico` |
+| **M9** Juntar × Agrupar | Corrigido | Um "Agrupar" que respeita a seleção | E2E `diagnostico` |
+| **M10** Gerador antigo no `app.js` | **Não feito** | O MCP (`mcp/fonte-site.mjs`) e o `tools/bench-chaveiro.mjs` leem esse código do `app.js`; apagar exige migrar o MCP antes, e o MCP ficou fora deste trabalho | — |
+| **B1** "Analisar e reparar" | Corrigido | Mensagens apontam "Consertar automaticamente (painel Consertar)" | `arquivos-ruins.test` |
+| **B2** OBJ com índice inválido | Corrigido | Face inteira sai + aviso com a contagem | `arquivos-ruins.test` |
+| **B4** "Abaixo da mesa" pelo nome | Corrigido | Usa o próprio objeto | — |
+| **B5** Prévia de furo falha calada | Corrigido | Aviso uma vez por situação | — |
+| **B6** Sem try/catch | Corrigido | Todos passam por `sozinho()` + `est.rodar` | — |
+| **B7** Nomes do "calculando" | Corrigido | `NOMES_OP` cobre todas as operações do Estúdio (fora as internas rápidas: `bvh`, `medidas`, `adjacencia`) | — |
+| **B9** 3MF descompacta tudo | Corrigido | Filtro `.model/.rels/.config/.xml` (G-code de 600 MB: 1399 → 6 ms) | `arquivos-ruins.test` |
+
+**Ficou para depois (longo prazo do plano J):** CSP sem `unsafe-inline`, salvamento automático
+da cena (IndexedDB), worker guardando as malhas, motor da tela só se o worker falhar, sourcemap
+no pacote de teste, Ctrl+Z cancelando a operação em andamento, M10.
+
+**Continua em L (precisa do arquivo do usuário):** action figure (82 auto-interseções) e chaveiro
+do Flamengo.
+
+**Testes no fim:** unitários 298/298 (eram 280); E2E __E2E__.
+

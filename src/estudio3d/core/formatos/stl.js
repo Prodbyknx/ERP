@@ -19,7 +19,10 @@ export function ehBinario(u8) {
   // alguns exportadores deixam lixo no fim; se não parece texto, é binário
   const cab = new TextDecoder().decode(u8.subarray(0, Math.min(512, u8.length)));
   if (/^\s*solid\b/.test(cab) && /facet\s+normal/.test(new TextDecoder().decode(u8.subarray(0, Math.min(4096, u8.length))))) return false;
-  return 84 + n * 50 <= u8.length && n > 0;
+  // não é texto: binário — mesmo CORTADO (download incompleto tem menos
+  // triângulos que o cabeçalho diz; antes caía na leitura de texto e dava
+  // "não tem nenhum triângulo")
+  return n > 0 && u8.length >= 84 + 50;
 }
 
 export function lerSTL(buf, nomeArquivo) {
@@ -34,7 +37,9 @@ export function lerSTL(buf, nomeArquivo) {
 
 function lerBinario(u8) {
   const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
-  const n = Math.min(dv.getUint32(80, true), Math.floor((u8.length - 84) / 50));
+  const declarado = dv.getUint32(80, true), cabem = Math.floor((u8.length - 84) / 50);
+  const n = Math.min(declarado, cabem);
+  const avisos = declarado > cabem ? ['O STL está incompleto: tem ' + cabem.toLocaleString('pt-BR') + ' de ' + declarado.toLocaleString('pt-BR') + ' triângulos (download cortado?). Abri o que veio — confira a peça.'] : [];
   const cab = new TextDecoder('latin1').decode(u8.subarray(0, 80));
   const sopa = new Float32Array(n * 9);
   const attr = new Uint16Array(n);
@@ -44,6 +49,11 @@ function lerBinario(u8) {
     for (let k = 0; k < 9; k++) { sopa[t * 9 + k] = dv.getFloat32(o, true); o += 4; }
     attr[t] = dv.getUint16(o, true); o += 2;
   }
+  // bytes que não são um modelo (arquivo errado/corrompido): coordenada NaN,
+  // infinita ou absurda em boa parte -> recusa em vez de abrir lixo
+  let ruins = 0;
+  for (let i = 0; i < sopa.length; i++) { const v = sopa[i]; if (!Number.isFinite(v) || Math.abs(v) > 1e6) ruins++; }
+  if (sopa.length && ruins > sopa.length * 0.01) throw new Error('Não consegui ler esse STL: o conteúdo não parece um modelo 3D (arquivo corrompido ou não é STL).');
   // cores por faceta
   let paleta = null, cor = null;
   const magics = cab.indexOf('COLOR=');
@@ -72,7 +82,7 @@ function lerBinario(u8) {
   }
   const malha = deSopa(sopa, cor);
   const nome = cab.replace(/^solid\s*/i, '').replace(/COLOR=.*$/s, '').replace(/[\x00-\x1f]/g, '').trim().slice(0, 60);
-  return { malha, paleta: cor ? paleta : null, cor: paleta && !cor ? paleta[0] : null, nome: /[A-Za-z0-9]/.test(nome) ? nome : '' };
+  return { malha, paleta: cor ? paleta : null, cor: paleta && !cor ? paleta[0] : null, nome: /[A-Za-z0-9]/.test(nome) ? nome : '', avisos };
 }
 
 function lerTexto(txt) {

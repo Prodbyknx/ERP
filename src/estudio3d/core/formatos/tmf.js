@@ -389,7 +389,8 @@ function acharCaminho(arquivos, caminho) {
 }
 
 export function ler3MF(bytes, nomeArquivo) {
-  const arquivos = lerZip(bytes);
+  // só modelo, relações e configurações (sem G-code/imagens de 3MF fatiado)
+  const arquivos = lerZip(bytes, nome => /\.(model|rels|config|xml)$/i.test(nome));
   const avisos = [];
   let raizCaminho = null;
   const rels = acharCaminho(arquivos, '_rels/.rels');

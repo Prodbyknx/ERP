@@ -29,6 +29,7 @@ export function lerOBJ(texto, mtlTexto, nomeArquivo) {
   let parte = null;
   let matAtual = null;
   const avisos = new Set();
+  let facesRuins = 0;
   const novaParte = nome => { parte = { nome: nome || '', faces: [], mats: [] }; partes.push(parte); };
   const mtllibs = [];
 
@@ -48,16 +49,20 @@ export function lerOBJ(texto, mtlTexto, nomeArquivo) {
       const p = l.split(/\s+/);
       const ids = [];
       const nvAtual = V.length / 3;
+      let ruim = false;
       for (let k = 1; k < p.length; k++) {
         const s = p[k];
         if (!s) continue;
         let i = parseInt(s, 10);
-        if (!isFinite(i) || i === 0) continue;
+        if (!isFinite(i) || i === 0) { ruim = true; continue; }
         i = i < 0 ? nvAtual + i : i - 1;
-        if (i < 0 || i >= nvAtual) continue;
+        if (i < 0 || i >= nvAtual) { ruim = true; continue; }
         ids.push(i);
       }
-      if (ids.length >= 3) { parte.faces.push(ids); parte.mats.push(matAtual); }
+      // índice que não existe: a face inteira sai (antes um quadrado com 1
+      // índice ruim virava OUTRO triângulo, calado) e o aviso conta quantas
+      if (ruim) facesRuins++;
+      else if (ids.length >= 3) { parte.faces.push(ids); parte.mats.push(matAtual); }
     } else if (l.startsWith('o ') || l.startsWith('o\t')) {
       novaParte(l.slice(2).trim());
     } else if (l.startsWith('g ') && !parte) {
@@ -71,6 +76,7 @@ export function lerOBJ(texto, mtlTexto, nomeArquivo) {
     }
   }
   if (!V.length) throw new Error('O OBJ não tem vértices.');
+  if (facesRuins) avisos.add(facesRuins.toLocaleString('pt-BR') + ' face(s) apontam pra vértice que não existe no arquivo e ficaram de fora (arquivo cortado ou com erro).');
   if (mtllibs.length && !mtlTexto) avisos.add('O OBJ aponta pro material ' + mtllibs.join(', ') + '. Selecione o .mtl junto com o .obj pra trazer as cores.');
 
   const saida = [];

@@ -660,7 +660,7 @@ export function separarDetalhe(parte, mascara, opc = {}) {
   const nt0 = parte.malha.idx.length / 3;
   if (mascara.length !== nt0) throw new Error('Seleção não corresponde à peça.');
   const adj0 = prepararAdjacencia(parte.malha);
-  for (let h = 0; h < adj0.viz.length; h++) if (adj0.viz[h] < 0) throw new Error('A peça precisa estar fechada (sem buraco nem aresta non-manifold) pra separar. Rode "Analisar e reparar" antes.');
+  for (let h = 0; h < adj0.viz.length; h++) if (adj0.viz[h] < 0) throw new Error('A peça precisa estar fechada (sem buraco nem aresta non-manifold) pra separar. Use "Consertar automaticamente" (painel Consertar) antes.');
   // limpeza tira ilhas de 1-3 faces (ruído de pincel); se a seleção INTEIRA
   // for pequena (ex.: etiqueta plana de 2 triângulos), ela é o que o usuário quer
   let sel = opc.limparSelecao === false ? mascara : limpar(mascara, adj0, 4);

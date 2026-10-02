@@ -14,7 +14,7 @@ export function solidoPronto(ctx, parte, avisos = []) {
     const r = reparar(parte.malha, {});
     try { s = ctx.solido({ ...parte, malha: r.malha, origem: null }, parte.nome); }
     catch (e2) {
-      throw new Error((parte.nome || 'A peça') + ' tem defeitos que o conserto automático não resolveu (' + (e2.codigo || e2.message) + '). Use "Analisar e reparar" e depois tente de novo.');
+      throw new Error((parte.nome || 'A peça') + ' tem defeitos que o conserto automático não resolveu (' + (e2.codigo || e2.message) + '). Use "Consertar automaticamente" (painel Consertar) e depois tente de novo.');
     }
     avisos.push('Consertei a malha antes de operar' + (r.passos.length ? ': ' + r.passos.join(', ') : '') + '.');
   }

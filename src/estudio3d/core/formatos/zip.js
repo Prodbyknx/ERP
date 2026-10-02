@@ -1,9 +1,11 @@
 // ZIP via fflate (roda igual no navegador, no worker e no Node)
 import { unzipSync, zipSync, strToU8, strFromU8 } from 'fflate';
 
-export function lerZip(bytes) {
+// filtro(nome) opcional: só descompacta o que precisa (3MF fatiado traz o
+// G-code inteiro e imagens que a leitura do modelo não usa)
+export function lerZip(bytes, filtro = null) {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const brutos = unzipSync(u8);
+  const brutos = filtro ? unzipSync(u8, { filter: f => filtro(f.name.replace(/\\/g, '/').replace(/^\/+/, '')) }) : unzipSync(u8);
   // caminhos sem barra inicial e com '/' (alguns programas gravam '\')
   const out = {};
   for (const k of Object.keys(brutos)) out[k.replace(/\\/g, '/').replace(/^\/+/, '')] = brutos[k];

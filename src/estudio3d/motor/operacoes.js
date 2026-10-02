@@ -1,9 +1,9 @@
 // API única do motor. Tudo aqui recebe e devolve dados simples (arrays
 // tipados), pra rodar igual no Web Worker, na thread principal e no Node.
 import { importarArquivo } from '../core/importar.js';
-import { validar, espessuras, facesInternas } from '../core/validador.js';
+import { validar, facesInternas } from '../core/validador.js';
 import { reparar as repararMalha, desfazerAutoInterseccoes } from '../core/reparo.js';
-import { comContexto, manifold, temManifold } from '../core/solidos.js';
+import { comContexto, temManifold } from '../core/solidos.js';
 import { cortarPorPlano } from '../core/corte.js';
 import { cortarLocal, sugerirSeparacao } from '../core/corteLocal.js';
 import { aplicarOperacao, reaplicar } from '../core/historico.js';
@@ -202,19 +202,6 @@ export const OPERACOES = {
   separarCascas({ parte }) { return { partes: separarCascas(parte) }; },
   relevo({ partes, alvo, forma, opc }) { return aplicarRelevo(partes, alvo, forma, opc || {}); },
   segmentar({ parte, opc }) { const r = segmentar(parte.malha, opc || {}); return r; },
-  espessura({ parte, opc }) { return espessuras(parte.malha, opc || {}); },
-
-  // booleana entre objetos: tipo 'unir' | 'subtrair' | 'intersectar'
-  booleana({ tipo, a, b }) {
-    return comContexto(ctx => {
-      const { Manifold } = manifold();
-      const sa = ctx.guardar(Manifold.union(a.map(p => ctx.solido(p, p.nome))));
-      const sb = ctx.guardar(Manifold.union(b.map(p => ctx.solido(p, p.nome))));
-      const r = ctx.guardar(tipo === 'subtrair' ? sa.subtract(sb) : tipo === 'intersectar' ? sa.intersect(sb) : sa.add(sb));
-      if (r.isEmpty()) throw new Error('O resultado ficou vazio.');
-      return { parte: ctx.parte(r, a[0].nome, a[0].cor) };
-    });
-  },
 
   // biblioteca de formas (sempre sólido fechado, em mm)
   forma({ id, params, opc }) { return gerarForma(id, params || {}, opc || {}); },

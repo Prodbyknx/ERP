@@ -35,6 +35,7 @@ export function importarArquivo(nome, bytes, extras = {}) {
     const r = lerSTL(bytes, nome);
     const parte = { nome: base, malha: r.malha, cor: r.cor || null, paleta: r.paleta || null };
     objetos = [{ nome: base, transform: M4.identidade(), partes: [parte] }];
+    if (r.avisos) avisos.push(...r.avisos);
     if (r.paleta) avisos.push('O STL tem cor por faceta (' + r.paleta.length + ' cores).');
   } else if (fmt === 'obj') {
     const r = lerOBJ(bytes, extras.mtl || null, nome);

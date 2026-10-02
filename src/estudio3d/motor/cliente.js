@@ -11,6 +11,11 @@ import { executar } from './operacoes.js';
 import { malhasDe } from '../core/render.js';
 import { cacheRender } from '../ui/cacheRender.js';
 
+// registro das últimas operações do motor (o que rodou, com quantos
+// triângulos, quanto demorou, erro e onde) — vai no "Copiar diagnóstico"
+const MAX_REGISTRO = 60;
+function triangulosDe(args) { let n = 0; for (const m of malhasDe(args)) n += m.idx.length / 3; return n; }
+
 /* global __WORKER_CODIGO__, __MANIFOLD_WASM__ */
 
 function base64ParaBytes(b64) {
@@ -66,14 +71,24 @@ class Canal {
         const p = this.fila.get(m.id);
         if (!p) return;
         this.fila.delete(m.id);
+        this.motor.registrar({ op: p.op, canal: this.nome, tri: p.tri, ms: Math.round(performance.now() - p.inicio), ok: !!m.ok, erro: m.ok ? null : m.erro, codigo: m.codigo || null, pilha: m.pilha || null });
         const prox = this.fila.values().next().value;
         if (prox) prox.desde = performance.now();
         this.motor.avisar(this);
-        if (m.ok) p.resolve(recolherRender(m.resultado)); else { const e = new Error(m.erro); e.codigo = m.codigo; p.reject(e); }
+        if (m.ok) p.resolve(recolherRender(m.resultado)); else { const e = new Error(m.erro); e.codigo = m.codigo; e.op = p.op; e.pilhaMotor = m.pilha; p.reject(e); }
         // pane no WASM: joga este worker fora e sobe outro limpo
         if (m.reiniciar) this.motor.reiniciarCanal(this);
       };
-      w.onerror = ev => { clearTimeout(limite); ev.preventDefault && ev.preventDefault(); if (!ok) reject(new Error('erro no worker: ' + (ev.message || ''))); };
+      // erro FORA de uma operação (o worker quebrou): antes, depois de pronto,
+      // ninguém rejeitava a fila e a tela ficava "calculando" pra sempre
+      const quebrou = ev => {
+        clearTimeout(limite); ev && ev.preventDefault && ev.preventDefault();
+        if (!ok) { reject(new Error('erro no worker: ' + ((ev && ev.message) || ''))); return; }
+        this.motor.registrar({ op: '(worker)', canal: this.nome, ok: false, erro: 'o motor parou: ' + ((ev && ev.message) || 'erro desconhecido') });
+        this.motor.reiniciarCanal(this, 'O motor 3D parou no meio do cálculo e foi reiniciado. Nada mudou na peça — tente de novo.');
+      };
+      w.onerror = quebrou;
+      w.onmessageerror = quebrou;
       const wasm = bytesWasm().slice();
       w.postMessage({ tipo: 'iniciar', wasm: wasm.buffer }, [wasm.buffer]);
     });
@@ -83,7 +98,7 @@ class Canal {
     const lista = [];
     const copia = copiarArrays(args, lista);
     return new Promise((resolve, reject) => {
-      this.fila.set(id, { resolve, reject, op, desde: performance.now() });
+      this.fila.set(id, { resolve, reject, op, desde: performance.now(), inicio: performance.now(), tri: triangulosDe(args) });
       this.motor.avisar(this);
       this.worker.postMessage({ id, op, args: copia }, lista);
     });
@@ -108,6 +123,12 @@ export class Motor {
     this.principal = new Canal('principal', this);
     this.aux = new Canal('aux', this);
     this.url = null;
+    this.registro = [];
+  }
+
+  registrar(x) {
+    this.registro.push({ quando: new Date().toISOString(), ...x });
+    if (this.registro.length > MAX_REGISTRO) this.registro.shift();
   }
 
   get ocupado() { return this.local ? (this._ocupadoLocal || 0) : this.principal.ocupado; }
@@ -149,8 +170,10 @@ export class Motor {
       if (this.aoMudar) this.aoMudar(this._ocupadoLocal, { op, desde: performance.now() });
       // deixa a tela pintar o "calculando..." antes de travar
       await new Promise(r => setTimeout(r, 30));
-      try { return executar(op, copiarArrays(args, [])); }
+      const t0 = performance.now(), tri = triangulosDe(args);
+      try { const r = executar(op, copiarArrays(args, [])); this.registrar({ op, canal: 'local', tri, ms: Math.round(performance.now() - t0), ok: true }); return r; }
       catch (e) {
+        this.registrar({ op, canal: 'local', tri, ms: Math.round(performance.now() - t0), ok: false, erro: String(e && e.message || e), pilha: e && e.stack ? String(e.stack).slice(0, 2000) : null });
         if (!ehErroWasm(e)) throw e;
         // sem worker: recarrega o módulo aqui mesmo
         await this.usarLocal(this.motivoLocal);
@@ -173,8 +196,8 @@ export class Motor {
   }
   // worker com o WASM corrompido: derruba (o que estava na fila dele volta
   // com erro) e sobe outro
-  async reiniciarCanal(canal) {
-    canal.derrubar('O motor 3D foi reiniciado depois de uma pane. Tente de novo.');
+  async reiniciarCanal(canal, motivo) {
+    canal.derrubar(motivo || 'O motor 3D foi reiniciado depois de uma pane. Tente de novo.');
     if (canal === this.principal) return this.reiniciarPrincipal();
     this.auxPronto = canal.iniciar(this.url).then(() => true, () => { canal.derrubar(); return false; });
     return this.auxPronto;

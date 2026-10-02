@@ -62,7 +62,11 @@ const NOMES_OP = {
   importar: 'Abrindo o arquivo', cortar: 'Cortando', separarDetalhe: 'Separando o detalhe', separarPorCor: 'Separando por cor',
   separarCascas: 'Separando as cascas', reparar: 'Consertando a malha', relevo: 'Aplicando o relevo', exportar3MF: 'Gerando o 3MF',
   exportarSTL: 'Gerando o STL', segmentar: 'Procurando as partes', unirSobrepostos: 'Unindo partes', removerInternos: 'Limpando sobras',
-  escalarGeometria: 'Convertendo a medida', analisar: 'Analisando', suavizar: 'Suavizando'
+  escalarGeometria: 'Convertendo a medida', analisar: 'Analisando', suavizar: 'Suavizando',
+  // (antes só as de cima tinham nome: o resto aparecia como "Calculando…")
+  combinar: 'Combinando as peças', forma: 'Criando a forma', desenho: 'Criando do desenho', modificar: 'Modificando a peça',
+  reaplicar: 'Refazendo as operações', deformar: 'Deformando', refinar: 'Dando mais detalhe', furar: 'Aplicando os furos',
+  cortarLocal: 'Separando a parte', sugerirSeparacao: 'Procurando o ponto mais fino', transformarParte: 'Ajustando a peça'
 };
 
 export class Estudio {
@@ -85,6 +89,10 @@ export class Estudio {
     // operação longa: etapa e % (a barra aparece só quando o motor informa)
     this.motor.aoProgresso = (f, etapa, canal) => { if (canal === this.motor.principal) { this._prog = { f, etapa }; if (this._tick) this._tick(); } };
     this.motor.iniciar().then(modo => { this.modoMotor = modo; this.atualizarMotor(0); });
+    // erro que escapou de algum clique (promessa sem tratamento): vai pro
+    // registro do diagnóstico em vez de sumir só no console
+    window.addEventListener('unhandledrejection', ev => { const r = ev.reason; this.motor.registrar && this.motor.registrar({ op: '(tela)', ok: false, erro: String((r && r.message) || r), pilha: r && r.stack ? String(r.stack).slice(0, 2000) : null }); });
+    window.addEventListener('error', ev => { if (!ev || !ev.error) return; this.motor.registrar && this.motor.registrar({ op: '(tela)', ok: false, erro: String(ev.message), pilha: ev.error.stack ? String(ev.error.stack).slice(0, 2000) : null }); });
   }
 
   on(ev, fn) { if (!this.ouvintes.has(ev)) this.ouvintes.set(ev, []); this.ouvintes.get(ev).push(fn); }
@@ -359,6 +367,7 @@ export class Estudio {
       else if (t.dataset.b === 'preparar') prepararParaImpressao(this);
       else if (t.dataset.b === 'tela') this.alternarTelaCheia();
     };
+    this.topo.querySelector('[data-b=motor]').addEventListener('click', () => this.copiarDiagnostico());
     this.topo.addEventListener('click', clique);
     this.vistasEl.addEventListener('click', clique);
     this.vistasEl.querySelector('[data-b=modo]').addEventListener('change', ev => this.definirModoVisual(ev.target.value));
@@ -673,7 +682,7 @@ export class Estudio {
     const aux = this.motor.aux ? this.motor.aux.ocupado : 0;
     m.className = 'e3d-motor ' + (n > 0 || aux > 0 ? 'ocupado' : pronto ? 'ok' : '');
     m.querySelector('span').textContent = !pronto ? 'carregando motor…' : n > 0 ? 'calculando…' : aux > 0 ? 'conferindo…' : (this.modoMotor === 'worker' ? 'motor pronto' : 'motor pronto (modo simples)');
-    m.title = this.modoMotor === 'local' ? 'Rodando sem Web Worker: ' + (this.motor.motivoLocal || '') : 'Geometria calculada em segundo plano, sem travar a tela';
+    m.title = (this.modoMotor === 'local' ? 'Rodando sem Web Worker: ' + (this.motor.motivoLocal || '') : 'Geometria calculada em segundo plano, sem travar a tela') + ' · clique pra copiar o diagnóstico';
     const on = n > 0;
     this.ocupadoEl.classList.toggle('on', on);
     clearInterval(this._relogio);
@@ -698,6 +707,21 @@ export class Estudio {
       tick();
       this._relogio = setInterval(tick, 100);
     }
+  }
+  // "Copiar diagnóstico" (clique no estado do motor, em cima à direita): o que
+  // rodou, com quantos triângulos, quanto tempo, erro e onde — pra mandar pra
+  // quem for olhar o problema (sem isso, quem descobria a falha era a impressora)
+  textoDiagnostico() {
+    const objs = this.cena.objetos.map(o => o.nome + ': ' + o.partes.map(p => p.nome + ' ' + (p.malha.idx.length / 3) + ' tri').join(', '));
+    const ops = (this.motor.registro || []).map(x => x.quando.slice(11, 19) + ' ' + x.op + ' [' + x.canal + '] ' + (x.tri != null ? x.tri + ' tri ' : '') + (x.ms != null ? x.ms + ' ms ' : '') + (x.ok ? 'ok' : 'ERRO: ' + x.erro + (x.codigo ? ' (' + x.codigo + ')' : '') + (x.pilha ? '\n    ' + x.pilha.split('\n').slice(0, 6).join('\n    ') : '')));
+    return ['Estúdio 3D — diagnóstico', 'versão ' + (window.Estudio3D && window.Estudio3D.versao) + ' · motor ' + (this.modoMotor || '?') + (this.motor.motivoLocal ? ' (' + this.motor.motivoLocal + ')' : ''),
+      'navegador: ' + navigator.userAgent, 'memória JS: ' + (performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) + ' MB' : '?'),
+      'mesa: ' + (objs.length ? objs.join(' | ') : 'vazia'), 'desfazer: ' + this.cena.pilhaDesfazer.length + ' passo(s)', '', 'últimas operações:', ...(ops.length ? ops : ['(nenhuma)'])].join('\n');
+  }
+  async copiarDiagnostico() {
+    const t = this.textoDiagnostico();
+    try { await navigator.clipboard.writeText(t); avisar('Diagnóstico copiado — cole na conversa com o suporte.'); }
+    catch (e) { baixar(new TextEncoder().encode(t), 'diagnostico-estudio-3d.txt', 'text/plain'); avisar('Diagnóstico baixado (diagnostico-estudio-3d.txt).'); }
   }
   async cancelarCalculo() {
     if (await this.motor.cancelar()) avisar('Cálculo cancelado.', 'warn');
@@ -816,7 +840,8 @@ export class Estudio {
       lista.appendChild(box);
     }
     const acoes = el('div', { class: 'e3d-botoes' },
-      el('button', { class: 'btn', title: 'Todos os objetos viram peças de um objeto só (montagem multicor)', onclick: () => this.juntarObjetos() }, 'Juntar'),
+      // (era "Juntar": juntava TODOS ignorando a seleção e o nome sugeria união — agora é o mesmo Agrupar da barra)
+      el('button', { class: 'btn', title: 'Vira um objeto só, cada peça com sua cor (montagem multicor): as peças escolhidas, ou todas se nenhuma estiver escolhida', onclick: () => this.juntarObjetos() }, 'Agrupar'),
       el('button', { class: 'btn', title: 'Cada peça do objeto escolhido vira um objeto (imprimir separado)', onclick: () => this.separarPecasEmObjetos() }, 'Peças → objetos'),
       el('button', { class: 'btn danger', onclick: () => this.limparCena() }, 'Limpar'));
     lista.appendChild(acoes);
@@ -882,6 +907,7 @@ export class Estudio {
     return d;
   }
   juntarObjetos() {
+    if (this.cena.objetosSel().length >= 2) { this.agruparSelecao(); return; }
     const vis = this.cena.objetos.filter(o => o.visivel);
     if (vis.length < 2) { avisar('Precisa de pelo menos dois objetos.', 'warn'); return; }
     // peças levam a transformação do objeto pra dentro da geometria? não: usa o 1º como referência
@@ -894,7 +920,7 @@ export class Estudio {
         for (const p of o.partes) partes.push({ ...p, id: undefined, nome: vis.length > 1 && o.partes.length === 1 ? o.nome : p.nome, malha: M4.ehIdentidade(rel) ? p.malha : transformar(p.malha, rel) });
       }
       const novo = novoObjeto({ nome: ref.nome + ' (montagem)', transform: ref.transform, partes });
-      this.cena.aplicar('Juntar objetos', () => {
+      this.cena.aplicar('Agrupar tudo', () => {
         this.cena.objetos = this.cena.objetos.filter(o => !vis.includes(o));
         this.cena.objetos.push(novo);
         this.cena.sel = { objeto: novo.id, parte: null };
@@ -1109,7 +1135,12 @@ export class Estudio {
       const usados = furos.filter(x => toca(co, this.cena.caixaExata(x)));
       if (!usados.length) { if (f) { this.furados.delete(o.id); mudou = true; } continue; }
       let r = null;
-      try { r = await this.motor.rodar('furar', { alvo: this.paraMotor(o), furos: usados.map(x => this.paraMotor(x)) }, { canal: 'aux' }); } catch (e) { r = null; }
+      try { r = await this.motor.rodar('furar', { alvo: this.paraMotor(o), furos: usados.map(x => this.paraMotor(x)) }, { canal: 'aux' }); }
+      catch (e) {
+        r = null;
+        // a prévia do furo falhou: a peça aparece SEM o furo — diz por quê (uma vez por situação)
+        if (e && e.codigo !== 'cancelado' && this._furoFalhou !== chave) { this._furoFalhou = chave; avisar('Não consegui mostrar o furo em ' + o.nome + ': ' + (e.message || e), 'warn'); }
+      }
       if (this.chaveFuros(o) !== chave || !this.cena.objeto(o.id)) continue;   // mudou enquanto calculava
       const malhas = new Map();
       if (r) o.partes.forEach((p, i) => { if (r.partes[i] && r.partes[i].malha !== undefined) malhas.set(p.id, r.partes[i].malha); });

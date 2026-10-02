@@ -120,15 +120,6 @@ export function montarDiagnostico(est) {
     avisar(partes.join(' · ') || 'Nada pra consertar', falharam.length || mudaram.length ? 'warn' : 'ok');
   }
 
-  async function unirSobrepostos() {
-    const o = est.objetoAtual(); if (!o) return;
-    const res = [];
-    try { for (const p of o.partes) res.push({ p, malha: p.malha, r: await est.rodar('unirSobrepostos', { parte: est.parteParaMotor(p) }, 'Unir') }); }
-    catch (e) { return; }
-    const { oa, mudaram } = aplicarPorPeca(o, res, 'Unir partes sobrepostas', { muda: () => true, aplicar: (q, r) => { q.malha = r.parte.malha; q.paleta = r.parte.paleta; } });
-    if (mudaram.length) est.avisarMudou('Unir');
-    if (oa) analisar(oa, true);
-  }
   async function removerInternos() {
     const o = est.objetoAtual(); if (!o) return;
     const res = [];
@@ -209,7 +200,6 @@ export function montarDiagnostico(est) {
         if (ps.length) h += '<div class="e3d-nota"><b>Reparo:</b> ' + ps.map(x => esc(x.nome) + ': ' + esc(x.passos.join('; '))).join(' · ') + '</div>';
       }
       res.innerHTML = h;
-      if (auto > 0 && soma('componentes') > 1) extra.appendChild(el('button', { class: 'btn', title: 'Cascas que se atravessam viram um sólido só (o fatiador faria isso)', onclick: () => sozinho(unirSobrepostos) }, 'Unir partes sobrepostas'));
       if (soma('componentesInternos')) extra.appendChild(el('button', { class: 'btn', onclick: () => sozinho(removerInternos) }, 'Remover sobras internas'));
       if (esp.length && Math.min(...esp) < lim) extra.appendChild(el('button', { class: 'btn', onclick: () => est.definirModoVisual('espessura') }, 'Ver onde está fino'));
       if (!fechada) extra.appendChild(el('button', { class: 'btn', onclick: () => est.definirModoVisual('problemas') }, 'Ver os defeitos'));
