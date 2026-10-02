@@ -17,22 +17,18 @@ COMO USAR
    de exemplo: Gabriel (admin) e Ana (vendedora).
 
 
-NOVIDADES DESTA VERSÃO (15) — MODELAR POR CIMA DE UMA FOTO
+NOVIDADES DESTA VERSÃO (15) — ESTÚDIO 3D MAIS SIMPLES: UMA FERRAMENTA POR TAREFA
 --------------------------------------------------------------------
-Como no Blender, mas pra quem nunca usou. Detalhes em FERRAMENTAS.txt.
-- FOTO (trilho da esquerda): ponha a foto de frente, de lado ou na mesa,
-  deixe mais clara (opacidade) e acerte o tamanho em mm clicando em 2
-  pontos de uma medida conhecida. Arraste a foto pra mudar de lugar.
-  Também entra arrastando a imagem pro 3D ou colando (Ctrl+V).
-- MODELAR: crie a peça clicando por cima da foto — cada clique é um
-  ponto, clicar no 1º fecha e vira face, clicar numa borda e depois na
-  foto puxa uma face nova até ali. Arraste pontos pra ajustar (na vista
-  de lado dá fundura). "Puxar face" dá volume.
-- ESPELHO: faça um lado, o outro aparece sozinho; mexer do lado
-  espelhado mexe nos dois.
-- A peça sai sempre SÓLIDA e fechada (espessura e suavizar), vai pro
-  Consertar e pro 3MF como qualquer outra, e continua editável.
-- O painel avisa se a peça se cruzar (o "8" sem querer) e como consertar.
+Detalhes em FERRAMENTAS.txt.
+- DESENHAR (juntou o Desenhar, o Modelar e a Foto): abriu e clicou,
+  aparece ponto — sem botão de começar. O ponto cai na foto, na mesa ou em
+  pé, conforme a vista. Clique no 1º ponto: vira peça (placa). Depois
+  escolha Placa, Vaso ou Tubo. Clique numa borda e depois no 3D pra modelar
+  face por face. Espelho: faz um lado, o outro aparece. A foto de
+  referência (opacidade, medir em mm, arrastar) fica no alto do painel.
+- Antes, no Desenhar, o clique de frente pra foto caía longe (na mesa) e no
+  Modelar só funcionava depois de apertar "Pontos". Agora o clique funciona
+  direto, testado clicando como iniciante.
 ARQUIVOS PRA SUBIR: o estudio3d.js mudou (e o cloud.js, na versão 14):
 suba o pacote inteiro.
 

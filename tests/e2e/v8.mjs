@@ -16,58 +16,59 @@ export async function secaoV8({ b, teste, novaPagina, passo, abrirEstudio, abrir
   const camera = (alvo, pos) => pg.evaluate(([a, p]) => { const v = window.Estudio3D.estudio.visor; v.controles.target.set(...a); v.camera.position.set(...p); v.controles.update(); v.pedirRender(); }, [alvo, pos]);
   const clicarEm = async (x, y, z) => { const s = await pg.evaluate(([a, b2, c]) => window.Estudio3D.estudio.visor.telaDe(a, b2, c), [x, y, z]); await pg.mouse.click(s.x, s.y); await pg.waitForTimeout(70); };
   const seg = (a, v) => pg.click('[data-sec=des] [data-a=' + a + '] button[data-v=' + v + ']');
+  const ocioso = () => pg.evaluate(() => window.Estudio3D.estudio.secoes.desenhar.ocioso());
 
-  await passo(pg, 'tubo que sobe: 3 pontos na mesa, o do meio a 20 mm de altura -> alça em arco, sólida', async () => {
+  await passo(pg, 'tubo que sobe: 3 pontos na mesa, o do meio a 20 mm de altura (Escolhe -> Z) + Virar tubo = alça em arco, sólida', async () => {
     await pg.evaluate(() => window.Estudio3D.estudio.cena.selecionar(null, null));
     await abrirSecao(pg, 'des');
-    await seg('onde', 'mesa'); await seg('modo', 'tubo'); await seg('linha', 'suave');
     await camera([20, 0, 8], [20, -110, 70]); await pg.waitForTimeout(200);
     for (const [x, y] of [[0, 0], [20, 0], [40, 0]]) await clicarEm(x, y, 0);
+    await seg('modo', 'mexer');
     await clicarEm(20, 0, 0);                       // escolhe o do meio
-    await pg.waitForSelector('[data-sec=des] [data-a=optAltura]:not([style*="none"])', { timeout: 5000 });
-    await pg.fill('[data-sec=des] [data-a=altura]', '20'); await pg.press('[data-sec=des] [data-a=altura]', 'Enter');
+    await pg.waitForSelector('[data-sec=des] [data-a=xyzBloco]:not([style*="none"])', { timeout: 5000 });
+    await pg.fill('[data-sec=des] [data-a=pz]', '20'); await pg.press('[data-sec=des] [data-a=pz]', 'Enter');
     const n = await nObj();
-    await pg.click('[data-sec=des] [data-a=criar]');
+    await pg.click('[data-sec=des] [data-a=virarTubo]');
     await pg.waitForFunction(k => window.Estudio3D.estudio.cena.objetos.length === k + 1, n, { timeout: 30000 });
+    await pg.check('[data-sec=des] [data-a=curva]'); await ocioso();
     limpo(await malha(n), 'alça');
     const c = await caixaObj(n);
     if (Math.abs(c.max[2] - 24) > 0.3 || Math.abs(c.min[2]) > 1e-6 || Math.abs(c.max[0] - c.min[0] - 44) > 0.3) throw new Error('medida da alça ' + JSON.stringify(c));
+    await seg('modo', 'criar');
   });
-
-  await passo(pg, 'EDITAR depois de criar: escolhe a alça, "Editar o desenho", ponto do meio pra 10 mm, Atualizar; Ctrl+Z volta', async () => {
+  await passo(pg, 'EDITAR depois de criar: escolhe a alça, "Editar o desenho", ponto do meio pra 10 mm; a mesma peça muda; Ctrl+Z volta', async () => {
+    await pg.click('[data-sec=des] [data-a=nova]');
     const k = (await nObj()) - 1;
     await pg.evaluate(i => { const e = window.Estudio3D.estudio; e.cena.selecionar(e.cena.objetos[i].id, e.cena.objetos[i].partes[0].id); }, k);
-    await pg.waitForSelector('[data-sec=des] [data-a=editarBarra]:not([style*="none"])', { timeout: 5000 });
+    await pg.waitForSelector('[data-sec=des] [data-a=editarBloco]:not([style*="none"])', { timeout: 5000 });
     await pg.click('[data-sec=des] [data-a=editar]');
     await clicarEm(20, 0, 20);                      // o ponto do meio (lá no alto)
-    await pg.waitForSelector('[data-sec=des] [data-a=optAltura]:not([style*="none"])', { timeout: 5000 });
-    await pg.fill('[data-sec=des] [data-a=altura]', '10'); await pg.press('[data-sec=des] [data-a=altura]', 'Enter');
-    if (await pg.textContent('[data-sec=des] [data-a=criar]') !== 'Atualizar peça') throw new Error('não entrou em edição');
+    await pg.waitForSelector('[data-sec=des] [data-a=xyzBloco]:not([style*="none"])', { timeout: 5000 });
     const n = await nObj();
-    await pg.click('[data-sec=des] [data-a=criar]');
+    await pg.fill('[data-sec=des] [data-a=pz]', '10'); await pg.press('[data-sec=des] [data-a=pz]', 'Enter');
+    await ocioso();
     await pg.waitForFunction(i => Math.abs(window.Estudio3D.estudio.cena.caixaExata(window.Estudio3D.estudio.cena.objetos[i]).max[2] - 14) < 0.3, k, { timeout: 30000 });
     if (await nObj() !== n) throw new Error('criou outra peça em vez de atualizar');
     limpo(await malha(k), 'alça editada');
-    await pg.keyboard.press('Control+z');
+    // o cursor ainda está no campo (lá o Ctrl+Z desfaz o texto): o botão do painel desfaz a peça
+    await pg.click('[data-sec=des] [data-a=tirar]');
     await pg.waitForFunction(i => Math.abs(window.Estudio3D.estudio.cena.caixaExata(window.Estudio3D.estudio.cena.objetos[i]).max[2] - 24) < 0.3, k, { timeout: 10000 });
+    await seg('modo', 'criar');
   });
-
-  await passo(pg, 'desenho EM PÉ (frente): perfil de 4 pontos + fechar -> Girar = vaso de pé onde foi desenhado', async () => {
+  await passo(pg, 'desenho EM PÉ (vista de frente): perfil de 4 pontos + fechar + "Vaso (girar)" = vaso de pé onde foi desenhado', async () => {
+    await pg.click('[data-sec=des] [data-a=nova]');
     await pg.evaluate(() => window.Estudio3D.estudio.cena.selecionar(null, null));
-    await seg('onde', 'frente'); await seg('modo', 'revolucionar'); await seg('linha', 'reta');
     await camera([80, 0, 10], [80, -120, 12]); await pg.waitForTimeout(200);
-    for (const [x, z] of [[70, 0], [82, 0], [78, 15], [70, 15], [70, 0]]) await clicarEm(x, 0, z);
-    await pg.waitForFunction(() => /fechado/.test(document.querySelector('[data-sec=des] [data-a=info]').innerHTML), null, { timeout: 5000 });
     const n = await nObj();
-    await pg.click('[data-sec=des] [data-a=criar]');
+    for (const [x, z] of [[70, 0], [82, 0], [78, 15], [70, 15], [70, 0]]) await clicarEm(x, 0, z);
     await pg.waitForFunction(k => window.Estudio3D.estudio.cena.objetos.length === k + 1, n, { timeout: 30000 });
+    await seg('tipo', 'vaso'); await ocioso();
     limpo(await malha(n), 'vaso');
     const c = await caixaObj(n);
-    // eixo em x = 70, raio 12, altura 15, de pé
+    // eixo em x = 70 (a linha da esquerda), raio 12, altura 15, de pé
     if (Math.abs((c.min[0] + c.max[0]) / 2 - 70) > 0.3 || Math.abs(c.max[0] - c.min[0] - 24) > 0.3 || Math.abs(c.max[2] - 15) > 0.05 || Math.abs(c.min[2]) > 0.05) throw new Error('vaso ' + JSON.stringify(c));
   });
-
-  await passo(pg, 'tubo SOBRE a peça: 3 cliques numa esfera -> tubo colado na superfície (cipó), sólido', async () => {
+  await passo(pg, 'tubo SOBRE a peça: "pontos grudam na superfície", 3 cliques numa esfera + Virar tubo = cipó colado, sólido', async () => {
     const n0 = await nObj();
     await abrirSecao(pg, 'formas');
     await pg.click('[data-forma=esfera]');
@@ -77,19 +78,22 @@ export async function secaoV8({ b, teste, novaPagina, passo, abrirEstudio, abrir
     const c = await caixaObj(n0), ce = [0, 1, 2].map(i => (c.min[i] + c.max[i]) / 2);
     await camera(ce, [ce[0], ce[1] - 110, ce[2] + 20]); await pg.waitForTimeout(200);
     await abrirSecao(pg, 'des');
-    await seg('onde', 'sobre'); await seg('linha', 'suave');
-    await pg.fill('[data-sec=des] [data-a=diam]', '3');
+    await pg.click('[data-sec=des] [data-a=nova]');
+    await pg.check('[data-sec=des] [data-a=grudar]');
     const R = 20;
     for (const a of [-50, 0, 50]) { const t = a * Math.PI / 180; await clicarEm(ce[0] + R * Math.sin(t), ce[1] - R * Math.cos(t), ce[2] + 6); }
     const n = await nObj();
-    await pg.click('[data-sec=des] [data-a=criar]');
+    await pg.click('[data-sec=des] [data-a=virarTubo]');
     await pg.waitForFunction(k => window.Estudio3D.estudio.cena.objetos.length === k + 1, n, { timeout: 30000 });
+    await pg.check('[data-sec=des] [data-a=curva]');
+    await pg.fill('[data-sec=des] [data-a=diam]', '3'); await pg.press('[data-sec=des] [data-a=diam]', 'Enter');
+    await ocioso();
+    await pg.uncheck('[data-sec=des] [data-a=grudar]');
     const m = await malha(n); limpo(m, 'cipó');
     let dmin = Infinity, dmax = 0;
     for (let i = 0; i < m.pos.length; i += 3) { const d = Math.hypot(m.pos[i] - ce[0], m.pos[i + 1] - ce[1], m.pos[i + 2] - ce[2]); dmin = Math.min(dmin, d); dmax = Math.max(dmax, d); }
     if (dmin < R - 1 || dmax > R + 3.5) throw new Error('não seguiu a superfície: ' + dmin.toFixed(2) + '..' + dmax.toFixed(2));
   });
-
   await passo(pg, 'texto passando da QUINA: clica perto do topo da frente da caixa -> letras continuam no topo, 1 mm', async () => {
     const n0 = await nObj();
     await abrirSecao(pg, 'formas');

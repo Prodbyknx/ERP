@@ -418,7 +418,8 @@ function triangular(V, F) {
   return T;
 }
 
-// placa: a superfície aberta ganha espessura (metade pra cada lado) e a beirada é fechada
+// placa: a superfície aberta ganha espessura PRA FRENTE (do plano do desenho
+// pra quem está olhando, como o Desenhar sempre fez) e a beirada é fechada
 function solidificar(V, T, esp) {
   const nv = V.length, N = V.map(() => [0, 0, 0]);
   for (let t = 0; t < T.length; t += 3) {
@@ -426,10 +427,9 @@ function solidificar(V, T, esp) {
     const n = cruz(sub(b, a), sub(c, a));        // área já pesa
     for (let k = 0; k < 3; k++) N[T[t + k]] = soma(N[T[t + k]], n);
   }
-  const h = esp / 2;
   const P = [];
-  for (let i = 0; i < nv; i++) P.push(soma(V[i], mult(unit(N[i]), h)));
-  for (let i = 0; i < nv; i++) P.push(soma(V[i], mult(unit(N[i]), -h)));
+  for (let i = 0; i < nv; i++) P.push(soma(V[i], mult(unit(N[i]), esp)));
+  for (let i = 0; i < nv; i++) P.push(V[i].slice());
   const idx = [];
   for (let t = 0; t < T.length; t += 3) { idx.push(T[t], T[t + 1], T[t + 2]); idx.push(T[t] + nv, T[t + 2] + nv, T[t + 1] + nv); }
   const uso = new Map();
@@ -492,3 +492,99 @@ export function transformarGaiola(g, M) {
   // espelhar (escala negativa) troca o sentido das faces: a geração reorienta sozinha
   return { ...h, v, espelho };
 }
+
+/* ---------------- o que o desenho é (decide como a peça é feita) */
+// 'vazio' | 'pontos' (sem borda) | 'linha' (caminho aberto, sem face) |
+// 'contorno' (uma face plana só: vira placa, vaso ou tubo em anel pelo motor
+// de sólidos) | 'malha' (várias faces / volume: gerada aqui)
+export function forma(g) {
+  if (!g.f.length) {
+    if (!g.v.length) return 'vazio';
+    return cadeia(g) ? 'linha' : 'pontos';
+  }
+  if (g.f.length === 1 && !g.a.length && plana(g.v, g.f[0]) && (!g.espelho || costuraNoMeio(g, g.f[0]) >= 0)) return 'contorno';
+  return 'malha';
+}
+// normal de um contorno que serve até pro "8" (os dois laços giram ao contrário e a
+// área de Newell dá zero): sem área, usa o maior "vira-lata" entre os pontos
+function normalDoContorno(P) {
+  let n = [0, 0, 0];
+  for (let i = 0; i < P.length; i++) { const p = P[i], q = P[(i + 1) % P.length]; n = [n[0] + (p[1] - q[1]) * (p[2] + q[2]), n[1] + (p[2] - q[2]) * (p[0] + q[0]), n[2] + (p[0] - q[0]) * (p[1] + q[1])]; }
+  let ext = 0; for (const p of P) ext = Math.max(ext, norma(sub(p, P[0])));
+  if (norma(n) > 1e-9 * Math.max(1, ext * ext)) return unit(n);
+  let melhor = [0, 0, 0];
+  for (let i = 1; i < P.length; i++) for (let j = i + 1; j < P.length; j++) { const c = cruz(sub(P[i], P[0]), sub(P[j], P[0])); if (norma(c) > norma(melhor)) melhor = c; }
+  return norma(melhor) > 1e-12 ? unit(melhor) : [0, 0, 0];
+}
+function plana(V, f) {
+  const P = f.map(i => V[i]), n = normalDoContorno(P), p0 = P[0];
+  if (norma(n) < 1e-9) return false;
+  return P.every(p => Math.abs(dot(sub(p, p0), n)) < 0.01);
+}
+// a face encosta no espelho por UMA borda (os 2 pontos do meio vizinhos): índice no ciclo do 1º deles
+function costuraNoMeio(g, f) {
+  const no = f.map(i => G_no(g, g.v[i]));
+  const k = no.filter(Boolean).length;
+  if (k !== 2) return -1;
+  for (let i = 0; i < f.length; i++) if (no[i] && no[(i + 1) % f.length]) return i;
+  return -1;
+}
+const G_no = (g, p) => Math.abs(p[g.espelho.eixo] - g.espelho.c) <= TOL_ESPELHO;
+// caminho simples pelas bordas soltas: [índices em ordem] ou null
+function cadeia(g) {
+  if (!g.a.length) return null;
+  const viz = new Map();
+  for (const [x, y] of g.a) { (viz.get(x) || viz.set(x, []).get(x)).push(y); (viz.get(y) || viz.set(y, []).get(y)).push(x); }
+  if ([...viz.values()].some(l => l.length > 2)) return null;
+  const pontas = [...viz.keys()].filter(i => viz.get(i).length === 1);
+  if (pontas.length !== 2) return null;
+  const c = [pontas[0]];
+  let ant = -1, x = pontas[0];
+  for (;;) { const y = viz.get(x).find(z => z !== ant); if (y === undefined) break; c.push(y); ant = x; x = y; if (c.length > g.v.length) return null; }
+  return c.length === viz.size ? c : null;
+}
+
+// o contorno inteiro (com o lado espelhado) em ordem, pra virar placa/vaso/tubo
+export function contornoCompleto(g) {
+  const f = g.f[0];
+  if (!g.espelho) return f.map(i => g.v[i].slice());
+  const k = costuraNoMeio(g, f);
+  // caminho do ponto do meio B até o outro A, pelo lado de fora (sem a costura A–B)
+  const n = f.length, meia = [];
+  for (let j = 0; j < n; j++) meia.push(g.v[f[(k + 1 + j) % n]].slice());   // B, ..., A
+  const volta = meia.slice(1, -1).reverse().map(p => refletir(g, p));
+  return meia.concat(volta);
+}
+// a metade de verdade do contorno, com o eixo do espelho como lado de cá (pro vaso)
+export function perfilDoVaso(g) {
+  if (!g.espelho) return null;
+  const f = g.f[0], k = costuraNoMeio(g, f), n = f.length, meia = [];
+  for (let j = 0; j < n; j++) meia.push(g.v[f[(k + 1 + j) % n]].slice());
+  return meia;
+}
+// a linha (caminho) inteira; com espelho: emenda no meio, ou 2 caminhos se não encosta nele
+export function linhaCompleta(g) {
+  const c = cadeia(g);
+  if (!c) return null;
+  const P = c.map(i => g.v[i].slice());
+  if (!g.espelho) return { caminhos: [P], fechado: false };
+  const ini = G_no(g, P[0]), fim = G_no(g, P[P.length - 1]);
+  if (ini && fim) return { caminhos: [P.concat(P.slice(1, -1).reverse().map(p => refletir(g, p)))], fechado: true };
+  if (ini) return { caminhos: [P.slice(1).reverse().map(p => refletir(g, p)).concat(P)], fechado: false };
+  if (fim) return { caminhos: [P.concat(P.slice(0, -1).reverse().map(p => refletir(g, p)))], fechado: false };
+  return { caminhos: [P, P.map(p => refletir(g, p))], fechado: false };
+}
+// base do plano de um contorno: u, v no plano com u×v apontando pra quem olha (g.frente)
+export function planoDoContorno(g, pts) {
+  const fr = g.frente || [0, -1, 0];
+  let n = normalDoContorno(pts);
+  if (norma(n) < 1e-9) return null;
+  if (dot(n, fr) < 0) n = mult(n, -1);
+  // u: o eixo do mundo mais "deitado" no plano (X, ou Y se o plano for de lado); v = n×u
+  const cand = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map(e => sub(e, mult(n, dot(e, n))));
+  let u = cand[0]; if (norma(cand[0]) < 0.5) u = cand[1];
+  u = unit(u);
+  const v = cruz(n, u);
+  return { o: pts[0].slice(), u, v, n };
+}
+

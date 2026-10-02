@@ -69,15 +69,25 @@ async function carregarImagem(arq) {
   return cv;
 }
 
+// Bloco da foto, embutido no painel Desenhar (a foto serve pra desenhar por cima)
 export function montarReferencia(est) {
-  const d = el('details', { 'data-sec': 'ref' });
-  d.innerHTML = `<summary>Foto de referência</summary><div class="e3d-sec">
-    <div class="e3d-botoes" style="margin-top:0"><button type="button" class="btn primary largo" data-a="add">Adicionar foto</button></div>
-    <p class="u" style="margin:6px 0 0">Ou arraste a imagem pro 3D, ou cole com Ctrl+V. A foto é só guia: não vai pro arquivo exportado.</p>
-    <div data-a="lista" style="margin-top:10px"></div>
-    <div data-a="ed" style="display:none">
+  const d = el('div', { class: 'e3d-fotoref', 'data-bloco': 'ref' });
+  d.innerHTML = `
+    <div data-a="semFoto">
+      <div class="e3d-botoes" style="margin-top:0"><button type="button" class="btn largo" data-a="add">Pôr uma foto pra desenhar por cima</button></div>
+      <p class="u" style="margin:6px 0 0">Opcional. Também dá pra arrastar a imagem pro 3D ou colar (Ctrl+V). A foto é só guia: não vai pro arquivo exportado.</p>
+    </div>
+    <div data-a="comFoto" style="display:none">
+      <div data-a="lista"></div>
+      <div class="field" style="margin-top:6px"><label>Opacidade da foto</label><div class="e3d-slider"><input type="range" min="5" max="100" step="1" value="50" data-a="opac"><b data-a="opacv">50%</b></div></div>
+      <div class="e3d-botoes" style="margin-top:4px">
+        <button type="button" class="btn mini" data-a="ajustes" aria-expanded="false">Ajustar a foto ▾</button>
+        <button type="button" class="btn mini" data-a="mover" aria-pressed="false" title="Ligado: arrastar no 3D move a foto (não põe ponto)">Arrastar a foto</button>
+        <button type="button" class="btn mini" data-a="add2">Outra foto</button>
+      </div>
+    </div>
+    <div data-a="ed" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--line-soft)">
       <div class="field"><label>Onde a foto fica</label><div class="seg" data-a="plano">${Object.entries(PLANOS_REF).map(([k, P]) => '<button type="button" data-v="' + k + '">' + esc(P.nome) + '</button>').join('')}</div></div>
-      <div class="field"><label>Opacidade <span class="u">mais clara = dá pra ver a peça por cima</span></label><div class="e3d-slider"><input type="range" min="5" max="100" step="1" value="50" data-a="opac"><b data-a="opacv">50%</b></div></div>
       <div class="e3d-titulo">Tamanho</div>
       <div class="e3d-l2"><div><label>Largura (mm)</label><input type="text" data-a="larg"></div><div><label>Altura (mm)</label><input type="text" data-a="alt"></div></div>
       <div class="e3d-botoes"><button type="button" class="btn" data-a="medir" title="Clique em 2 pontos da foto e diga quanto mede de verdade">Medir na foto</button></div>
@@ -88,7 +98,7 @@ export function montarReferencia(est) {
         </div>
         <div class="e3d-botoes"><button type="button" class="btn primary" data-a="medAplicar" style="display:none">Aplicar a medida</button><button type="button" class="btn" data-a="medCancelar">Cancelar</button></div>
       </div>
-      <div class="e3d-titulo" style="margin-top:12px">Posição <span class="u" style="font-weight:400">— ou arraste a foto no 3D</span></div>
+      <div class="e3d-titulo" style="margin-top:12px">Posição</div>
       <div class="e3d-l3"><div><label data-a="lh">Centro X</label><input type="text" data-a="ph"></div><div><label data-a="lv">Centro Z</label><input type="text" data-a="pv"></div><div data-a="bp"><label data-a="lp">Plano Y</label><input type="text" data-a="pp"></div></div>
       <div class="e3d-botoes">
         <button type="button" class="btn" data-a="base" title="A parte de baixo da foto encosta na mesa">Encostar na mesa</button>
@@ -96,15 +106,14 @@ export function montarReferencia(est) {
       </div>
       <div class="e3d-l2" style="margin-top:6px"><div><label>Girar (graus)</label><input type="text" data-a="giro"></div><div style="display:flex;align-items:end;gap:6px"><button type="button" class="btn" data-a="g90" title="Girar 90°">↻ 90°</button><button type="button" class="btn" data-a="esp" title="Espelhar a foto">Espelhar</button></div></div>
       <label class="fer-check" style="margin-top:10px"><input type="checkbox" data-a="porCima"> Mostrar a foto por cima das peças</label>
-    </div>
-  </div>`;
+    </div>`;
   const q = s => d.querySelector('[data-a="' + s + '"]');
   // uma foto por vez aqui (o campo de vários arquivos é o do Abrir); várias de uma vez: arraste ou cole
   const input = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif,image/bmp,.png,.jpg,.jpeg,.webp,.gif,.bmp', style: 'display:none' });
   d.appendChild(input);
 
   const refs = [];
-  let selId = null, seq = 0, medindo = null, segura = null;
+  let selId = null, seq = 0, medindo = null, segura = null, modoMover = false, ajustesAbertos = false;
   const atual = () => refs.find(r => r.id === selId) || null;
 
   function sincronizar() {
@@ -128,8 +137,9 @@ export function montarReferencia(est) {
     const m = c ? [(c.min[0] + c.max[0]) / 2, (c.min[1] + c.max[1]) / 2, (c.min[2] + c.max[2]) / 2] : [cp[0], cp[1], 0];
     const h = r.largura * r.aspecto;
     if (r.plano === 'mesa') { r.cx = m[0]; r.cy = m[1]; r.prof = 0; }
-    else if (r.plano === 'frente') { r.cx = m[0]; r.cy = c ? m[2] : h / 2; r.prof = m[1]; }
-    else { r.cx = m[1]; r.cy = c ? m[2] : h / 2; r.prof = m[0]; }
+    // em pé: nunca enterrada na mesa (a parte de baixo fica no mínimo na mesa)
+    else if (r.plano === 'frente') { r.cx = m[0]; r.cy = Math.max(c ? m[2] : 0, h / 2); r.prof = m[1]; }
+    else { r.cx = m[1]; r.cy = Math.max(c ? m[2] : 0, h / 2); r.prof = m[0]; }
   }
   // de que lado a câmera está olhando -> plano mais útil pra foto nova
   function planoDaVista() {
@@ -155,7 +165,7 @@ export function montarReferencia(est) {
     }
     if (!n) return 0;
     sincronizar();
-    if (!d.open) est.abrirFerramenta('ref');
+    if (!est.painelAberto('des')) est.abrirFerramenta('des');
     render();
     enquadrar(atual());
     avisar(n === 1 ? 'Foto de referência adicionada: ajuste a opacidade e o tamanho, e modele por cima.' : n + ' fotos de referência adicionadas.');
@@ -195,7 +205,11 @@ export function montarReferencia(est) {
       lista.appendChild(box);
     });
     const r = atual();
-    q('ed').style.display = r ? '' : 'none';
+    q('semFoto').style.display = refs.length ? 'none' : '';
+    q('comFoto').style.display = refs.length ? '' : 'none';
+    q('ed').style.display = r && ajustesAbertos ? '' : 'none';
+    q('ajustes').setAttribute('aria-expanded', String(ajustesAbertos)); q('ajustes').textContent = ajustesAbertos ? 'Ajustar a foto ▴' : 'Ajustar a foto ▾';
+    q('mover').setAttribute('aria-pressed', String(modoMover)); q('mover').classList.toggle('primary', modoMover); q('mover').textContent = modoMover ? 'Arrastando a foto (clique pra parar)' : 'Arrastar a foto';
     if (!r) return;
     q('plano').querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === r.plano));
     q('opac').value = Math.round(r.opacidade * 100); q('opacv').textContent = Math.round(r.opacidade * 100) + '%';
@@ -210,6 +224,9 @@ export function montarReferencia(est) {
   }
   const mudar = fn => { const r = atual(); if (!r) return; fn(r); sincronizar(); render(); };
   q('add').onclick = () => input.click();
+  q('add2').onclick = () => input.click();
+  q('ajustes').onclick = () => { ajustesAbertos = !ajustesAbertos; render(); };
+  q('mover').onclick = () => { modoMover = !modoMover; if (modoMover) pararMedida(); render(); est.atualizarDica && est.atualizarDica(); };
   input.onchange = () => { const f = [...input.files]; input.value = ''; if (f.length) adicionar(f); };
   q('plano').addEventListener('click', ev => {
     const b = ev.target.closest('button[data-v]'); if (!b) return;
@@ -308,7 +325,7 @@ export function montarReferencia(est) {
     return null;
   }
   function segurar(ev) {
-    if (!d.open || medindo) return false;
+    if (!modoMover || medindo) return false;
     const h = acharNoPonto(ev);
     if (!h) return false;
     if (h.r.id !== selId) { selId = h.r.id; render(); }
@@ -327,9 +344,7 @@ export function montarReferencia(est) {
   }
   function soltar() { const m = !!(segura && segura.moveu); segura = null; if (m) render(); return m; }
 
-  d.addEventListener('toggle', () => {
-    if (d.open) { est.definirFerramenta('referencia'); render(); }
-    else { pararMedida(); if (est.ferramenta === 'referencia') est.definirFerramenta('navegar'); }
-  });
-  return { el: d, adicionar, lista: () => refs, atual, planoPara, segurar, mover, soltar, remover, enquadrar, estaMedindo: () => !!medindo };
+  // sair do Desenhar: para de medir e de arrastar a foto
+  function parar() { pararMedida(); if (modoMover) { modoMover = false; render(); } }
+  return { el: d, adicionar, lista: () => refs, atual, planoPara, segurar, mover, soltar, remover, enquadrar, parar, render, estaMedindo: () => !!medindo, movendo: () => modoMover };
 }

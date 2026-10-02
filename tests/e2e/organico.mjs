@@ -71,7 +71,7 @@ export async function secaoOrganico({ b, teste, novaPagina, passo, abrirEstudio,
     const { cx } = valida(await malha(1), 'torcida');
     if (Math.abs(cx.tam[2] - 40) > 1e-3 || cx.tam[0] > 28.4) throw new Error('medida ' + cx.tam.map(x => x.toFixed(2)).join('x'));
   });
-  await passo(pg, 'desenhar: 4 cliques na mesa + fechar, espessura 3 -> peça 30×20×3 válida; desfazer tira', async () => {
+  await passo(pg, 'desenhar: 4 cliques na mesa + clique no 1º = peça 30×20×3 válida (sem botão de criar); desfazer tira', async () => {
     await abrirSecao(pg, 'des');
     await pg.evaluate(() => window.Estudio3D.estudio.cena.selecionar(null, null));
     // câmera olhando a área livre da mesa (como o usuário faria girando/afastando)
@@ -83,9 +83,6 @@ export async function secaoOrganico({ b, teste, novaPagina, passo, abrirEstudio,
     await pg.waitForTimeout(300);
     const pts = [[0, 0], [30, 0], [30, 20], [0, 20], [0, 0]].map(([x, y]) => [cx[0] + x, cx[1] + y]);
     for (const [x, y] of pts) { const s = await pg.evaluate(([a, b2]) => window.Estudio3D.estudio.visor.telaDe(a, b2, 0), [x, y]); await pg.mouse.click(s.x, s.y); await pg.waitForTimeout(80); }
-    await pg.waitForFunction(() => /contorno <b>fechado/.test(document.querySelector('[data-sec=des] [data-a=info]').innerHTML), null, { timeout: 10000 });
-    await pg.fill('[data-sec=des] [data-a=esp]', '3');
-    await pg.click('[data-sec=des] [data-a=criar]');
     await pg.waitForFunction(() => window.Estudio3D.estudio.cena.objetos.length === 3, null, { timeout: 30000 });
     const r = valida(await malha(2), 'desenhada');
     const t = await pg.evaluate(() => { const e = window.Estudio3D.estudio, c = e.cena.caixaExata(e.cena.objetos[2]); return [0, 1, 2].map(i => c.max[i] - c.min[i]).concat(c.min[2]); });

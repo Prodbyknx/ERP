@@ -53,25 +53,23 @@ export async function secaoV7({ b, teste, tmp, novaPagina, passo, abrirEstudio, 
     if (!(t.tam[1] > 20.05)) throw new Error('não puxou a face: ' + t.tam[1]);
   });
 
-  await passo(pg, 'curva suave: 4 cliques + fechar em modo tubo = anel liso, 1 peça, sem cruzamento', async () => {
+  await passo(pg, 'curva suave: 4 cliques + fechar no 1º + Tubo em curva suave = anel liso, 1 peça, sem cruzamento', async () => {
     await abrirSecao(pg, 'des');
-    await pg.click('[data-sec=des] [data-a=modo] button[data-v=tubo]');
-    await pg.click('[data-sec=des] [data-a=linha] button[data-v=suave]');
-    await pg.fill('[data-sec=des] [data-a=diam]', '3');
     await pg.evaluate(() => window.Estudio3D.estudio.cena.selecionar(null, null));
     const x0 = await pg.evaluate(() => { const e = window.Estudio3D.estudio, c = e.cena.caixaExata(e.cena.objetos[0]), v = e.visor; const x = Math.round(c.max[0]) + 30, y = Math.round(c.min[1]); v.controles.target.set(x, y, 0); v.camera.position.set(x, y - 120, 110); v.controles.update(); v.pedirRender(); return [x, y]; });
     await pg.waitForTimeout(300);
-    for (const [dx, dy] of [[15, 0], [0, 15], [-15, 0], [0, -15], [15, 0]]) { const s = await pg.evaluate(([a, b2]) => window.Estudio3D.estudio.visor.telaDe(a, b2, 0), [x0[0] + dx, x0[1] + dy]); await pg.mouse.click(s.x, s.y); await pg.waitForTimeout(60); }
-    await pg.waitForFunction(() => /fechado/.test(document.querySelector('[data-sec=des] [data-a=info]').innerHTML), null, { timeout: 10000 });
     const n = await nObj();
-    await pg.click('[data-sec=des] [data-a=criar]');
+    for (const [dx, dy] of [[15, 0], [0, 15], [-15, 0], [0, -15], [15, 0]]) { const s = await pg.evaluate(([a, b2]) => window.Estudio3D.estudio.visor.telaDe(a, b2, 0), [x0[0] + dx, x0[1] + dy]); await pg.mouse.click(s.x, s.y); await pg.waitForTimeout(60); }
     await pg.waitForFunction(k => window.Estudio3D.estudio.cena.objetos.length === k + 1, n, { timeout: 30000 });
+    await pg.click('[data-sec=des] [data-a=tipo] button[data-v=tubo]');
+    await pg.check('[data-sec=des] [data-a=curva]');
+    await pg.fill('[data-sec=des] [data-a=diam]', '3'); await pg.press('[data-sec=des] [data-a=diam]', 'Enter');
+    await pg.evaluate(() => window.Estudio3D.estudio.secoes.desenhar.ocioso());
     const v = limpo(await malha(n), 'anel');
     if (v.componentes !== 1) throw new Error('componentes ' + v.componentes);
     const t = caixa(M(await malha(n))).tam;
     if (Math.abs(t[0] - 33) > 0.6 || Math.abs(t[2] - 3) > 1e-3) throw new Error('medida do anel ' + t.map(x => x.toFixed(2)).join('×'));
   });
-
   await passo(pg, 'texto ENVOLVENDO a caneca Ø40: clica no lado, alto-relevo colorido, topo a 1 mm da parede em toda a volta', async () => {
     const n = await nObj();
     await forma('cilindro', [['diametro', '40'], ['altura', '60']], n + 1);

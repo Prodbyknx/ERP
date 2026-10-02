@@ -204,3 +204,83 @@ test('contorno que CRUZA a própria linha (o "8" sem querer) é pego pelo laudo 
   const { malha } = G.gerarMalha(g);
   assert.ok(autoInterseccoes(malha).pares > 0);
 });
+
+/* ---- Desenhar unificado: o desenho vira placa / vaso / tubo pelo motor de sólidos */
+import { carregarManifold } from './util/manifold.mjs';
+import { criarDoDesenho } from '../src/estudio3d/core/desenho.js';
+await carregarManifold();
+
+test('FORMA do desenho: vazio, pontos, linha, contorno e malha', () => {
+  let g = G.novaGaiola();
+  assert.equal(G.forma(g), 'vazio');
+  g = G.addPonto(g, [0, 0, 0]).g;
+  assert.equal(G.forma(g), 'pontos');
+  g = G.addPonto(g, [10, 0, 0], 0).g; g = G.addPonto(g, [10, 0, 10], 1).g;
+  assert.equal(G.forma(g), 'linha');
+  g = G.addPonto(g, [0, 0, 10], 2).g; g = G.ligar(g, 3, 0).g;
+  assert.equal(G.forma(g), 'contorno');
+  g = G.extrudarBorda(g, 1, 2, [20, 0, 5]).g;
+  assert.equal(G.forma(g), 'malha');
+});
+
+test('CONTORNO espelhado vira PLACA pelo motor: área certa, espessura pra frente (pra quem olha)', () => {
+  let g = G.novaGaiola({ espelho: { eixo: 0, c: 100 }, frente: [0, -1, 0] });
+  ({ g } = contorno(g, [[100, 50, 0], [130, 50, 20], [100, 50, 40]]));
+  assert.equal(G.forma(g), 'contorno');
+  const pts = G.contornoCompleto(g);
+  assert.equal(pts.length, 4, 'meio contorno + o outro lado');
+  const plano = G.planoDoContorno(g, pts);
+  const r = criarDoDesenho(pts, 'extrudar', { espessura: 3, plano, manterPosicao: true });
+  pronto(r.malha, 'placa do motor');
+  assert.ok(Math.abs(volume(r.malha) - 60 * 40 / 2 * 3) < 0.5, String(volume(r.malha)));
+  let ymin = Infinity, ymax = -Infinity; for (let i = 1; i < r.malha.pos.length; i += 3) { ymin = Math.min(ymin, r.malha.pos[i]); ymax = Math.max(ymax, r.malha.pos[i]); }
+  assert.ok(Math.abs(ymax - 50) < 1e-6 && Math.abs(ymin - 47) < 1e-6, ymin + '..' + ymax);
+});
+
+test('VASO: meio perfil com o eixo na linha do meio vira sólido girado (cilindro 10 × 20 ≈ π·100·20)', () => {
+  let g = G.novaGaiola({ espelho: { eixo: 0, c: 0 }, frente: [0, -1, 0] });
+  ({ g } = contorno(g, [[0, 0, 0], [10, 0, 0], [10, 0, 20], [0, 0, 20]]));
+  const perfil = G.perfilDoVaso(g);
+  const plano = G.planoDoContorno(g, perfil);
+  const r = criarDoDesenho(perfil, 'revolucionar', { graus: 360, plano, manterPosicao: true });
+  pronto(r.malha, 'vaso');
+  assert.ok(Math.abs(volume(r.malha) - Math.PI * 100 * 20) / (Math.PI * 100 * 20) < 0.02, String(volume(r.malha)));
+});
+
+test('LINHA espelhada: começa no meio -> um caminho só passando pelo meio; vira TUBO fechado', () => {
+  let g = G.novaGaiola({ espelho: { eixo: 0, c: 0 } });
+  g = G.addPonto(g, [0, 0, 5]).g; g = G.addPonto(g, [20, 0, 5], 0).g; g = G.addPonto(g, [30, 0, 25], 1).g;
+  assert.equal(G.forma(g), 'linha');
+  const L = G.linhaCompleta(g);
+  assert.equal(L.caminhos.length, 1);
+  assert.equal(L.caminhos[0].length, 5);
+  assert.deepEqual(L.caminhos[0][0], [-30, 0, 25]);
+  const r = criarDoDesenho(L.caminhos[0], 'tubo', { diametro: 4, manterPosicao: true });
+  pronto(r.malha, 'tubo');
+  // linha que não encosta no meio: 2 caminhos (o lado e o espelho)
+  let h = G.novaGaiola({ espelho: { eixo: 0, c: 0 } });
+  h = G.addPonto(h, [5, 0, 0]).g; h = G.addPonto(h, [15, 0, 0], 0).g;
+  assert.equal(G.linhaCompleta(h).caminhos.length, 2);
+});
+
+test('PLACA da malha (várias faces) também sai pra frente, do plano do desenho até a espessura', () => {
+  let { g } = contorno(G.novaGaiola({ espessura: 2, frente: [0, -1, 0] }), [[0, 10, 0], [20, 10, 0], [20, 10, 10], [0, 10, 10]]);
+  g = G.extrudarBorda(g, 1, 2, [30, 10, 5]).g;
+  const { malha } = G.gerarMalha(g);
+  pronto(malha, 'malha pra frente');
+  let ymin = Infinity, ymax = -Infinity; for (let i = 1; i < malha.pos.length; i += 3) { ymin = Math.min(ymin, malha.pos[i]); ymax = Math.max(ymax, malha.pos[i]); }
+  assert.ok(Math.abs(ymax - 10) < 1e-9 && Math.abs(ymin - 8) < 1e-9, ymin + '..' + ymax);
+});
+
+test('contorno em "8" (os dois laços se anulam na área): continua sendo CONTORNO no plano certo; o motor faz os 2 laços', () => {
+  const { g } = contorno(G.novaGaiola({ frente: [0, -1, 0] }), [[-20, 50, 0], [20, 50, 20], [20, 50, 0], [-20, 50, 20]]);
+  assert.equal(G.forma(g), 'contorno');
+  const pts = G.contornoCompleto(g), plano = G.planoDoContorno(g, pts);
+  assert.ok(plano && Math.abs(Math.abs(plano.n[1]) - 1) < 1e-9, 'plano de frente');
+  const r = criarDoDesenho(pts, 'extrudar', { espessura: 3, plano, manterPosicao: true });
+  // os dois laços: 400 mm² × 3 mm, de pé no plano de frente (o painel avisa que ficam presos por um ponto)
+  assert.ok(Math.abs(volume(r.malha) - 400 * 3) < 1, String(volume(r.malha)));
+  const v = validar(r.malha);
+  assert.equal(v.arestasAbertas, 0);
+  assert.equal(v.componentes, 2, 'os 2 laços saem separados, só se tocando: o painel avisa');
+});
