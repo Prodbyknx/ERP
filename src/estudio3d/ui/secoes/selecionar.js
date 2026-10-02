@@ -144,6 +144,9 @@ export function montarSelecionar(est) {
     let r;
     try { r = await est.rodar('sugerirSeparacao', { partes: [est.parteParaMotor(p)], ponto, opc: {} }, 'Achar a parte'); }
     catch (e) { q('info').textContent = e.message || String(e); return; }
+    // a peça mudou enquanto procurava (desfazer, outra operação): a seleção seria de outra malha
+    const oa = est.cena.objeto(o.id), pa = oa && oa.partes.find(x => x.id === p.id);
+    if (!pa || pa.malha !== p.malha) { q('info').textContent = 'A peça mudou enquanto eu procurava — clique de novo.'; return; }
     const nova = parteAlemDoPlano(p.malha, est.adj(p.malha), hit.face, r.plano);
     if (!contar(nova)) { q('info').textContent = 'Não achei a parte nesse ponto. Tente clicar mais no meio dela.'; return; }
     definir(p, combinar(p, nova, ev), 'parte até o ponto fino');

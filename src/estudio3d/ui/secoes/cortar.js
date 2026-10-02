@@ -237,12 +237,15 @@ export function montarCortar(est) {
     const o = est.objetoAtual();
     if (!o || !sug || sug.objId !== o.id) { avisar('Clique na parte que quer separar.', 'warn'); return; }
     const p = planoDaParte(o);
+    if (q('ir').disabled) return;          // já está calculando (duplo clique)
     q('ir').disabled = true;
     q('res').innerHTML = '<div class="e3d-nota">Separando…</div>';
+    const ficha = est.ficha(o);
     let r;
     try { r = await est.rodar('cortarLocal', { partes: o.partes.map(x => est.parteParaMotor(x)), plano: p.local, ponto: sug.ponto, opc: { conector: cfgConector(), nomeParte: o.nome + ' – parte' } }, 'Separar parte'); }
     catch (e) { q('res').innerHTML = '<div class="e3d-nota erro">' + esc(e.message || e) + '</div>'; return; }
     finally { q('ir').disabled = false; }
+    if (!est.resolver(ficha)) { q('res').innerHTML = ''; est.avisarMudou('Separar parte'); return; }
     est.visor.limparAjudas('corte');
     const afasta = Math.max(6, sug.raio * 3), n = p.mundo.n;
     const notas = r.avisos.slice();
@@ -250,17 +253,18 @@ export function montarCortar(est) {
     const semConector = !!cfgConector() && !r.relatorio.length;
     const alerta = semConector ? 'Saiu SEM encaixe: ' + (r.avisos.find(a => /encaixe|conector|pino|espessura|largura/i.test(a)) || 'não coube pino nessa parte.') : null;
     est.mostrarPrevia({
-      titulo: 'Separar parte', legenda: [['#0659f2', 'face do corte / encaixe']], explodir: 1, notas, alerta, textoConfirmar: semConector ? 'Separar sem encaixe' : 'Confirmar',
+      titulo: 'Separar parte', legenda: [['#0659f2', 'face do corte / encaixe']], explodir: 1, notas, alerta, ficha, textoConfirmar: semConector ? 'Separar sem encaixe' : 'Confirmar',
       objetos: [
         { transform: o.transform, deslocar: n.map(v => v * afasta), partes: r.A.map(x => ({ malha: x.malha, cor: x.cor, paleta: x.paleta, papel: 'normal', origem: x.origem })) },
         { transform: o.transform, deslocar: [0, 0, 0], partes: r.B.map(x => ({ malha: x.malha, cor: x.cor, paleta: x.paleta, papel: 'normal', origem: x.origem })) }
       ],
-      confirmar: () => {
-        est.cena.aplicar('Separar parte de ' + o.nome, () => {
-          const idx = est.cena.objetos.indexOf(o);
-          const B = novoObjeto({ nome: o.nome, transform: o.transform, partes: r.B.map(x => ({ nome: x.nome, malha: x.malha, cor: x.cor, paleta: x.paleta })) });
-          const A = novoObjeto({ nome: o.nome + ' – parte', transform: o.transform, partes: r.A.map(x => ({ nome: x.nome, malha: x.malha, cor: x.cor, paleta: x.paleta })) });
-          const extras = r.extras.map(x => novoObjeto({ nome: x.nome, transform: o.transform, partes: [{ nome: x.nome, malha: x.malha, cor: x.cor }] }));
+      confirmar: oa => {
+        // oa = o objeto ATUAL (mesmo id): o resultado nunca substitui outro objeto
+        est.cena.aplicar('Separar parte de ' + oa.nome, () => {
+          const idx = est.cena.objetos.indexOf(oa);
+          const B = novoObjeto({ nome: oa.nome, transform: oa.transform, partes: r.B.map(x => ({ nome: x.nome, malha: x.malha, cor: x.cor, paleta: x.paleta })) });
+          const A = novoObjeto({ nome: oa.nome + ' – parte', transform: oa.transform, partes: r.A.map(x => ({ nome: x.nome, malha: x.malha, cor: x.cor, paleta: x.paleta })) });
+          const extras = r.extras.map(x => novoObjeto({ nome: x.nome, transform: oa.transform, partes: [{ nome: x.nome, malha: x.malha, cor: x.cor }] }));
           est.cena.objetos.splice(idx, 1, B, A, ...extras);
           for (const x of extras) est.cena.colocarNaMesa(x);
           est.cena.sel = { objeto: A.id, parte: A.partes.length === 1 ? A.partes[0].id : null };
@@ -281,19 +285,23 @@ export function montarCortar(est) {
     const planoMundo = { n: normal(), d: posicaoMM() };
     const plano = planoParaLocal(planoMundo, o.transform);
     const opc = { conector: cfgConector() };
+    if (q('ir').disabled) return;          // já está cortando (duplo clique)
     q('ir').disabled = true;
     q('res').innerHTML = '<div class="e3d-nota">Cortando…</div>';
+    const ficha = est.ficha(o);
     let r;
     try { r = await est.rodar('cortar', { partes: o.partes.map(p => est.parteParaMotor(p)), plano, opc }, 'Cortar'); }
     catch (e) { q('res').innerHTML = '<div class="e3d-nota erro">' + esc(e.message || e) + '</div>'; return; }
     finally { q('ir').disabled = false; }
+    const oa = est.resolver(ficha);
+    if (!oa) { q('res').innerHTML = ''; est.avisarMudou('Cortar'); return; }
     est.visor.limparAjudas('corte');
-    const c = est.cena.caixaObjeto(o);
+    const c = est.cena.caixaObjeto(oa[0]);
     const afasta = c ? Math.max(6, Math.hypot(c.tam[0], c.tam[1], c.tam[2]) * 0.12) : 10;
     const n = planoMundo.n;
     const objetos = [
-      { transform: o.transform, deslocar: n.map(v => v * afasta), partes: r.A.map(p => ({ malha: p.malha, cor: p.cor, paleta: p.paleta, papel: 'normal', origem: p.origem })) },
-      { transform: o.transform, deslocar: n.map(v => -v * afasta), partes: r.B.map(p => ({ malha: p.malha, cor: p.cor, paleta: p.paleta, papel: 'normal', origem: p.origem })) }
+      { transform: oa[0].transform, deslocar: n.map(v => v * afasta), partes: r.A.map(p => ({ malha: p.malha, cor: p.cor, paleta: p.paleta, papel: 'normal', origem: p.origem })) },
+      { transform: oa[0].transform, deslocar: n.map(v => -v * afasta), partes: r.B.map(p => ({ malha: p.malha, cor: p.cor, paleta: p.paleta, papel: 'normal', origem: p.origem })) }
     ];
     const notas = r.avisos.slice();
     if (r.relatorio.length) notas.push(r.relatorio.length + ' conector(es): ' + (r.relatorio[0].pino ? 'pino ' + r.relatorio[0].pino + ' / furo ' + r.relatorio[0].furo : r.relatorio[0].tipo));
@@ -302,14 +310,15 @@ export function montarCortar(est) {
     const alerta = semConector ? 'Saiu SEM conector: ' + (r.avisos.find(a => /encaixe|conector|pino|espessura|largura/i.test(a)) || 'não coube encaixe nesse corte.') : null;
     q('res').innerHTML = semConector ? '<div class="e3d-nota aviso">' + esc(alerta) + '</div>' : '<div class="e3d-nota ok">Prévia: confirme em cima do 3D. Área do corte: ' + fmt(r.areaSecao, 1) + ' mm².</div>';
     est.mostrarPrevia({
-      titulo: 'Corte em 2 partes', legenda: [['#0659f2', 'face do corte / conector']], objetos, explodir: 1, notas: semConector ? notas.filter(a => a !== alerta.replace('Saiu SEM conector: ', '')) : notas, alerta, textoConfirmar: semConector ? 'Cortar sem conector' : 'Confirmar corte',
-      confirmar: () => {
-        est.cena.aplicar('Cortar ' + o.nome, () => {
-          const idx = est.cena.objetos.indexOf(o);
-          const nomeA = o.nome + ' A', nomeB = o.nome + ' B';
-          const A = novoObjeto({ nome: nomeA, transform: o.transform, partes: r.A.map(p => ({ nome: p.nome, malha: p.malha, cor: p.cor, paleta: p.paleta })) });
-          const B = novoObjeto({ nome: nomeB, transform: o.transform, partes: r.B.map(p => ({ nome: p.nome, malha: p.malha, cor: p.cor, paleta: p.paleta })) });
-          const extras = r.extras.map((x, k) => novoObjeto({ nome: x.nome, transform: o.transform, partes: [{ nome: x.nome, malha: x.malha, cor: x.cor }] }));
+      titulo: 'Corte em 2 partes', legenda: [['#0659f2', 'face do corte / conector']], objetos, explodir: 1, notas: semConector ? notas.filter(a => a !== alerta.replace('Saiu SEM conector: ', '')) : notas, alerta, ficha, textoConfirmar: semConector ? 'Cortar sem conector' : 'Confirmar corte',
+      confirmar: oa => {
+        // oa = o objeto ATUAL (mesmo id): o corte nunca substitui outro objeto
+        est.cena.aplicar('Cortar ' + oa.nome, () => {
+          const idx = est.cena.objetos.indexOf(oa);
+          const nomeA = oa.nome + ' A', nomeB = oa.nome + ' B';
+          const A = novoObjeto({ nome: nomeA, transform: oa.transform, partes: r.A.map(p => ({ nome: p.nome, malha: p.malha, cor: p.cor, paleta: p.paleta })) });
+          const B = novoObjeto({ nome: nomeB, transform: oa.transform, partes: r.B.map(p => ({ nome: p.nome, malha: p.malha, cor: p.cor, paleta: p.paleta })) });
+          const extras = r.extras.map((x, k) => novoObjeto({ nome: x.nome, transform: oa.transform, partes: [{ nome: x.nome, malha: x.malha, cor: x.cor }] }));
           est.cena.objetos.splice(idx, 1, A, B, ...extras);
           for (const x of extras) { est.cena.colocarNaMesa(x); }
           est.cena.sel = { objeto: A.id, parte: A.partes.length === 1 ? A.partes[0].id : null };

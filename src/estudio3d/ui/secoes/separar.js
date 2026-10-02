@@ -75,12 +75,15 @@ export function montarSeparar(est) {
       modo, profundidade: lerNumero(q('esp').value, 0), folga: lerNumero(q('folga').value, 0), nomeDetalhe: nome,
       conector: con === 'nenhum' ? null : { tipo: con, diametro: lerNumero(q('cd').value, 3), lado: lerNumero(q('cd').value, 3), profundidade: lerNumero(q('cp').value, 3), folga: lerNumero(q('cf').value, 0.2), quantidade: 1, parede: 0.8 }
     };
+    if (q('ir').disabled) return;          // já está separando (duplo clique)
     q('ir').disabled = true;
     q('res').innerHTML = '<div class="e3d-nota">Separando…</div>';
+    const ficha = est.ficha(o);
     let r;
     try { r = await est.rodar('separarDetalhe', { parte: est.parteParaMotor(p), mascara: mask, opc }, 'Separar'); }
     catch (e) { q('res').innerHTML = '<div class="e3d-nota erro">' + esc(e.message || e) + '</div>'; return; }
     finally { q('ir').disabled = false; }
+    if (!est.resolver(ficha)) { q('res').innerHTML = ''; est.avisarMudou('Separar'); return; }
     const cd = caixa(r.detalhe.malha);
     const tam = cd ? Math.max(...cd.tam) : 10;
     const dir = r.plano ? dirMundo(o, r.plano.n) : [0, 0, 1];
@@ -95,7 +98,7 @@ export function montarSeparar(est) {
     const alerta = semConector ? 'Saiu SEM pino: ' + (r.avisos.find(a => /encaixe|conector|pino|espessura|largura|fina/i.test(a)) || 'não coube pino nesse detalhe.') : null;
     q('res').innerHTML = '<div class="e3d-nota ' + (semConector ? 'aviso' : 'ok') + '">' + (semConector ? esc(alerta) + '<br>' : 'Prévia pronta: confira e confirme em cima do 3D.<br>') + 'Peça separada: ' + fmt(r.volumes.detalhe / 1000, 2) + ' cm³ · fica: ' + fmt(r.volumes.principal / 1000, 2) + ' cm³</div>';
     est.mostrarPrevia({
-      alerta,
+      alerta, ficha,
       titulo: 'Separar "' + nome + '"',
       legenda: LEGENDA,
       objetos: [
@@ -105,14 +108,15 @@ export function montarSeparar(est) {
       explodir: 1,
       notas,
       textoConfirmar: 'Confirmar separação',
-      confirmar: () => {
+      confirmar: oa => {
+        // oa = o objeto ATUAL (Desfazer no meio troca por cópia com o mesmo id)
         est.cena.aplicar('Separar ' + nome, () => {
-          const i = o.partes.findIndex(x => x.id === p.id);
-          o.partes[i] = novaParte({ ...p, malha: r.principal.malha, paleta: r.principal.paleta, id: p.id });
-          const novo = novoObjeto({ nome, transform: o.transform, partes: [{ nome, malha: r.detalhe.malha, cor: r.detalhe.cor, paleta: r.detalhe.paleta }] });
-          est.cena.objetos.splice(est.cena.objetos.indexOf(o) + 1, 0, novo);
+          const i = oa.partes.findIndex(x => x.id === p.id);
+          oa.partes[i] = novaParte({ ...oa.partes[i], malha: r.principal.malha, paleta: r.principal.paleta, id: p.id });
+          const novo = novoObjeto({ nome, transform: oa.transform, partes: [{ nome, malha: r.detalhe.malha, cor: r.detalhe.cor, paleta: r.detalhe.paleta }] });
+          est.cena.objetos.splice(est.cena.objetos.indexOf(oa) + 1, 0, novo);
           // pino solto impresso à parte: vai pra mesa, ao lado
-          for (const pn of r.pinos || []) { const x = novoObjeto({ nome: pn.nome, transform: o.transform, partes: [{ nome: pn.nome, malha: pn.malha, cor: pn.cor }] }); est.cena.objetos.push(x); est.cena.colocarNaMesa(x); }
+          for (const pn of r.pinos || []) { const x = novoObjeto({ nome: pn.nome, transform: oa.transform, partes: [{ nome: pn.nome, malha: pn.malha, cor: pn.cor }] }); est.cena.objetos.push(x); est.cena.colocarNaMesa(x); }
           est.cena.sel = { objeto: novo.id, parte: novo.partes[0].id };
         });
         const enc = r.relatorio && r.relatorio.length ? r.relatorio[0] : null;
@@ -129,22 +133,27 @@ export function montarSeparar(est) {
     const o = est.objetoAtual(), p = est.parteAtual();
     if (!o || !p) { avisar('Escolha a peça colorida.', 'warn'); return; }
     if (!p.paleta || p.paleta.length < 2) { avisar('Essa peça tem uma cor só. Se as cores estão em peças diferentes do objeto, use "Peças → objetos" na lista.', 'warn'); return; }
+    const ficha = est.ficha(o);
     let r;
     try { r = await est.rodar('separarPorCor', { parte: est.parteParaMotor(p), opc: { espessura: lerNumero(q('espCor').value, 0.8), folga: lerNumero(q('folgaCor').value, 0.1) } }, 'Separar por cor'); }
     catch (e) { return; }
+    if (!est.resolver(ficha)) { est.avisarMudou('Separar por cor'); return; }
     // como cada região de cor virou peça (a prévia não esconde o que falhou)
     const g = r.regioes || {}, esp = lerNumero(q('espCor').value, 0.8).toFixed(1).replace('.', ',');
     const como = [g.inserto && g.inserto + ' inserto(s) de ' + esp + ' mm com bolso', g.plano && g.plano + ' corte(s) no plano da divisa', g.atravessa && g.atravessa + ' atravessando parede fina', g.casca && g.casca + ' peça(s) inteira(s) (casca própria)', g.falhou && g.falhou + ' região(ões) NÃO virou(aram) peça — ficou na cor do corpo'].filter(Boolean);
-    previaVarias(o, p, r.pecas.map(x => ({ ...x, nome: nomeDaCor(x.cor) + (x.cor === r.corBase ? ' (corpo)' : '') })), 'Separar por cor', (como.length ? ['Como saiu: ' + como.join(' · ') + '.'] : []).concat(r.avisos));
+    previaVarias(o, p, r.pecas.map(x => ({ ...x, nome: nomeDaCor(x.cor) + (x.cor === r.corBase ? ' (corpo)' : '') })), 'Separar por cor', (como.length ? ['Como saiu: ' + como.join(' · ') + '.'] : []).concat(r.avisos), ficha);
   }
   async function cascas() {
     const o = est.objetoAtual(), p = est.parteAtual();
     if (!o || !p) { avisar('Escolha a peça.', 'warn'); return; }
-    const r = await est.rodar('separarCascas', { parte: est.parteParaMotor(p) }, 'Separar cascas');
+    const ficha = est.ficha(o);
+    let r;
+    try { r = await est.rodar('separarCascas', { parte: est.parteParaMotor(p) }, 'Separar cascas'); } catch (e) { return; }
+    if (!est.resolver(ficha)) { est.avisarMudou('Separar cascas'); return; }
     if (r.partes.length < 2) { avisar('A peça é uma casca só.', 'warn'); return; }
-    previaVarias(o, p, r.partes.map((x, i) => ({ ...x, nome: p.nome + ' ' + String(i + 1).padStart(2, '0') })), 'Separar cascas', []);
+    previaVarias(o, p, r.partes.map((x, i) => ({ ...x, nome: p.nome + ' ' + String(i + 1).padStart(2, '0') })), 'Separar cascas', [], ficha);
   }
-  function previaVarias(o, p, pecas, titulo, avisos) {
+  function previaVarias(o, p, pecas, titulo, avisos, ficha) {
     const cg = caixa(p.malha);
     const centro = cg ? cg.min.map((v, k) => (v + cg.max[k]) / 2) : [0, 0, 0];
     const tam = cg ? Math.max(...cg.tam) : 20;
@@ -157,20 +166,20 @@ export function montarSeparar(est) {
       return { transform: o.transform, deslocar: M4.aplicarDirecao(o.transform, dv[0], dv[1], dv[2]), partes: [{ malha: x.malha, cor: x.cor, paleta: x.paleta, papel: 'normal' }] };
     });
     est.mostrarPrevia({
-      titulo: titulo + ': ' + pecas.length + ' peças', legenda: [['#0659f2', 'face nova']], objetos: objs, explodir: 1, notas: avisos,
-      confirmar: () => est.cena.aplicar(titulo, () => {
-        const i = o.partes.findIndex(x => x.id === p.id);
-        const primeira = pecas[0];
-        o.partes[i] = novaParte({ ...p, malha: primeira.malha, cor: primeira.cor, paleta: primeira.paleta, nome: o.partes.length > 1 ? p.nome : primeira.nome, id: p.id });
-        const novos = pecas.slice(1).map(x => novoObjeto({ nome: x.nome, transform: o.transform, partes: [{ nome: x.nome, malha: x.malha, cor: x.cor, paleta: x.paleta }] }));
-        est.cena.objetos.splice(est.cena.objetos.indexOf(o) + 1, 0, ...novos);
+      titulo: titulo + ': ' + pecas.length + ' peças', legenda: [['#0659f2', 'face nova']], objetos: objs, explodir: 1, notas: avisos, ficha,
+      confirmar: oa => est.cena.aplicar(titulo, () => {
+        const i = oa.partes.findIndex(x => x.id === p.id);
+        const primeira = pecas[0], pa = oa.partes[i];
+        oa.partes[i] = novaParte({ ...pa, malha: primeira.malha, cor: primeira.cor, paleta: primeira.paleta, nome: oa.partes.length > 1 ? pa.nome : primeira.nome, id: p.id });
+        const novos = pecas.slice(1).map(x => novoObjeto({ nome: x.nome, transform: oa.transform, partes: [{ nome: x.nome, malha: x.malha, cor: x.cor, paleta: x.paleta }] }));
+        est.cena.objetos.splice(est.cena.objetos.indexOf(oa) + 1, 0, ...novos);
       })
     });
   }
 
   q('ir').onclick = separar;
-  q('porCor').onclick = porCor;
-  q('cascas').onclick = cascas;
+  q('porCor').onclick = () => est.umaVez(q('porCor'), porCor);
+  q('cascas').onclick = () => est.umaVez(q('cascas'), cascas);
   d.addEventListener('toggle', () => { if (d.open && est.ferramenta === 'navegar') est.definirFerramenta('auto'); });
   // atalho da barra de seleção: "Separar" / "Separar com pino"
   return { el: d, separar: (opc = {}) => { q('con').value = opc.conector || 'nenhum'; atualizarCon(); return separar(); } };

@@ -233,26 +233,31 @@ export function montarModificar(est) {
     } else if (ferr === 'casca') {
       op = { tipo: 'casca', valor: lerNumero(q('parede').value, 0), abrir: [...abrir].map(f => descritorFace(p.malha, f)) };
     } else op = { tipo: 'espelhar', eixo, pos, unir: q('unir').checked };
+    if (q('ir').disabled) return;          // já está calculando (duplo clique)
     q('ir').disabled = true;
     q('res').innerHTML = '<div class="e3d-nota">Calculando…</div>';
+    const ficha = est.ficha(o);
     let r;
     try { r = await est.rodar('modificar', { parte: est.parteParaMotor(p), op }, NOME_OP[ferr]); }
     catch (e) { q('res').innerHTML = '<div class="e3d-nota erro">' + esc(e.message || e) + '</div>'; return; }
     finally { q('ir').disabled = false; }
+    if (!est.resolver(ficha)) { q('res').innerHTML = ''; est.avisarMudou(NOME_OP[ferr]); return; }
     q('res').innerHTML = '';
     est.visor.limparAjudas('bordas');
     est.mostrarPrevia({
-      titulo: NOME_OP[ferr], legenda: [], explodir: 0, textoConfirmar: 'Aplicar',
+      titulo: NOME_OP[ferr], legenda: [], explodir: 0, textoConfirmar: 'Aplicar', ficha,
       objetos: [{ transform: o.transform, partes: o.partes.map(x => x.id === p.id ? { malha: r.parte.malha, cor: r.parte.cor || p.cor, paleta: r.parte.paleta, papel: 'normal' } : { malha: x.malha, cor: x.cor, paleta: x.paleta, papel: 'normal' }) }],
-      confirmar: () => {
-        est.cena.aplicar(NOME_OP[ferr] + ' ' + o.nome, () => {
-          p.malha = r.parte.malha;
-          if (r.parte.paleta !== undefined) p.paleta = r.parte.paleta;
+      confirmar: oa => {
+        // oa = o objeto ATUAL (Desfazer no meio troca por cópia com o mesmo id)
+        est.cena.aplicar(NOME_OP[ferr] + ' ' + oa.nome, () => {
+          const pa = oa.partes.find(x => x.id === p.id);
+          pa.malha = r.parte.malha;
+          if (r.parte.paleta !== undefined) pa.paleta = r.parte.paleta;
           // peça do Estúdio: guarda a operação pra poder mudar depois
-          if (o.forma && o.partes.length === 1) o.operacoes = [...(o.operacoes || []), op];
+          if (oa.forma && oa.partes.length === 1) oa.operacoes = [...(oa.operacoes || []), op];
         });
         limparSel();
-        q('res').innerHTML = '<div class="e3d-nota ok">' + NOME_OP[ferr] + ' aplicado.' + (o.forma ? ' Dá pra mudar o valor depois em <b>Formas</b> → Operações.' : '') + '</div>';
+        q('res').innerHTML = '<div class="e3d-nota ok">' + NOME_OP[ferr] + ' aplicado.' + (oa.forma ? ' Dá pra mudar o valor depois em <b>Formas</b> → Operações.' : '') + '</div>';
       },
       cancelar: () => { atualizar(); }
     });

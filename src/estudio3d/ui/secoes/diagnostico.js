@@ -32,22 +32,25 @@ export function montarDiagnostico(est) {
   let sugestaoUnidade = null;
   let ultimoReparo = null;
 
-  async function analisar(o, silencioso) {
+  // soFaltando: só as peças sem laudo da malha atual (ex.: a que falhou no lote)
+  async function analisar(o, silencioso, soFaltando) {
     o = o || est.objetoAtual();
     if (!o) { avisar('Escolha um objeto.', 'warn'); return; }
-    $('resultado').innerHTML = '<div class="e3d-nota">Analisando ' + o.partes.length + ' peça(s)…</div>';
+    const partes = soFaltando ? o.partes.filter(p => { const x = est.diag.get(p.id); return !x || x.malha !== p.malha; }) : o.partes;
+    if (!partes.length) return;
+    $('resultado').innerHTML = '<div class="e3d-nota">Analisando ' + partes.length + ' peça(s)…</div>';
     if (!est.analisando) est.analisando = new Set();
-    o.partes.forEach(p => est.analisando.add(p.malha));
+    partes.forEach(p => est.analisando.add(p.malha));
     est.renderSaude && est.renderSaude();
     try {
-      for (const p of o.partes) {
+      for (const p of partes) {
         try {
           const rel = await est.rodar('analisar', { parte: est.parteParaMotor(p), opc: { completo: true } }, 'Analisar');
           est.diag.set(p.id, { rel, malha: p.malha });
         } catch (e) { $('resultado').innerHTML = '<div class="e3d-nota erro">' + esc(e.message || e) + '</div>'; return; }
       }
     } finally {
-      o.partes.forEach(p => est.analisando.delete(p.malha));
+      partes.forEach(p => est.analisando.delete(p.malha));
       est.emitir('analisou', o);
     }
     render();
@@ -55,60 +58,102 @@ export function montarDiagnostico(est) {
     if (!silencioso) avisar('Análise pronta');
   }
 
+  // Uma operação do painel por vez (duplo clique, clicar de novo achando que
+  // travou, "Consertar o arquivo" do Início enquanto já conserta): a 2ª é ignorada.
+  let trabalhando = false;
+  async function sozinho(fn) {
+    if (trabalhando) { avisar('Já estou consertando — espere terminar (ou clique em Cancelar).', 'warn'); return; }
+    trabalhando = true;
+    const b = $('reparar'); b.disabled = true;
+    try { return await fn(); } finally { trabalhando = false; b.disabled = false; }
+  }
+
+  // Resultado por peça: só vale se a peça ainda é a mesma (mesmo id, mesma
+  // malha que foi pro motor). Desfazer no meio, excluir ou outra operação
+  // na peça -> aquele resultado é descartado e o aviso diz qual.
+  function aplicarPorPeca(o, resultados, rotulo, troca) {
+    const oa = est.cena.objeto(o.id);
+    const valem = [], mudaram = [];
+    for (const x of resultados) {
+      const q = oa && oa.partes.find(y => y.id === x.p.id);
+      if (q && q.malha === x.malha) valem.push({ ...x, q }); else mudaram.push(x.p.nome);
+    }
+    const comMudanca = valem.filter(x => troca.muda(x.r));
+    if (comMudanca.length) est.cena.aplicar(rotulo, () => { for (const x of comMudanca) troca.aplicar(x.q, x.r); });
+    return { oa, valem, mudaram, comMudanca };
+  }
+
   async function reparar() {
     const o = est.objetoAtual();
     if (!o) { avisar('Escolha um objeto.', 'warn'); return; }
-    const resultados = [];
+    const resultados = [], falharam = [];
     // modelo de várias cores = uma peça por vez; a barra mostra "peça 2 de 6" e o % do total
     est.lote = { n: o.partes.length, i: 0, desde: performance.now() };
     try {
       for (const p of o.partes) {
         est.lote.i++; est.lote.nome = p.nome;
-        try { resultados.push({ p, r: await est.rodar('reparar', { parte: est.parteParaMotor(p), opc: {} }, 'Reparar ' + p.nome) }); }
-        catch (e) { return; }
+        const malha = p.malha;
+        try { resultados.push({ p, malha, r: await est.rodar('reparar', { parte: est.parteParaMotor(p), opc: {} }, 'Reparar ' + p.nome) }); }
+        catch (e) {
+          if (e && e.codigo === 'cancelado') return;          // Cancelar: não mexe em nada
+          falharam.push({ nome: p.nome, erro: e.message || String(e) });   // segue com as outras peças
+        }
       }
     } finally { est.lote = null; }
-    const mudou = resultados.filter(x => x.r.passos.length);
-    ultimoReparo = resultados.map(x => ({ nome: x.p.nome, passos: x.r.passos, solido: x.r.solido }));
-    if (mudou.length) {
-      est.cena.aplicar('Reparar malha', () => {
-        for (const { p, r } of mudou) { const q = o.partes.find(x => x.id === p.id); if (q) { q.malha = r.parte.malha; q.cor = r.parte.cor; q.paleta = r.parte.paleta; } }
-      });
-    }
-    for (const { p, r } of resultados) { const q = o.partes.find(x => x.id === p.id); if (q) est.diag.set(q.id, { rel: r.depois, malha: q.malha }); }
+    const { oa, valem, mudaram, comMudanca } = aplicarPorPeca(o, resultados, 'Reparar malha', {
+      muda: r => r.passos.length > 0,
+      aplicar: (q, r) => { q.malha = r.parte.malha; q.cor = r.parte.cor; q.paleta = r.parte.paleta; }
+    });
+    ultimoReparo = valem.map(x => ({ nome: x.p.nome, passos: x.r.passos, solido: x.r.solido }))
+      .concat(falharam.map(f => ({ nome: f.nome, passos: ['não consegui consertar: ' + f.erro] })));
+    for (const x of valem) est.diag.set(x.q.id, { rel: x.r.depois, malha: x.q.malha });
     render();
-    est.emitir('analisou', o);
-    avisar(mudou.length ? 'Malha reparada (dá pra desfazer)' : 'Nada pra consertar');
+    if (oa) est.emitir('analisou', oa);
+    // peça que falhou (ou mudou) ficou sem laudo: confere ela em segundo plano
+    if (oa && (falharam.length || mudaram.length)) analisar(oa, true, true);
+    const partes = [];
+    if (comMudanca.length) partes.push(o.partes.length > 1 ? 'Consertei ' + comMudanca.length + ' de ' + o.partes.length + ' peça(s) (dá pra desfazer)' : 'Malha reparada (dá pra desfazer)');
+    else if (valem.length) partes.push('Nada pra consertar');
+    if (falharam.length) partes.push('não consegui consertar: ' + falharam.map(f => f.nome).join(', ') + ' (motivo no laudo)');
+    if (mudaram.length) partes.push(mudaram.join(', ') + ' mudou enquanto consertava — não apliquei; conserte de novo');
+    avisar(partes.join(' · ') || 'Nada pra consertar', falharam.length || mudaram.length ? 'warn' : 'ok');
   }
 
   async function unirSobrepostos() {
     const o = est.objetoAtual(); if (!o) return;
     const res = [];
-    for (const p of o.partes) res.push({ p, r: await est.rodar('unirSobrepostos', { parte: est.parteParaMotor(p) }, 'Unir') });
-    est.cena.aplicar('Unir partes sobrepostas', () => { for (const { p, r } of res) { const q = o.partes.find(x => x.id === p.id); if (q) { q.malha = r.parte.malha; q.paleta = r.parte.paleta; } } });
-    analisar(o, true);
+    try { for (const p of o.partes) res.push({ p, malha: p.malha, r: await est.rodar('unirSobrepostos', { parte: est.parteParaMotor(p) }, 'Unir') }); }
+    catch (e) { return; }
+    const { oa, mudaram } = aplicarPorPeca(o, res, 'Unir partes sobrepostas', { muda: () => true, aplicar: (q, r) => { q.malha = r.parte.malha; q.paleta = r.parte.paleta; } });
+    if (mudaram.length) est.avisarMudou('Unir');
+    if (oa) analisar(oa, true);
   }
   async function removerInternos() {
     const o = est.objetoAtual(); if (!o) return;
-    let n = 0;
     const res = [];
-    for (const p of o.partes) { const r = await est.rodar('removerInternos', { parte: est.parteParaMotor(p) }, 'Remover sobras'); n += r.removidos; res.push({ p, r }); }
+    try { for (const p of o.partes) res.push({ p, malha: p.malha, r: await est.rodar('removerInternos', { parte: est.parteParaMotor(p) }, 'Remover sobras') }); }
+    catch (e) { return; }
+    const n = res.reduce((s, x) => s + x.r.removidos, 0);
     if (!n) { avisar('Nenhuma sobra interna.'); return; }
-    est.cena.aplicar('Remover sobras internas', () => { for (const { p, r } of res) if (r.removidos) { const q = o.partes.find(x => x.id === p.id); if (q) q.malha = r.parte.malha; } });
-    avisar(n + ' sobra(s) interna(s) removida(s)');
-    analisar(o, true);
+    const { oa, comMudanca, mudaram } = aplicarPorPeca(o, res, 'Remover sobras internas', { muda: r => r.removidos > 0, aplicar: (q, r) => { q.malha = r.parte.malha; } });
+    if (mudaram.length) est.avisarMudou('Remover sobras');
+    if (comMudanca.length) avisar(comMudanca.reduce((s, x) => s + x.r.removidos, 0) + ' sobra(s) interna(s) removida(s)');
+    if (oa) analisar(oa, true);
   }
   async function converterUnidade(fator) {
     const o = est.objetoAtual(); if (!o) return;
     const res = [];
-    for (const p of o.partes) res.push({ p, r: await est.rodar('escalarGeometria', { parte: est.parteParaMotor(p), fator }, 'Converter') });
-    est.cena.aplicar('Converter unidade (×' + String(fator).replace('.', ',') + ')', () => {
-      for (const { p, r } of res) { const q = o.partes.find(x => x.id === p.id); if (q) q.malha = r.parte.malha; }
-      est.cena.centralizar(o);
-    });
+    try { for (const p of o.partes) res.push({ p, malha: p.malha, r: await est.rodar('escalarGeometria', { parte: est.parteParaMotor(p), fator }, 'Converter') }); }
+    catch (e) { return; }
+    // unidade é tudo ou nada: se alguma peça mudou no meio, não converte nenhuma
+    const ficha = [{ id: o.id, malhas: new Map(res.map(x => [x.p.id, x.malha])), t: null }];
+    if (!est.aplicarSeIgual(ficha, 'Converter unidade (×' + String(fator).replace('.', ',') + ')', oa => {
+      for (const { p, r } of res) { const q = oa.partes.find(x => x.id === p.id); if (q) q.malha = r.parte.malha; }
+      est.cena.centralizar(oa);
+    })) return;
     sugestaoUnidade = null;
     est.enquadrar();
-    analisar(o, true);
+    analisar(est.cena.objeto(o.id), true);
   }
 
   function linha(rot, val, estado) { return '<span>' + rot + '</span><b class="' + (estado || '') + '">' + val + '</b>'; }
@@ -160,8 +205,8 @@ export function montarDiagnostico(est) {
         if (ps.length) h += '<div class="e3d-nota"><b>Reparo:</b> ' + ps.map(x => esc(x.nome) + ': ' + esc(x.passos.join('; '))).join(' · ') + '</div>';
       }
       res.innerHTML = h;
-      if (auto > 0 && soma('componentes') > 1) extra.appendChild(el('button', { class: 'btn', title: 'Cascas que se atravessam viram um sólido só (o fatiador faria isso)', onclick: unirSobrepostos }, 'Unir partes sobrepostas'));
-      if (soma('componentesInternos')) extra.appendChild(el('button', { class: 'btn', onclick: removerInternos }, 'Remover sobras internas'));
+      if (auto > 0 && soma('componentes') > 1) extra.appendChild(el('button', { class: 'btn', title: 'Cascas que se atravessam viram um sólido só (o fatiador faria isso)', onclick: () => sozinho(unirSobrepostos) }, 'Unir partes sobrepostas'));
+      if (soma('componentesInternos')) extra.appendChild(el('button', { class: 'btn', onclick: () => sozinho(removerInternos) }, 'Remover sobras internas'));
       if (esp.length && Math.min(...esp) < lim) extra.appendChild(el('button', { class: 'btn', onclick: () => est.definirModoVisual('espessura') }, 'Ver onde está fino'));
       if (!fechada) extra.appendChild(el('button', { class: 'btn', onclick: () => est.definirModoVisual('problemas') }, 'Ver os defeitos'));
       else if (auto > 0) extra.appendChild(el('button', { class: 'btn', title: 'Pinta de rosa onde a superfície se cruza', onclick: () => est.definirModoVisual('problemas') }, 'Ver onde se cruza'));
@@ -169,13 +214,13 @@ export function montarDiagnostico(est) {
     }
     if (sugestaoUnidade && sugestaoUnidade.objeto === o.id) {
       const n = el('div', { class: 'e3d-nota aviso' }, sugestaoUnidade.texto + ' ',
-        el('button', { class: 'btn small', onclick: () => converterUnidade(sugestaoUnidade.fator) }, 'Converter'));
+        el('button', { class: 'btn small', onclick: () => sozinho(() => converterUnidade(sugestaoUnidade.fator)) }, 'Converter'));
       res.prepend(n);
     }
   }
 
   d.querySelector('[data-a=analisar]').onclick = () => analisar();
-  d.querySelector('[data-a=reparar]').onclick = async () => { await reparar(); };
+  d.querySelector('[data-a=reparar]').onclick = () => sozinho(reparar);
   est.on('selecao', render);
   est.on('mudou', render);
   est.on('importou', ({ resultado, objetos }) => {

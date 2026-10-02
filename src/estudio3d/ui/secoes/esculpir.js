@@ -149,28 +149,36 @@ export function montarEsculpir(est) {
     const p = est.parteAtual() || (est.objetoAtual() && est.objetoAtual().partes[0]), o = est.objetoAtual();
     if (!p) { avisar('Escolha a peça.', 'warn'); return; }
     const alvoA = Math.max(0.2, +q('raio').value / 5);
+    const ficha = est.ficha(o);
     try {
-      const r = await est.rodar('refinar', { parte: est.parteParaMotor(p), aresta: alvoA }, 'Mais detalhe');
+      const r = await est.umaVez(q('refinar'), () => est.rodar('refinar', { parte: est.parteParaMotor(p), aresta: alvoA }, 'Mais detalhe'));
+      if (!r) return;
       const n = r.parte.malha.idx.length / 3;
       if (n <= p.malha.idx.length / 3) { q('info').textContent = 'A malha já tem detalhe pra esse pincel (' + fmt(n, 0) + ' triângulos).'; return; }
-      est.cena.aplicar('Mais detalhe em ' + o.nome, () => trocar(o, p, r.parte.malha));
+      est.aplicarSeIgual(ficha, 'Mais detalhe em ' + o.nome, oa => trocar(oa, oa.partes.find(x => x.id === p.id), r.parte.malha));
       q('info').textContent = 'Malha com ' + fmt(n, 0) + ' triângulos (aresta ~' + fmt(alvoA, 2) + ' mm).';
     } catch (e) { q('info').textContent = e.message || String(e); }
   }
   q('refinar').onclick = refinar;
 
+  let calculando = false;
   async function comPrevia(op, args, titulo, relatorio) {
     const o = est.objetoAtual(), p = est.parteAtual() || (o && o.partes[0]);
     if (!p) { avisar('Escolha a peça.', 'warn'); return; }
+    if (calculando) return;                 // já tem um cálculo deste painel (duplo clique)
+    calculando = true;
     q('res').innerHTML = '<div class="e3d-nota">Calculando…</div>';
+    const ficha = est.ficha(o);
     let r;
     try { r = await est.rodar(op, { parte: est.parteParaMotor(p), ...args }, titulo); }
     catch (e) { q('res').innerHTML = e && e.codigo === 'cancelado' ? '' : '<div class="e3d-nota erro">' + esc(e.message || e) + '</div>'; return; }
+    finally { calculando = false; }
+    if (!est.resolver(ficha)) { q('res').innerHTML = ''; est.avisarMudou(titulo); return; }
     q('res').innerHTML = relatorio ? '<div class="e3d-nota ok">' + relatorio(r) + '</div>' : '';   // html-seguro: relatorio só monta números (relSuave)
     est.mostrarPrevia({
-      titulo, legenda: [], explodir: 0, textoConfirmar: 'Aplicar',
+      titulo, legenda: [], explodir: 0, textoConfirmar: 'Aplicar', ficha,
       objetos: [{ transform: o.transform, partes: o.partes.map(x => x.id === p.id ? { malha: r.parte.malha, cor: p.cor, paleta: p.paleta, papel: 'normal' } : { malha: x.malha, cor: x.cor, paleta: x.paleta, papel: 'normal' }) }],
-      confirmar: () => est.cena.aplicar(titulo + ' ' + o.nome, () => trocar(o, p, r.parte.malha))
+      confirmar: oa => est.cena.aplicar(titulo + ' ' + oa.nome, () => trocar(oa, oa.partes.find(x => x.id === p.id), r.parte.malha))
     });
   }
   q('aplDef').onclick = () => { const o = est.objetoAtual(); comPrevia('deformar', { opc: { tipo: segVal('def'), valor: lerNumero(q('valDef').value, 0), ...(o ? (x => ({ eixo: x.i, sentido: x.sentido }))(dirLocal(o, +segVal('eixo'))) : { eixo: +segVal('eixo') }) } }, DEF.find(x => x[0] === segVal('def'))[1]); };

@@ -154,8 +154,16 @@ export class Cena {
     const antes = this.instantaneo();
     const selAntes = { ...this.sel, multi: this.multi.slice() };
     const placasAntes = { n: this.placas, ativa: this.placaAtiva };
-    const r = fn();
-    this.fixarEsticar();
+    let r;
+    try { r = fn(); this.fixarEsticar(); }
+    catch (e) {
+      // deu erro no meio: volta a cena inteira pro estado de antes (nada pela metade)
+      this.objetos = antes; this.restaurarSel(selAntes);
+      this.placas = placasAntes.n; this.placaAtiva = placasAntes.ativa;
+      this.conferirSelecao();
+      this.emitir('mudou', { rotulo, falhou: true });
+      throw e;
+    }
     this.pilhaDesfazer.push({ rotulo, estado: antes, sel: selAntes, placas: placasAntes });
     if (this.pilhaDesfazer.length > this.limite) this.pilhaDesfazer.shift();
     this.pilhaRefazer = [];

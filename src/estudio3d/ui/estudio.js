@@ -700,8 +700,55 @@ export class Estudio {
       if (e && e.codigo === 'cancelado') throw e;
       console.error(e);
       avisar((rotulo ? rotulo + ': ' : '') + (e.message || e), 'warn');
+      if (e && typeof e === 'object') e.avisado = true;     // quem pegar não precisa avisar de novo
       throw e;
     }
+  }
+
+  // FICHA de operação demorada: o que ela viu quando começou (objeto, malha
+  // de cada peça e, se pedir, a posição). Desfazer/Refazer no meio troca os
+  // objetos por cópias (mesmo id, mesmas malhas): o resultado vai pro objeto
+  // ATUAL. Se a peça mudou (outra malha, excluída, mexeu na posição quando
+  // importa), o resultado é descartado — nunca cai no objeto errado.
+  ficha(objs, opc = {}) {
+    const lista = (Array.isArray(objs) ? objs : [objs]).filter(Boolean);
+    return lista.map(o => ({
+      id: o.id,
+      malhas: new Map((opc.partes && lista.length === 1 ? opc.partes : o.partes).map(p => [p.id, p.malha])),
+      t: opc.posicao ? Float64Array.from(o.transform) : null
+    }));
+  }
+  // objetos atuais da ficha (na mesma ordem) ou null se algum mudou
+  resolver(ficha) {
+    const out = [];
+    for (const f of ficha || []) {
+      const o = this.cena.objeto(f.id);
+      if (!o) return null;
+      for (const [id, m] of f.malhas) { const p = o.partes.find(x => x.id === id); if (!p || p.malha !== m) return null; }
+      if (f.t) for (let i = 0; i < 16; i++) if (Math.abs(f.t[i] - o.transform[i]) > 1e-9) return null;
+      out.push(o);
+    }
+    return out;
+  }
+  // aplica no histórico só se a ficha ainda vale; senão avisa e não mexe em nada
+  aplicarSeIgual(ficha, rotulo, fn) {
+    const objs = this.resolver(ficha);
+    if (!objs) { this.avisarMudou(rotulo); return false; }
+    this.cena.aplicar(rotulo, () => fn(...objs));
+    return true;
+  }
+  avisarMudou(rotulo) {
+    avisar((rotulo ? rotulo + ': ' : '') + 'a peça mudou enquanto calculava (desfazer, excluir ou outra operação). Nada foi aplicado — faça de novo.', 'warn');
+  }
+  // botão que dispara operação demorada: um clique por vez (duplo clique,
+  // clique de novo achando que travou) — o botão fica desabilitado até acabar
+  async umaVez(botao, fn) {
+    if (!botao || botao.dataset.rodando) return;
+    botao.dataset.rodando = '1';
+    const tinha = botao.disabled;
+    botao.disabled = true;
+    try { return await fn(); }
+    finally { delete botao.dataset.rodando; botao.disabled = tinha; }
   }
 
   /* ------------------------------------------------------------ lista da cena */
@@ -951,8 +998,14 @@ export class Estudio {
     if (objs.length < 2) { avisar('Escolha pelo menos duas peças (Shift + clique).', 'warn'); return; }
     const base = objs[0];
     const rotulo = modo === 'unir' ? 'Unir' : modo === 'subtrair' ? 'Tirar ' + objs.slice(1).map(o => o.nome).join(', ') + ' de ' + base.nome : 'Parte comum';
+    if (this._combinando) return;            // já está combinando (duplo clique)
+    this._combinando = true;
+    // a posição de cada peça entra no cálculo: se alguma mexer no meio, não vale
+    const ficha = this.ficha(objs, { posicao: true });
     let r;
     try { r = await this.rodar('combinar', { objetos: objs.map(o => this.paraMotor(o)), modo, opc: { base: 0 } }, rotulo); } catch (e) { return; }
+    finally { this._combinando = false; }
+    if (!this.resolver(ficha)) { this.avisarMudou(rotulo); return; }
     const novo = novoObjeto({ nome: r.nome, transform: r.transform, partes: r.partes });
     const ids = new Set(objs.map(o => o.id));
     this.cena.aplicar(rotulo, () => {
@@ -1048,6 +1101,12 @@ export class Estudio {
     const furos = this.cena.objetos.filter(o => o.papel === 'furo' && o.visivel);
     if (!furos.length) return false;
     const alvos = this.cena.objetos.filter(o => o.papel !== 'furo' && (!soDe || soDe.includes(o.id)));
+    if (this._furando) return false;          // já está aplicando (painel + botão ao mesmo tempo)
+    this._furando = true;
+    try { return await this.aplicarFuros(furos, alvos); } finally { this._furando = false; }
+  }
+  async aplicarFuros(furos, alvos) {
+    const ficha = this.ficha([...alvos, ...furos], { posicao: true });
     const res = [];
     for (const o of alvos) {
       let r;
@@ -1055,6 +1114,9 @@ export class Estudio {
       if (r) res.push({ o, r });
     }
     if (!res.length) { avisar('Nenhum furo encosta nas peças.', 'warn'); return false; }
+    if (!this.resolver(ficha)) { this.avisarMudou('Aplicar furos'); return false; }
+    // objetos ATUAIS (Desfazer no meio troca por cópias com o mesmo id)
+    for (const x of res) x.o = this.cena.objeto(x.o.id);
     const usados = new Set(); res.forEach(({ r }) => r.furosUsados.forEach(i => usados.add(furos[i].id)));
     this.cena.aplicar('Aplicar furos', () => {
       for (const { o, r } of res) o.partes = o.partes.map((p, i) => r.partes[i] === null ? null : { ...p, malha: r.partes[i].malha }).filter(Boolean);
@@ -1166,7 +1228,10 @@ export class Estudio {
         this.emitir('importou', { resultado: r, objetos: novos, arquivo: f.name });
         this.abrirFerramenta('inicio');
         avisar(f.name + ': ' + fmtInt(r.triangulos) + ' triângulos, ' + r.objetos.length + ' objeto(s)');
-      } catch (e) { /* já avisado */ }
+      } catch (e) {
+        // erro do motor já foi avisado; o resto (ler o arquivo, pôr na mesa) não pode sumir calado
+        if (!e || (!e.avisado && e.codigo !== 'cancelado')) { console.error(e); avisar('Não consegui abrir ' + f.name + ': ' + ((e && e.message) || e), 'warn'); }
+      }
     }
   }
 
@@ -1241,10 +1306,14 @@ export class Estudio {
   confirmarPrevia() {
     const cfg = this.previaAtiva;
     if (!cfg) return;
+    // prévia com ficha: a peça tem que ser a mesma de quando o cálculo começou
+    // (excluir/desfazer/escalar no meio -> descarta em vez de aplicar no lugar errado)
+    const objs = cfg.ficha ? this.resolver(cfg.ficha) : [];
+    if (!objs) { this.cancelarPrevia(); this.avisarMudou(cfg.titulo); return; }
     this.previaAtiva = null;
     this.previaEl.style.display = 'none';
     this.visor.limparPrevia();
-    cfg.confirmar();
+    cfg.confirmar(...objs);
     this.emitir('previa-fim', true);
   }
   cancelarPrevia(silencioso) {

@@ -213,7 +213,8 @@ export function montarDesenhar(est) {
     malha
   });
 
-  q('criar').onclick = async () => {
+  q('criar').onclick = () => est.umaVez(q('criar'), criar);
+  async function criar() {
     if (modo !== 'tubo' && !fechado) { avisar('Feche o contorno (clique no primeiro ponto).', 'warn'); return; }
     if (pts.length < 2) { avisar('Marque pelo menos 2 pontos.', 'warn'); return; }
     const cor = editando ? null : est.cena.proximaCor();
@@ -224,8 +225,11 @@ export function montarDesenhar(est) {
         if (!o) { sairEdicao(); return; }
         const G = M4.inverter(o.transform);
         ped = pedido(G);
+        // os pontos viraram coordenada da peça na posição de agora: se ela
+        // mudar (ou mexer de lugar) enquanto calcula, o resultado não vale
+        const ficha = est.ficha(o, { posicao: true });
         r = await est.rodar('desenho', ped, 'Atualizar desenho');
-        est.cena.aplicar('Editar desenho de ' + o.nome, () => { o.partes[0].malha = r.malha; o.desenho = guardar(G, r.malha); });
+        if (!est.aplicarSeIgual(ficha, 'Editar desenho de ' + o.nome, oa => { oa.partes[0].malha = r.malha; oa.desenho = guardar(G, r.malha); })) return;
         avisar(o.nome + ' atualizada — ' + fmt(r.volume / 1000, 2) + ' cm³ (Ctrl+Z volta).');
         sairEdicao();
         return;
@@ -242,7 +246,7 @@ export function montarDesenhar(est) {
     if (o && !o.desenho) { o.desenho = desenho; o.desenho.malha = o.partes[0].malha; }
     pts = []; fechado = false; sel = -1; alvo = null; campos(); mostrar();
     avisar(nome + ' criada — ' + fmt(r.volume / 1000, 2) + ' cm³. Pra mudar depois: escolha a peça e "Editar o desenho".');
-  };
+  }
 
   // EDITAR: carrega os pontos da peça (no mundo) e troca "Criar" por "Atualizar"
   q('editar').onclick = () => {

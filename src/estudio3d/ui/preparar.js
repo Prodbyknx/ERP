@@ -43,7 +43,14 @@ function caixasSeCruzam(a, b) {
 }
 
 export async function prepararParaImpressao(est) {
-  const objs = est.cena.objetos.filter(o => o.visivel !== false && o.papel !== 'furo');
+  // um por vez (botão do topo, menu e Início chamam aqui; duplo clique)
+  if (est._preparando) { avisar('Já estou preparando — espere terminar.', 'warn'); return null; }
+  est._preparando = true;
+  try { return await preparar(est); } finally { est._preparando = false; }
+}
+
+async function preparar(est) {
+  let objs = est.cena.objetos.filter(o => o.visivel !== false && o.papel !== 'furo');
   if (!objs.length) { avisar('Coloque uma peça na mesa primeiro.', 'warn'); return null; }
   const painel = abrirPainel(est);
   const linha = (id, titulo) => painel.linha(id, titulo);
@@ -54,11 +61,12 @@ export async function prepararParaImpressao(est) {
     linha('malha', 'Conferindo a malha de ' + objs.reduce((s, o) => s + o.partes.length, 0) + ' peça(s)…');
     let consertos = 0, sobras = 0, restantes = 0, espMin = Infinity, lim = 0.8;
     for (const o of objs) for (const p of o.partes) {
+      const malha0 = p.malha;
       let parte = est.parteParaMotor(p), mudou = false;
       let rel = await est.rodar('analisar', { parte, opc: { completo: true } }, 'Conferir');
       const defeitos = r => r.arestasAbertas + r.arestasNaoManifold + r.verticesNaoManifold + r.orientacaoTrocada + r.componentesInvertidos + r.facesDuplicadas;
       if (defeitos(rel) || rel.autoInterseccoes) {
-        const r = await est.rodar('reparar', { parte, opc: {} }, 'Consertar');
+        const r = await est.rodar('reparar', { parte, opc: {} }, 'Consertar');      // erro aqui sobe pro catch (painel mostra)
         if (r.passos.length) { parte = { ...parte, ...r.parte }; mudou = true; consertos += r.passos.length; rel = r.depois || rel; }
       }
       if (rel.componentesInternos) {
@@ -69,9 +77,21 @@ export async function prepararParaImpressao(est) {
       restantes += defeitos(rel) + (rel.autoInterseccoes || 0);
       if (rel.espessuraMinima != null) espMin = Math.min(espMin, rel.espessuraMinima);
       if (rel.limiteEspessura) lim = rel.limiteEspessura;
-      if (mudou) trocas.push({ o, p, parte });
-      est.diag.set(p.id, { rel, malha: mudou ? parte.malha : p.malha });
+      if (mudou) trocas.push({ o, p, parte, malha0, rel });
+      else est.diag.set(p.id, { rel, malha: p.malha });
     }
+    // conferir/consertar demora: a cena pode ter mudado (Desfazer, excluir,
+    // outra operação). Daqui pra frente vale o objeto ATUAL de cada id; conserto
+    // de peça que mudou no meio é descartado (nunca cai na peça errada)
+    objs = objs.map(o => est.cena.objeto(o.id)).filter(o => o && o.visivel !== false && o.papel !== 'furo');
+    const descartadas = [];
+    for (let i = trocas.length - 1; i >= 0; i--) {
+      const t = trocas[i], oa = est.cena.objeto(t.o.id), pa = oa && oa.partes.find(x => x.id === t.p.id);
+      if (!pa || pa.malha !== t.malha0) { descartadas.push(t.p.nome); trocas.splice(i, 1); continue; }
+      t.o = oa; t.p = pa;
+    }
+    if (descartadas.length) est.avisarMudou('Preparar (' + descartadas.join(', ') + ')');
+    if (!objs.length) { painel.erro('As peças saíram da mesa enquanto eu conferia.'); return null; }
     painel.fim('malha', restantes ? 'atencao' : 'bom',
       restantes ? 'Ainda tem ' + fmtInt(restantes) + ' defeito(s) na malha' : consertos || sobras ? 'Malha consertada' : 'Malha fechada, sem defeito',
       [consertos ? fmtInt(consertos) + ' conserto(s)' : '', sobras ? fmtInt(sobras) + ' sobra(s) interna(s) tirada(s)' : ''].filter(Boolean).join(' · '),
@@ -94,6 +114,7 @@ export async function prepararParaImpressao(est) {
     if (trocas.length || foraDaMesa || objs.some(foraDaPlaca) || (objs.length > 1 && cruzadas())) {
       est.cena.aplicar('Preparar pra imprimir', () => {
         for (const t of trocas) { t.p.malha = t.parte.malha; if (t.parte.cor) t.p.cor = t.parte.cor; if (t.parte.paleta) t.p.paleta = t.parte.paleta; }
+        for (const t of trocas) est.diag.set(t.p.id, { rel: t.rel, malha: t.p.malha });
         for (const o of objs) { const c = est.cena.caixaExata(o); if (c && Math.abs(c.min[2]) > 0.02) { est.cena.colocarNaMesa(o); foiMesa++; } }
         // passou da borda da placa: empurra pra dentro dela (fora de toda placa: vai pra ativa)
         for (const o of objs) if (foraDaPlaca(o)) {

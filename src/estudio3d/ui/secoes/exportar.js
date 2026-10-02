@@ -67,7 +67,7 @@ export function montarExportar(est) {
     if (escopo === 'todas' && est.cena.placas > 1) return expPlacas();
     const objs = objetos();
     if (!objs.length) { avisar('Nada pra exportar.', 'warn'); return; }
-    const fora = objs.filter(o => { const c = est.cena.caixaExata(est.cena.objetos.find(x => x.nome === o.nome) || o); return c && c.min[2] < -0.01; });
+    const fora = objs.filter(o => { const c = est.cena.caixaExata(o); return c && c.min[2] < -0.01; });
     const nome = nomeArquivo(q('nome').value || objs[0].nome);
     q('3mf').disabled = true;
     try {
@@ -105,7 +105,7 @@ export function montarExportar(est) {
     q('res').innerHTML = '<div class="e3d-nota ok">' + (r.zip ? r.arquivos.length + ' arquivos STL no zip.' : 'STL gerado.') + '</div>';
   }
   q('3mf').onclick = exp3mf;
-  q('stl').onclick = expStl;
+  q('stl').onclick = () => est.umaVez(q('stl'), expStl);   // duplo clique = 1 download
   d.addEventListener('toggle', () => { if (d.open) render(); });
   est.on('mudou', () => { if (d.open) render(); });
   est.on('selecao', () => { if (d.open) render(); });

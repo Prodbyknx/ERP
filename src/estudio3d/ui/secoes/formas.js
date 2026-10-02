@@ -97,15 +97,17 @@ export function montarFormas(est) {
         malha = rr.parte.malha; status = rr.status;
       }
     } catch (e) { render(); return; }
-    if (eu !== refazendo || !est.cena.objeto(o.id)) return;
+    // o objeto ATUAL com esse id (Desfazer no meio troca por uma cópia)
+    const oa = est.cena.objeto(o.id);
+    if (eu !== refazendo || !oa) return;
     const falha = status && status.find(x => !x.ok);
     if (falha) avisar('Uma operação não coube nas medidas novas: ' + falha.erro, 'warn');
     // mantém a base no mesmo lugar: a forma nova nasce apoiada em z=0 local
-    est.cena.aplicar('Mudar medidas de ' + o.nome, () => {
-      o.forma = { ...forma, params: r.params };
-      o.operacoes = ops && ops.length ? ops : undefined;
-      o.statusOps = status;
-      o.partes = [{ ...o.partes[0], malha }];
+    est.cena.aplicar('Mudar medidas de ' + oa.nome, () => {
+      oa.forma = { ...forma, params: r.params };
+      oa.operacoes = ops && ops.length ? ops : undefined;
+      oa.statusOps = status;
+      oa.partes = [{ ...oa.partes[0], malha }];
     });
   }
   // o painel é redesenhado a cada mudança da cena: o que a pessoa está

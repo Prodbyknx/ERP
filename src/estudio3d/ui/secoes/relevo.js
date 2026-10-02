@@ -156,20 +156,25 @@ export function montarRelevo(est) {
     const opc = { ...pr, nome: conteudo === 'texto' ? ('Texto ' + q('texto').value.split('\n')[0]).slice(0, 30) : 'Logo' };
     if (lado === 'ponto') { opc.referencial = Array.from(referencial(p, pr)); }
     const alvoIdx = o.partes.indexOf(p);
+    if (q('ir').disabled) return;          // já está aplicando (duplo clique)
     q('ir').disabled = true;
+    const ficha = est.ficha(o);
     let r;
     try { r = await est.rodar('relevo', { partes: o.partes.map(x => est.parteParaMotor(x)), alvo: alvoIdx, forma: { aneis: f.aneis }, opc }, 'Relevo'); }
     catch (e) { q('res').innerHTML = '<div class="e3d-nota erro">' + esc(e.message || e) + '</div>'; return; }
     finally { q('ir').disabled = false; }
+    if (!est.resolver(ficha)) { est.avisarMudou('Relevo'); return; }
     est.visor.limparAjudas('contorno');
     est.mostrarPrevia({
       titulo: 'Relevo — ' + (MODOS_RELEVO.find(m => m.id === pr.modo) || {}).nome,
       legenda: r.indiceNova >= 0 ? [['#0e9f2e', 'peça nova (' + pr.cor + ')']] : [],
       objetos: [{ transform: o.transform, partes: r.partes.map((x, i) => ({ malha: x.malha, cor: x.cor, paleta: x.paleta, papel: i === r.indiceNova ? 'novo' : 'normal' })) }],
       notas: r.envolveu ? ['O desenho envolve a superfície curva (altura igual em todo lugar).', ...r.avisos] : r.avisos,
-      confirmar: () => {
+      ficha,
+      confirmar: oa => {
+        // oa = o objeto ATUAL (mesmo id e mesmas peças de quando calculou)
         est.cena.aplicar('Relevo na ' + (lado === 'verso' ? 'verso' : lado === 'frente' ? 'frente' : 'superfície'), () => {
-          o.partes = r.partes.map((x, i) => i < o.partes.length ? novaParte({ ...o.partes[i], malha: x.malha, cor: x.cor, paleta: x.paleta, id: o.partes[i].id }) : novaParte({ nome: x.nome, malha: x.malha, cor: x.cor, paleta: x.paleta }));
+          oa.partes = r.partes.map((x, i) => i < oa.partes.length ? novaParte({ ...oa.partes[i], malha: x.malha, cor: x.cor, paleta: x.paleta, id: oa.partes[i].id }) : novaParte({ nome: x.nome, malha: x.malha, cor: x.cor, paleta: x.paleta }));
         });
         suprimir = true;
         est.visor.limparAjudas('contorno');
