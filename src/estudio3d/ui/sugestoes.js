@@ -2,6 +2,7 @@
 // Olha o que já se sabe da peça — análise da malha, tamanho, posição, cores —
 // e diz, em português de oficina, o que vale a pena fazer antes de imprimir.
 import { fmt, fmtInt } from './util.js';
+import { defeitosGraves } from '../core/validador.js';
 
 const ALTURA_MAX = 256;   // Bambu A1 / P1 / X1
 
@@ -14,18 +15,14 @@ export function calcularSugestoes(est, o) {
   const c = est.cena.caixaExata(o);
 
   if (rels.every(Boolean)) {
-    const inv = soma('orientacaoTrocada') + soma('componentesInvertidos');
-    const defeitos = soma('arestasAbertas') + soma('arestasNaoManifold') + soma('verticesNaoManifold') + inv + soma('facesDuplicadas') + soma('autoInterseccoes');
+    // a MESMA regra do laudo (validador.defeitosGraves): a bolinha não diz
+    // "Pronto" enquanto o laudo diz "atenção" (auditoria M3)
+    const graves = rels.map(defeitosGraves);
+    const defeitos = graves.reduce((s, g) => s + g.total, 0);
     if (defeitos > 0) {
-      const partes = [];
-      if (soma('arestasAbertas')) partes.push('buracos');
-      if (inv) partes.push('faces viradas');
-      if (soma('arestasNaoManifold') + soma('verticesNaoManifold')) partes.push('arestas soltas');
-      if (soma('autoInterseccoes')) partes.push('partes que se atravessam');
-      if (soma('facesDuplicadas')) partes.push('faces repetidas');
+      const partes = [...new Set(graves.flatMap(g => g.tipos))];
       out.push({ tipo: 'ruim', ico: 'alerta', titulo: fmtInt(defeitos) + ' defeito' + (defeitos > 1 ? 's' : '') + ' na malha', texto: cap(partes.join(', ')) + ' — o fatiador pode errar.', botao: 'Consertar', acao: 'consertar' });
     }
-    if (soma('componentesInternos')) out.push({ tipo: 'atencao', ico: 'camadas', titulo: 'Sobras escondidas dentro da peça', texto: 'Pedaços internos que só atrapalham o fatiador.', botao: 'Ver', acao: 'analisar' });
     const esp = rels.map(r => r.espessuraMinima).filter(v => v != null);
     const lim = (rels[0] && rels[0].limiteEspessura) || 0.8;
     if (esp.length && Math.min(...esp) < lim) out.push({ tipo: 'atencao', ico: 'lupa', titulo: 'Partes finas (' + fmt(Math.min(...esp), 2) + ' mm)', texto: 'Abaixo de ' + fmt(lim, 1) + ' mm pode não imprimir.', botao: 'Ver onde', acao: 'espessura' });

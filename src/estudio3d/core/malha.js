@@ -225,8 +225,13 @@ export function deSopa(sopa, cor) {
 
 // Solda vértices a menos de 'tol' mm (grade + 27 vizinhos, sem falso-negativo
 // na borda da célula). Devolve { malha, mapa, fundidos }.
-export function soldar(m, tol = 1e-4) {
+// borda (opcional, Uint8Array por vértice): só solda par em que pelo menos um
+// dos dois é vértice de aresta aberta (costura). Vértice de casca fechada
+// encostado em outra casca NÃO é soldado — soldar criaria um ponto non-manifold
+// que o conserto desfaria de novo ("soldou N / separou N" a cada clique).
+export function soldar(m, tol = 1e-4, borda = null) {
   const nv = m.pos.length / 3, p = m.pos;
+  const origem = borda ? [] : null;      // vértice novo -> vértice original (pra olhar a borda)
   // célula = 4·tol: só olha a vizinha quando o ponto está a menos de tol da
   // divisa (~3 consultas por vértice em vez de 27). Perto de mais de um
   // representante: fica com o de menor índice
@@ -251,12 +256,13 @@ export function soldar(m, tol = 1e-4) {
         const u = l[q];
         if (achou >= 0 && u >= achou) break;
         const dx = pos[u * 3] - x, dy = pos[u * 3 + 1] - y, dz = pos[u * 3 + 2] - z;
-        if (dx * dx + dy * dy + dz * dz <= tol2) { achou = u; break; }
+        if (dx * dx + dy * dy + dz * dz <= tol2 && (!borda || borda[v] || borda[origem[u]])) { achou = u; break; }
       }
     }
     if (achou >= 0) { rep[v] = achou; fundidos++; continue; }
     const n = pos.length / 3;
     pos.push(x, y, z);
+    if (origem) origem.push(v);
     rep[v] = n;
     const ch = chave(ci, cj, ck);
     const l = grade.get(ch);

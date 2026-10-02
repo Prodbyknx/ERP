@@ -7,6 +7,7 @@
 // suporte). No fim: exportar 3MF pro Bambu.
 import { el, fmt, fmtInt, avisar } from './util.js';
 import * as M4 from '../core/mat4.js';
+import { defeitosGraves } from '../core/validador.js';
 
 const ALTURA_MAX = 256;
 
@@ -64,8 +65,9 @@ async function preparar(est) {
       const malha0 = p.malha;
       let parte = est.parteParaMotor(p), mudou = false;
       let rel = await est.rodar('analisar', { parte, opc: { completo: true } }, 'Conferir');
-      const defeitos = r => r.arestasAbertas + r.arestasNaoManifold + r.verticesNaoManifold + r.orientacaoTrocada + r.componentesInvertidos + r.facesDuplicadas;
-      if (defeitos(rel) || rel.autoInterseccoes) {
+      // mesma regra do laudo; sobra interna sai pelo "tirar sobras" logo abaixo
+      const defeitos = r => defeitosGraves({ ...r, componentesInternos: 0 }).total;
+      if (defeitos(rel)) {
         const r = await est.rodar('reparar', { parte, opc: {} }, 'Consertar');      // erro aqui sobe pro catch (painel mostra)
         if (r.passos.length) { parte = { ...parte, ...r.parte }; mudou = true; consertos += r.passos.length; rel = r.depois || rel; }
       }
@@ -74,7 +76,7 @@ async function preparar(est) {
         if (r.removidos) { parte = { ...parte, ...r.parte }; mudou = true; sobras += r.removidos; }
         rel = await est.rodar('analisar', { parte, opc: { completo: true } }, 'Conferir');
       }
-      restantes += defeitos(rel) + (rel.autoInterseccoes || 0);
+      restantes += defeitosGraves(rel).total;
       if (rel.espessuraMinima != null) espMin = Math.min(espMin, rel.espessuraMinima);
       if (rel.limiteEspessura) lim = rel.limiteEspessura;
       if (mudou) trocas.push({ o, p, parte, malha0, rel });

@@ -3,7 +3,8 @@
 // separação do que é non-manifold -> fragmentos -> buracos -> normal pra fora.
 import { arestas, componentes, listasPorRotulo, lacosDeBorda, facesDoVertice } from './topologia.js';
 import { criar, caixa, soldar, compactar, subMalha, volume, area, semFaces } from './malha.js';
-import { facesDuplicadas, verticesCoincidentes, autoInterseccoes } from './validador.js';
+import { facesDuplicadas, verticesCoincidentes, verticesDeBorda, autoInterseccoes } from './validador.js';
+import { tolSolda as tolSoldaPadrao } from './tolerancias.js';
 import { triangularPoligono3D, normalNewell, baseDoPlano, lacoSeCruza } from './triangular.js';
 import { construirBVH, lancarRaio, dentroDeOutras } from './bvh.js';
 import { progresso } from './progresso.js';
@@ -456,9 +457,11 @@ export function reparar(m0, opc = {}) {
   m = c0;
 
   pg(0.18, 'Soldando vértices repetidos');
-  const tolSolda = opc.tolSolda != null ? opc.tolSolda : Math.max(1e-6, diag * 1e-6);
-  if (verticesCoincidentes(m, tolSolda)) {
-    const s = soldar(m, tolSolda);
+  // mesma tolerância do laudo; só solda costura (vértice de aresta aberta)
+  const tolSolda = opc.tolSolda != null ? opc.tolSolda : tolSoldaPadrao(diag);
+  const borda = verticesDeBorda(m);
+  if (verticesCoincidentes(m, tolSolda, borda).comBorda) {
+    const s = soldar(m, tolSolda, borda);
     if (s.fundidos) passos.push('soldou ' + s.fundidos + ' vértice(s) repetido(s)');
     m = s.malha;
   }

@@ -490,6 +490,8 @@ async function main() {
   await secaoXSS3D({ b, teste, tmp, novaPagina, passo, abrirEstudio, abrirSecao });
   const { secaoCorrida } = await import('./corrida.mjs');
   await secaoCorrida({ b, teste, tmp, novaPagina, passo, abrirEstudio, abrirSecao });
+  const { secaoLaudo } = await import('./laudo.mjs');
+  await secaoLaudo({ b, teste, tmp, novaPagina, passo, abrirEstudio, abrirSecao });
   const { secaoSupabaseKit } = await import('./supabase-kit.mjs');
   await secaoSupabaseKit({ b, novaPagina, passo, pagina: path.join(teste, 'seguranca', 'verificar-supabase.html'), empacotada: true });
   const { secaoNuvem } = await import('./nuvem.mjs');

@@ -30,6 +30,7 @@ export function montarDiagnostico(est) {
   </div>`;
   const $ = s => d.querySelector('[data-a="' + s + '"]');
   let sugestaoUnidade = null;
+  const avisosAbrir = new Map();      // objeto.id -> avisos de quando o arquivo foi aberto
   let ultimoReparo = null;
 
   // soFaltando: só as peças sem laudo da malha atual (ex.: a que falhou no lote)
@@ -183,7 +184,10 @@ export function montarDiagnostico(est) {
       h += linha('Faces invertidas', fmtInt(inv), inv ? 'ruim' : 'bom');
       h += linha('Faces degeneradas', fmtInt(soma('facesDegeneradas')), soma('facesDegeneradas') ? 'atencao' : 'bom');
       h += linha('Faces repetidas', fmtInt(soma('facesDuplicadas')), soma('facesDuplicadas') ? 'ruim' : 'bom');
-      h += linha('Vértices duplicados', fmtInt(soma('verticesDuplicados')), soma('verticesDuplicados') ? 'atencao' : 'bom');
+      h += linha('Vértices duplicados (costura aberta)', fmtInt(soma('verticesDuplicados')), soma('verticesDuplicados') ? 'atencao' : 'bom');
+      // vértice no mesmo lugar SEM buraco: peças que se encostam num ponto/aresta.
+      // É normal (o conserto não mexe) — só informa
+      if (soma('verticesSobrepostos')) h += linha('Pontos onde partes se encostam (normal)', fmtInt(soma('verticesSobrepostos')));
       h += linha('Objetos desconectados', fmtInt(soma('componentes')), soma('componentes') > o.partes.length ? 'atencao' : 'bom');
       h += linha('Sobras internas', fmtInt(soma('componentesInternos')), soma('componentesInternos') ? 'atencao' : 'bom');
       h += linha('Auto-interseções', auto == null ? 'não medido' : fmtInt(auto) + (rels.some(r => !r.autoInterseccoesCompleto) ? '+' : ''), auto ? 'ruim' : 'bom');
@@ -197,7 +201,7 @@ export function montarDiagnostico(est) {
       h += linha('Peso estimado (PLA maciço)', fmt(vol * escala / 1000 * DENSIDADE_PLA, 1) + ' g');
       h += linha('Triângulos', fmtInt(soma('triangulos')));
       h += '</div>';
-      const tudoOk = rels.every(r => r.imprimivel) && !soma('componentesInternos');
+      const tudoOk = rels.every(r => r.imprimivel);       // mesma regra do Início, da bolinha e do Preparar (defeitosGraves)
       h += tudoOk ? '<div class="e3d-nota ok">Pronto pra fatiar: sólido fechado, sem defeito de malha.</div>'
         : '<div class="e3d-nota aviso">' + (fechada ? 'A malha fecha, mas tem pontos de atenção acima.' : 'A malha tem defeitos que o fatiador pode interpretar errado. Use <b>Consertar automaticamente</b>.') + '</div>';
       if (ultimoReparo) {
@@ -211,6 +215,15 @@ export function montarDiagnostico(est) {
       if (!fechada) extra.appendChild(el('button', { class: 'btn', onclick: () => est.definirModoVisual('problemas') }, 'Ver os defeitos'));
       else if (auto > 0) extra.appendChild(el('button', { class: 'btn', title: 'Pinta de rosa onde a superfície se cruza', onclick: () => est.definirModoVisual('problemas') }, 'Ver onde se cruza'));
       extra.className = 'e3d-botoes';
+    }
+    // avisos de quando o arquivo foi aberto: ficam aqui (antes era um aviso
+    // rápido que a mensagem seguinte cobria em 0 s, e só o 1º aparecia)
+    const av = avisosAbrir.get(o.id);
+    if (av && av.length) {
+      const n = el('div', { class: 'e3d-nota aviso', 'data-a': 'avisosAbrir' }, el('b', null, 'Ao abrir o arquivo: '));
+      av.forEach((t, i) => { if (i) n.appendChild(el('br')); n.appendChild(document.createTextNode('• ' + t)); });
+      n.appendChild(el('button', { class: 'btn small', style: 'margin-left:6px', onclick: () => { avisosAbrir.delete(o.id); render(); } }, 'Entendi'));
+      res.prepend(n);
     }
     if (sugestaoUnidade && sugestaoUnidade.objeto === o.id) {
       const n = el('div', { class: 'e3d-nota aviso' }, sugestaoUnidade.texto + ' ',
@@ -226,7 +239,7 @@ export function montarDiagnostico(est) {
   est.on('importou', ({ resultado, objetos }) => {
     ultimoReparo = null;
     if (resultado.sugestaoUnidade && objetos[0]) sugestaoUnidade = { ...resultado.sugestaoUnidade, objeto: objetos[0].id };
-    if (resultado.avisos && resultado.avisos.length) avisar(resultado.avisos[0], 'warn');
+    if (resultado.avisos && resultado.avisos.length) for (const o of objetos) avisosAbrir.set(o.id, resultado.avisos.slice());
     // confere sozinho em segundo plano (motor auxiliar): dá pra ir usando
     for (const o of objetos) analisar(o, true);
   });

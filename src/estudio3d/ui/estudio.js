@@ -1226,8 +1226,10 @@ export class Estudio {
         }
         const novos = this.adicionarObjetos(r.objetos, { rotulo: 'Abrir ' + f.name });
         this.emitir('importou', { resultado: r, objetos: novos, arquivo: f.name });
-        this.abrirFerramenta('inicio');
-        avisar(f.name + ': ' + fmtInt(r.triangulos) + ' triângulos, ' + r.objetos.length + ' objeto(s)');
+        // tem aviso do arquivo: abre o Consertar (os avisos ficam escritos lá) e o aviso rápido diz isso
+        const nAv = (r.avisos || []).length;
+        this.abrirFerramenta(nAv ? 'diag' : 'inicio');
+        avisar(f.name + ': ' + fmtInt(r.triangulos) + ' triângulos, ' + r.objetos.length + ' objeto(s)' + (nAv ? ' — ' + nAv + ' aviso(s) do arquivo, veja em Conferir e consertar' : ''), nAv ? 'warn' : 'ok');
       } catch (e) {
         // erro do motor já foi avisado; o resto (ler o arquivo, pôr na mesa) não pode sumir calado
         if (!e || (!e.avisado && e.codigo !== 'cancelado')) { console.error(e); avisar('Não consegui abrir ' + f.name + ': ' + ((e && e.message) || e), 'warn'); }

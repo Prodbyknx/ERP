@@ -3,6 +3,7 @@ import { arestas, gemeas, estatisticaArestas, componentes, verticesNaoManifold, 
 import { caixa, volume, area, areaFace, subMalha, normaisFace } from './malha.js';
 import { construirBVH, paresProximos, lancarRaio, pontoDentro, dentroDeOutras } from './bvh.js';
 import { progresso } from './progresso.js';
+import { tolSolda, tolAreaDegenerada, AREA_MINIMA_REGIAO_FINA } from './tolerancias.js';
 
 const EPS = 1e-12;
 
@@ -73,7 +74,7 @@ export function facesDegeneradas(m, tolArea) {
   const nt = m.idx.length / 3, idx = m.idx;
   const cx = caixa(m);
   const diag = cx ? Math.hypot(cx.tam[0], cx.tam[1], cx.tam[2]) : 1;
-  const tol = tolArea != null ? tolArea : Math.max(1e-12, diag * diag * 1e-14);
+  const tol = tolArea != null ? tolArea : tolAreaDegenerada(diag);
   const lista = [];
   for (let t = 0; t < nt; t++) {
     const a = idx[t * 3], b = idx[t * 3 + 1], c = idx[t * 3 + 2];
@@ -109,37 +110,57 @@ export function facesDuplicadas(m) {
   return dup;
 }
 
-// Vértices diferentes na mesma posição (a menos de tol)
-export function verticesCoincidentes(m, tol) {
+// Vértices de aresta aberta (borda de buraco / costura não soldada)
+export function verticesDeBorda(m, top = arestas(m)) {
+  const borda = new Uint8Array(m.pos.length / 3);
+  for (let e = 0; e < top.nE; e++) {
+    if (top.inicio[e + 1] - top.inicio[e] !== 1) continue;
+    const h = top.ordem[top.inicio[e]], t = (h / 3) | 0, k = h % 3;
+    borda[m.idx[h]] = 1; borda[m.idx[t * 3 + (k + 1) % 3]] = 1;
+  }
+  return borda;
+}
+
+// Vértices diferentes na mesma posição (a menos de tol).
+// borda (opcional, Uint8Array por vértice: 1 = vértice de aresta aberta):
+// devolve { comBorda, semBorda }. Com borda é DEFEITO (costura não soldada,
+// o conserto solda). Sem borda é normal: peças que se encostam num ponto/aresta
+// ou lasca fininha — soldar criaria ponto non-manifold (auditoria A5).
+export function verticesCoincidentes(m, tol, borda) {
   const nv = m.pos.length / 3, p = m.pos;
   // célula = 4·tol: só olha a célula vizinha quando o ponto está a menos de
   // tol da divisa (~3 consultas por vértice em vez de 27; mesmo resultado)
   const cel = 4 * tol, inv = 1 / cel;
   const grade = new Map();
-  let n = 0;
+  let n = 0, comBorda = 0;
   const chave = (i, j, k) => (i * 73856093) ^ (j * 19349663) ^ (k * 83492791);
   const faixa = (c, x) => { const f = x * inv - c; return f < 0.25 ? -1 : f > 0.75 ? 1 : 0; };
   for (let v = 0; v < nv; v++) {
     const x = p[v * 3], y = p[v * 3 + 1], z = p[v * 3 + 2];
     const ci = Math.floor(x * inv), cj = Math.floor(y * inv), ck = Math.floor(z * inv);
     const fi = faixa(ci, x), fj = faixa(cj, y), fk = faixa(ck, z);
-    let achou = false;
-    for (let di = Math.min(0, fi); di <= Math.max(0, fi) && !achou; di++) for (let dj = Math.min(0, fj); dj <= Math.max(0, fj) && !achou; dj++) for (let dk = Math.min(0, fk); dk <= Math.max(0, fk) && !achou; dk++) {
+    let achou = -1;
+    for (let di = Math.min(0, fi); di <= Math.max(0, fi) && achou < 0; di++) for (let dj = Math.min(0, fj); dj <= Math.max(0, fj) && achou < 0; dj++) for (let dk = Math.min(0, fk); dk <= Math.max(0, fk) && achou < 0; dk++) {
       const l = grade.get(chave(ci + di, cj + dj, ck + dk));
       if (!l) continue;
       for (const u of l) {
-        if (Math.abs(p[u * 3] - x) <= tol && Math.abs(p[u * 3 + 1] - y) <= tol && Math.abs(p[u * 3 + 2] - z) <= tol) { achou = true; break; }
+        if (Math.abs(p[u * 3] - x) <= tol && Math.abs(p[u * 3 + 1] - y) <= tol && Math.abs(p[u * 3 + 2] - z) <= tol) { achou = u; break; }
       }
     }
-    if (achou) { n++; continue; }
+    if (achou >= 0) { n++; if (borda && (borda[v] || borda[achou])) comBorda++; continue; }
     const ch = chave(ci, cj, ck);
     const l = grade.get(ch); if (l) l.push(v); else grade.set(ch, [v]);
   }
-  return n;
+  return borda ? { comBorda, semBorda: n - comBorda } : n;
 }
 
-// Espessura: raio pra dentro a partir de cada face amostrada até sair do
-// outro lado. Devolve espessura por face amostrada e o resumo.
+// Espessura: raio pra dentro a partir de cada face amostrada até SAIR do
+// material. O raio anda de acerto em acerto contando entra/sai (face com a
+// normal contra o raio = entrou em mais material; a favor = saiu): só termina
+// quando sai de TODO o material. Assim casca sobreposta (que o conserto não
+// juntou) não vira "parede de 0,00 mm", e vazio de peça oca continua medindo
+// a parede. Face que divide vértice com a de origem (dobra/lasca da própria
+// superfície) não conta como o outro lado (auditoria A6).
 export function espessuras(m, opc = {}) {
   const nt = m.idx.length / 3;
   const bvh = opc.bvh || construirBVH(m);
@@ -150,44 +171,89 @@ export function espessuras(m, opc = {}) {
   const idx = m.idx, p = m.pos;
   const limite = opc.limite != null ? opc.limite : 0.8;
   let menor = Infinity, medidas = 0, abaixo = 0;
+  // anda no raio somando entra(+1)/sai(−1) a partir de 'dentro'; devolve a
+  // distância em que sai de todo material (ou -1). sentido = +1 pra fora, −1 pra dentro
+  const vizinha = (f, va, vb, vc) => { const f0 = idx[f * 3], f1 = idx[f * 3 + 1], f2 = idx[f * 3 + 2]; return f0 === va || f0 === vb || f0 === vc || f1 === va || f1 === vb || f1 === vc || f2 === va || f2 === vb || f2 === vc; };
+  function andar(t, ox, oy, oz, dx, dy, dz, dentro, ate) {
+    const va = idx[t * 3], vb = idx[t * 3 + 1], vc = idx[t * 3 + 2];
+    let total = 0, ignorar = t;
+    for (let k = 0; k < 24; k++) {
+      const h = lancarRaio(bvh, ox, oy, oz, dx, dy, dz, Infinity, ignorar, 1e-6);
+      if (!h) return ate ? dentro : -1;
+      total += h.t; ox += dx * h.t; oy += dy * h.t; oz += dz * h.t; ignorar = h.face;
+      if (vizinha(h.face, va, vb, vc)) continue;            // dobra da própria superfície
+      const dot = nrm[h.face * 3] * dx + nrm[h.face * 3 + 1] * dy + nrm[h.face * 3 + 2] * dz;
+      if (ate) { if (dot > 0) dentro++; else if (dot < 0) dentro--; continue; }   // pra fora: conta em quantas cascas o ponto está
+      if (dot > 0) dentro--; else if (dot < 0) dentro++;
+      if (dentro <= 0) return total;
+    }
+    return ate ? dentro : -1;
+  }
   for (let t = 0; t < nt; t += passo) {
     const nx = -nrm[t * 3], ny = -nrm[t * 3 + 1], nz = -nrm[t * 3 + 2];
     if (!nx && !ny && !nz) continue;
     const a = idx[t * 3] * 3, b = idx[t * 3 + 1] * 3, c = idx[t * 3 + 2] * 3;
     const ox = (p[a] + p[b] + p[c]) / 3, oy = (p[a + 1] + p[b + 1] + p[c + 1]) / 3, oz = (p[a + 2] + p[b + 2] + p[c + 2]) / 3;
-    const h = lancarRaio(bvh, ox, oy, oz, nx, ny, nz, Infinity, t, 1e-6);
-    if (!h) continue;
-    // só conta se sai pelo avesso de uma face (entrou no sólido e saiu)
-    const f = h.face;
-    if (nrm[f * 3] * nx + nrm[f * 3 + 1] * ny + nrm[f * 3 + 2] * nz <= 0) continue;
-    esp[t] = h.t;
+    let e = andar(t, ox, oy, oz, nx, ny, nz, 1, false);
+    // deu fino: a face pode estar DENTRO de outra casca (sobreposta). Conta pra
+    // fora em quantas cascas o ponto já está e mede de novo a partir daí
+    if (e >= 0 && e < limite) {
+      const fora = andar(t, ox, oy, oz, -nx, -ny, -nz, 0, true);
+      if (fora > 0) e = andar(t, ox, oy, oz, nx, ny, nz, fora + 1, false);
+    }
+    if (e < 0) continue;
+    esp[t] = e;
     medidas++;
-    if (h.t < menor) menor = h.t;
-    if (h.t < limite) abaixo++;
+    if (e < menor) menor = e;
+    if (e < limite) abaixo++;
   }
   return { porFace: esp, passo, minima: isFinite(menor) ? menor : null, medidas, abaixo, limite };
 }
 
-// Regiões críticas = grupos de faces finas vizinhas
-function contarRegioes(m, faces, gem) {
+// Regiões finas = grupos de faces finas vizinhas, com a área de cada uma
+// (amostrado de passo em passo: cada amostra vale pela área × passo)
+function regioesFinas(m, faces, gem, passo) {
   const marca = new Uint8Array(m.idx.length / 3);
   faces.forEach(t => { marca[t] = 1; });
-  let regioes = 0;
+  const regioes = [];
   for (const t0 of faces) {
     if (marca[t0] !== 1) continue;
-    regioes++;
-    const pilha = [t0]; marca[t0] = 2;
-    while (pilha.length) {
-      const t = pilha.pop();
+    const lista = [t0]; marca[t0] = 2;
+    let area = 0;
+    for (let i = 0; i < lista.length; i++) {
+      const t = lista[i];
+      area += areaFace(m, t) * passo;
       for (let k = 0; k < 3; k++) {
         const g = gem[t * 3 + k];
         if (g < 0) continue;
         const o = (g / 3) | 0;
-        if (marca[o] === 1) { marca[o] = 2; pilha.push(o); }
+        if (marca[o] === 1) { marca[o] = 2; lista.push(o); }
       }
     }
+    regioes.push({ faces: lista, area });
   }
   return regioes;
+}
+
+// O que impede "pronto pra imprimir". A MESMA regra no laudo, no Início, na
+// bolinha de saúde e no Preparar (antes eram 4 contas diferentes e a bolinha
+// dizia "Pronto" enquanto o laudo dizia "atenção" — auditoria M3).
+// Vértice repetido não entra: é sintoma de aresta aberta (que já conta).
+export const DEFEITOS_GRAVES = [
+  ['arestasAbertas', 'buracos'], ['arestasNaoManifold', 'arestas soltas'], ['verticesNaoManifold', 'arestas soltas'],
+  ['orientacaoTrocada', 'faces viradas'], ['componentesInvertidos', 'faces viradas'], ['facesDuplicadas', 'faces repetidas'],
+  ['facesDegeneradas', 'faces degeneradas'], ['autoInterseccoes', 'partes que se atravessam'], ['componentesInternos', 'sobras internas']
+];
+export function defeitosGraves(r) {
+  let total = 0;
+  const tipos = [];
+  for (const [k, nome] of DEFEITOS_GRAVES) {
+    const n = (r && r[k]) || 0;
+    if (!n) continue;
+    total += n;
+    if (!tipos.includes(nome)) tipos.push(nome);
+  }
+  return { total, tipos };
 }
 
 // Diagnóstico completo
@@ -196,7 +262,7 @@ export function validar(m, opc = {}) {
   const r = {
     vertices: m.pos.length / 3, triangulos: nt,
     arestasAbertas: 0, arestasNaoManifold: 0, verticesNaoManifold: 0, orientacaoTrocada: 0,
-    facesDegeneradas: 0, facesDuplicadas: 0, verticesDuplicados: 0, verticesSoltos: 0,
+    facesDegeneradas: 0, facesDuplicadas: 0, verticesDuplicados: 0, verticesSobrepostos: 0, verticesSoltos: 0,
     componentes: 0, componentesAbertos: 0, componentesInvertidos: 0, componentesInternos: 0, cavidades: 0,
     autoInterseccoes: null, autoInterseccoesCompleto: true,
     volume: 0, area: 0, caixa: caixa(m),
@@ -218,7 +284,10 @@ export function validar(m, opc = {}) {
   r.facesDegeneradas = deg.length;
   r.facesDuplicadas = facesDuplicadas(m).length;
   const d = r.caixa ? Math.hypot(r.caixa.tam[0], r.caixa.tam[1], r.caixa.tam[2]) : 1;
-  r.verticesDuplicados = verticesCoincidentes(m, Math.max(1e-7, d * 1e-7));
+  // vértice de aresta aberta (costura que dá pra soldar) × encostado (normal)
+  const vc = verticesCoincidentes(m, tolSolda(d), verticesDeBorda(m, top));
+  r.verticesDuplicados = vc.comBorda;
+  r.verticesSobrepostos = vc.semBorda;
   r.volume = volume(m);
   r.area = area(m);
 
@@ -271,17 +340,23 @@ export function validar(m, opc = {}) {
     }
     pg(0.8, 'Medindo a espessura');
     const e = espessuras(m, { bvh, limite: r.limiteEspessura, amostras: opc.amostrasEspessura });
-    r.espessuraMinima = e.minima;
-    r.facesFinas = e.abaixo;
     r.espessuraPasso = e.passo;
     r.espessuraPorFace = e.porFace;
     const finas = [];
     for (let t = 0; t < nt; t++) if (e.porFace[t] < r.limiteEspessura) finas.push(t);
-    r.regioesCriticas = e.passo === 1 ? contarRegioes(m, finas, gem) : Math.min(finas.length, contarRegioes(m, finas, gem));
+    // região fina minúscula (face dobrada, lasca) é ruído: fica de fora da
+    // contagem e da espessura mínima (senão "0,00 mm" por causa de 1 face)
+    const regs = regioesFinas(m, finas, gem, e.passo);
+    let ruido = 0;
+    for (const g of regs) if (g.area < AREA_MINIMA_REGIAO_FINA) { for (const t of g.faces) e.porFace[t] = NaN; ruido += g.faces.length; }
+    let menor = Infinity;
+    for (let t = 0; t < nt; t++) if (e.porFace[t] < menor) menor = e.porFace[t];
+    r.espessuraMinima = isFinite(menor) ? menor : null;
+    r.facesFinas = e.abaixo - ruido;
+    r.regioesCriticas = regs.filter(g => g.area >= AREA_MINIMA_REGIAO_FINA).length;
   }
   r.fechada = r.arestasAbertas === 0 && r.arestasNaoManifold === 0 && r.orientacaoTrocada === 0 && r.verticesNaoManifold === 0;
-  r.imprimivel = r.fechada && r.componentesInvertidos === 0 && r.facesDegeneradas === 0 && r.facesDuplicadas === 0 &&
-    (r.autoInterseccoes === 0 || r.autoInterseccoes === null) && r.volume > 0;
+  r.imprimivel = r.fechada && defeitosGraves(r).total === 0 && r.volume > 0;
   void pontoDentro;
   return r;
 }
