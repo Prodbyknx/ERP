@@ -29,9 +29,9 @@ export async function secaoCores({ b, teste, tmp, novaPagina, passo, abrirEstudi
   const noMundo = o => o.partes.map(p => transformar(criar(Float64Array.from(p.pos), Uint32Array.from(p.idx)), o.t));
   const man = m => new W.Manifold(new W.Mesh({ numProp: 3, vertProperties: Float32Array.from(m.pos), triVerts: Uint32Array.from(m.idx) }));
   const separar = async () => {
-    await abrirSecao(pg, 'sep');
-    if ((await pg.inputValue('[data-sec=sep] [data-a="espCor"]')) !== '0,8') throw new Error('espessura padrão não é 0,8');
-    await pg.click('[data-sec=sep] [data-a="porCor"]');
+    await abrirSecao(pg, 'cor');
+    if ((await pg.inputValue('[data-sec=cor] [data-a="espCor"]')) !== '0,8') throw new Error('espessura padrão não é 0,8');
+    await pg.click('[data-sec=cor] [data-a="porCor"]');
     await pg.waitForSelector('.e3d-previa', { state: 'visible', timeout: 180000 });
     return pg.textContent('.e3d-previa');
   };

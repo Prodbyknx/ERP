@@ -199,7 +199,12 @@ COMO A TELA É ORGANIZADA
     as peças escondidas, Organizar mesa, Adicionar forma, Abrir arquivo.
     Na lista de Objetos: o menu da peça daquela linha.
 
-AS TAREFAS (trilho da esquerda)
+AS TAREFAS (trilho da esquerda) — UMA FERRAMENTA POR TAREFA
+   10 botões: Início · Formas · Modificar · Esculpir · Desenhar ·
+   Consertar · Ajustar · Cortar e separar · Texto · Exportar.
+   Nada aparece em dois lugares: um Espelhar só (Ajustar), um Suavizar só
+   (Esculpir), Torcer/afunilar/dobrar só no Modificar, Sólido/Furo só em
+   Formas, e Selecionar + Separar + Cortar viraram "Cortar e separar".
 
 INÍCIO — "O que você quer fazer?"
    Sugestões pro modelo aberto, na ordem do que é mais urgente, cada uma
@@ -213,7 +218,8 @@ INÍCIO — "O que você quer fazer?"
 FORMAS — adicionar peças prontas (novo)
    Clique no cartão e a forma aparece na mesa, ao lado da peça escolhida.
    Em cima do painel ficam as medidas da forma escolhida (em mm): mude e
-   a peça é refeita na hora, no mesmo lugar. Tipo: Sólido ou Furo.
+   a peça é refeita na hora, no mesmo lugar. Tipo: Sólido ou Furo (só
+   aqui; vale pra qualquer peça, até arquivo aberto).
    Se a peça atualizar enquanto você digita (uma operação terminando),
    o número digitado e o cursor ficam no campo (antes podiam sumir).
    3D: cubo, caixa (com canto arredondado), esfera, cilindro, cone,
@@ -226,7 +232,7 @@ FORMAS — adicionar peças prontas (novo)
 
    FURO: uma peça marcada como Furo tira material de toda peça sólida que
    ela atravessa. Aparece furado na tela na hora e sai furado no 3MF/STL.
-   Quando você abre Selecionar/Separar/Cortar/Texto/Consertar numa peça
+   Quando você abre Cortar e separar/Texto/Consertar numa peça
    furada, os furos viram parte da geometria (dá pra desfazer).
 
    VÁRIAS PEÇAS: Shift + clique (no 3D ou na lista), ou Ctrl+A.
@@ -244,6 +250,25 @@ FORMAS — adicionar peças prontas (novo)
    A seta de mover leva todas as escolhidas juntas.
    Ctrl+D duplica, Delete apaga. Em Ajustar: Duplicar em série (cópias,
    distância e direção). No rodapé do 3D: Ímã (1 mm / 15°).
+
+MODIFICAR — mexer na forma da peça (sempre com prévia)
+   Arredondar e Chanfrar (clique nas bordas), Puxar / empurrar uma face
+   plana (mm), Deixar oca (parede em mm; clique nas faces que ficam
+   abertas), Medir.
+   TORCER / DOBRAR (a peça inteira, ao longo de X, Y ou Z):
+     Torcer (graus) · Afunilar (escala no topo; 1 = igual) · Dobrar
+     (graus) · Engordar (mm pra fora, pela superfície).
+   (Antes ficava no Esculpir, com um segundo "Inflar" que confundia com o
+   do pincel.) Torcida/dobrada, a forma deixa de ser editável em Formas.
+
+ESCULPIR — pincel e suavizar
+   Pincel: Puxar, Empurrar, Inflar, Achatar, ALISAR (suaviza só onde você
+   passa) e Vincar; tamanho em mm, força, simetria X/Y ao vivo, detalhe
+   automático debaixo do pincel.
+   SUAVIZAR A PEÇA: tira grão e caroço da peça inteira (ou só das faces
+   selecionadas) sem encolher; Leve / Média / Forte, preservar quinas.
+   É o único "Suavizar" do Estúdio (o "Facetado" do rodapé só muda o
+   sombreado da tela).
 
 DESENHAR — criar a peça clicando (o antigo Desenhar + Modelar + Foto, num só)
    ABRIU E CLICOU, APARECE PONTO. Não tem botão de começar.
@@ -269,7 +294,7 @@ DESENHAR — criar a peça clicando (o antigo Desenhar + Modelar + Foto, num só
    arrastar a imagem pro 3D, ou colar (Ctrl+V). Opacidade logo ali; "Ajustar
    a foto": de frente / de lado / deitada na mesa, tamanho em mm, MEDIR NA
    FOTO (2 cliques numa medida conhecida + o valor real = escala real),
-   posição, girar, espelhar, por cima das peças. "Arrastar a foto" liga o
+   posição, girar, "Virar ↔" (inverte a foto), por cima das peças. "Arrastar a foto" liga o
    arrastar com o mouse (desligado, o clique é ponto). Várias fotos (frente +
    lado). A foto não vai pro 3MF/STL nem pra miniatura.
    ESPELHO (esquerda ↔ direita): faz um lado, o outro aparece (azul claro);
@@ -313,7 +338,13 @@ CONSERTAR — conferir e consertar
 
 AJUSTAR — posição, tamanho e cor
    Medidas em mm (rotação, tamanho ou %), Manter proporção, Colocar na
-   mesa, Centralizar, Girar 90°, Espelhar, Redefinir.
+   mesa, Centralizar, Girar 90°, Redefinir.
+   ESPELHAR (o único do Estúdio): eixo X / Y / Z da tela (vale com a peça
+   girada) e Espelhar = vira no lugar. Com "Juntar com a original":
+   modele METADE e ganhe a peça inteira — corta no espelho (Lado −, No
+   meio ou Lado +), vira e solda na costura: uma peça só, fechada, com
+   prévia. Em peça de Formas a operação fica guardada e é refeita quando
+   você muda a medida.
    POSIÇÃO = CENTRO X e Y da peça na mesa e BASE Z (altura da parte de
    baixo; 0 = encostada na mesa), valendo também com a peça girada.
    MOVER COM O MOUSE: segure a peça e arraste — ela anda na mesa, sem
@@ -322,22 +353,9 @@ AJUSTAR — posição, tamanho e cor
    DEITAR NA MAIOR FACE PLANA (ou "na face que eu clicar"). A cor de cada
    peça é escolhida aqui e é a que vai pro 3MF.
 
-SELECIONAR — uma parte do modelo
-   Região inteligente (clique: para na dobra), Pincel (tamanho em mm,
-   "só faces viradas pra mim"), Casca inteira, Mesma cor, Parte
-   detectada. Expandir, Reduzir, Suavizar borda, Similar, Conectado,
-   Inverter, Limpar. DETECTAR PARTES divide em Parte 01, 02… (renomeie).
-   Na tela: VERDE = vai sair · CINZA = fica · AZUL = encaixe.
-
-SEPARAR — para imprimir
-   Clique no detalhe no 3D e veja a prévia: as DUAS peças saem fechadas,
-   na mesma posição e escala. Encaixe com pino no detalhe e furo na peça
-   (cilíndrico, quadrado, hexagonal), com folga.
-   SEPARAR POR COR: cada cor vira peça física (imprimir sem AMS). Região
-   só pintada ganha a espessura escolhida e a peça ganha o bolso.
-   SEPARAR CASCAS SOLTAS: cada ilha vira uma peça.
-
-CORTAR — em partes
+CORTAR E SEPARAR — dividir a peça (três abas)
+   CORTAR — corte reto: "A peça inteira" ou "Só uma parte" (clique na
+   mão/cabeça/orelha: o corte vai pro ponto mais fino e só ela sai).
    Horizontal, Vertical X, Vertical Y ou Inclinado. Pra posicionar:
      - clique na peça (o corte vai até o ponto)
      - arraste a seta azul no 3D
@@ -359,6 +377,27 @@ CORTAR — em partes
        o motivo (espessura ou largura), e o botão vira "Cortar sem
        conector".
    O mesmo vale pro "Separar com pino" (barra da parte selecionada).
+
+   SOLTAR UM DETALHE — passo 1 e passo 2 no mesmo lugar:
+     1. Escolher o detalhe: clique nele no 3D (Automático: para na dobra
+        ou no ponto mais fino). Outros jeitos: Parte até o ponto fino,
+        Região inteligente, Pincel (tamanho em mm, "só faces viradas pra
+        mim"), Casca inteira, Mesma cor, Parte detectada. Expandir,
+        Reduzir, Limpar contorno (tira o serrilhado da borda da seleção;
+        não mexe na peça), Similar, Conectado, Inverter, Limpar.
+        DETECTAR PARTES divide em Parte 01, 02… (renomeie).
+     2. Separar: nome, como fechar (Automático / Corte plano / Seguir a
+        superfície), espessura extra, folga, encaixe (pino no detalhe e
+        furo na peça) e a prévia: as DUAS peças saem fechadas, na mesma
+        posição e escala.
+     Na tela: VERDE = vai sair · CINZA = fica · AZUL = encaixe.
+     Detalhe em cima de superfície plana (botão numa tampa, logo numa
+     placa) sai com a medida exata (antes vinha 0,8 mm maior, com uma aba
+     fina grudada que o Consertar acusava como "se cruzando").
+
+   POR COR — cada cor vira peça física (imprimir sem AMS). Região só
+   pintada ganha a espessura escolhida e a peça ganha o bolso.
+   Separar cascas soltas: cada ilha da malha vira um objeto.
 
 TEXTO — nome, logo e relevo, FRENTE E VERSO
    Alto-relevo, alto-relevo colorido (peça separada), baixo-relevo /
@@ -673,7 +712,7 @@ MATRIZ DE MATURIDADE (evidência = teste que roda, não impressão)
 
 PEGAR UM OLHO, UMA ORELHA… NUM CLIQUE (e separar)
 -------------------------------------------------
-Selecionar -> AUTOMÁTICO (vem ligado; Separar também usa):
+Cortar e separar -> Soltar um detalhe -> AUTOMÁTICO (vem ligado):
   1. Passe o mouse: a parte que o clique vai pegar ACENDE EM AZUL.
   2. Clique: pega ela inteira.
      - detalhe com dobra (olho, botão, símbolo): até a dobra;

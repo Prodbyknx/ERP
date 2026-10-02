@@ -1,6 +1,8 @@
 // Painel 2 — posição, rotação, tamanho (valores numéricos) e cor.
 // Mover/girar/escalar só mexe na matriz do objeto: a malha não é tocada.
-import { el, fmt, lerNumero, avisar } from '../util.js';
+// Espelhar: só virar (matriz) ou juntar com a original (geometria no motor,
+// com prévia: modele metade e ganhe a peça inteira).
+import { el, esc, fmt, lerNumero, avisar } from '../util.js';
 import * as M4 from '../../core/mat4.js';
 import { normalizarHex, nomeDaCor, PALETA_PECAS } from '../../core/cores.js';
 
@@ -19,7 +21,6 @@ export function montarTransformar(est) {
       <button class="btn" data-a="gx">Girar 90° X</button>
       <button class="btn" data-a="gy">90° Y</button>
       <button class="btn" data-a="gz">90° Z</button>
-      <button class="btn" data-a="esp">Espelhar</button>
       <button class="btn" data-a="zerar" title="Volta rotação e escala pro original">Redefinir</button>
     </div>
     <div class="e3d-botoes">
@@ -27,13 +28,16 @@ export function montarTransformar(est) {
       <button class="btn" data-a="deitarClique" title="Clique numa face da peça: ela vai pra mesa">Deitar na face que eu clicar</button>
     </div>
     <div style="margin-top:14px;border-top:1px solid var(--line-soft);padding-top:10px">
-      <div data-a="blocoPlaca" style="display:none;margin-bottom:10px"><div class="e3d-titulo">Placa</div>
-        <div class="seg" data-a="placa"></div></div>
-      <div class="e3d-titulo">Tipo</div>
-      <div class="seg" data-a="papel"><button type="button" data-v="solido" class="active">Sólido</button><button type="button" data-v="furo">Furo</button></div>
-      <p class="u" style="margin:-4px 0 0">Furo tira material de todas as peças que ele atravessa — na tela e no arquivo exportado.</p>
+      <div class="e3d-titulo">Espelhar</div>
+      <div class="seg" data-a="espEixo"><button type="button" data-v="0" class="active" title="Esquerda ↔ direita">X</button><button type="button" data-v="1" title="Frente ↔ trás">Y</button><button type="button" data-v="2" title="Cima ↔ baixo">Z</button></div>
+      <label class="fer-check" title="Corta a peça no espelho, vira a metade e solda na costura: uma peça só, fechada"><input type="checkbox" data-a="espUnir"> Juntar com a original <span class="u">modele metade, ganhe a peça inteira</span></label>
+      <div class="field" data-a="espPosBloco" style="display:none"><label>Onde fica o espelho</label><div class="seg" data-a="espPos"><button type="button" data-v="min">Lado −</button><button type="button" data-v="centro">No meio</button><button type="button" data-v="max" class="active">Lado +</button></div></div>
+      <div class="e3d-botoes"><button class="btn" data-a="esp">Espelhar</button></div>
+      <div data-a="espRes"></div>
     </div>
     <div style="margin-top:14px;border-top:1px solid var(--line-soft);padding-top:10px">
+      <div data-a="blocoPlaca" style="display:none;margin-bottom:10px"><div class="e3d-titulo">Placa</div>
+        <div class="seg" data-a="placa"></div></div>
       <div class="e3d-titulo">Duplicar em série</div>
       <div class="e3d-l3"><div><label>Cópias</label><input type="text" data-a="serieN" value="4"></div><div><label>Distância (mm)</label><input type="text" data-a="serieD" value="10"></div>
         <div><label>Direção</label><select data-a="serieE"><option value="0">X (lado)</option><option value="1">Y (fundo)</option><option value="2">Z (pra cima)</option></select></div></div>
@@ -66,7 +70,6 @@ export function montarTransformar(est) {
     const inputs = d.querySelectorAll('input[data-t]');
     inputs.forEach(i => { i.disabled = !o; });
     q('[data-a=alvo]').textContent = o ? 'Objeto: ' + o.nome : 'Escolha um objeto.';
-    q('[data-a=papel]').querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === (o && o.papel === 'furo' ? 'furo' : 'solido')));
     // placa da peça (levar pra outra placa, ou pra uma nova)
     const bp = q('[data-a=blocoPlaca]');
     bp.style.display = o && est.cena.placas > 1 ? '' : 'none';
@@ -152,10 +155,51 @@ export function montarTransformar(est) {
   q('[data-a=gx]').onclick = () => girar(90, 0, 0);
   q('[data-a=gy]').onclick = () => girar(0, 90, 0);
   q('[data-a=gz]').onclick = () => girar(0, 0, 90);
-  q('[data-a=esp]').onclick = () => {
-    const o = est.objetoAtual(); if (!o) return;
-    const c = est.cena.caixaExata(o), cx = (c.min[0] + c.max[0]) / 2;
-    est.cena.aplicar('Espelhar', () => { o.transform = M4.multiplicar(M4.multiplicar(M4.translacao(cx, 0, 0), M4.multiplicar(M4.escala(-1, 1, 1), M4.translacao(-cx, 0, 0))), o.transform); });
+  /* ---------------- espelhar ---------------- */
+  const segEsp = k => q('[data-a=' + k + '] button.active').dataset.v;
+  ['espEixo', 'espPos'].forEach(k => q('[data-a=' + k + ']').addEventListener('click', ev => { const b = ev.target.closest('button'); if (b) q('[data-a=' + k + ']').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b)); }));
+  q('[data-a=espUnir]').addEventListener('change', () => { q('[data-a=espPosBloco]').style.display = q('[data-a=espUnir]').checked ? '' : 'none'; q('[data-a=espRes]').innerHTML = ''; });
+  q('[data-a=esp]').onclick = async () => {
+    const o = est.objetoAtual(); if (!o) { avisar('Escolha a peça.', 'warn'); return; }
+    const k = +segEsp('espEixo'), res = q('[data-a=espRes]');
+    if (!q('[data-a=espUnir]').checked) {
+      // só virar: no lugar, em volta do centro da peça
+      const c = est.cena.caixaExata(o), m = (c.min[k] + c.max[k]) / 2, t = [0, 0, 0], u = [0, 0, 0], e = [1, 1, 1];
+      t[k] = m; u[k] = -m; e[k] = -1;
+      est.cena.aplicar('Espelhar', () => { o.transform = M4.multiplicar(M4.multiplicar(M4.translacao(...t), M4.multiplicar(M4.escala(...e), M4.translacao(...u))), o.transform); });
+      res.innerHTML = '';
+      return;
+    }
+    // juntar: o espelho é no referencial da peça (vale mesmo girada)
+    const p = est.parteAtual() || o.partes[0];
+    const v = M4.aplicarDirecao(M4.inverter(o.transform), k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0), a = v.map(Math.abs), i = a.indexOf(Math.max(...a));
+    const lado = segEsp('espPos'), pos = lado === 'centro' ? 'centro' : (lado === 'max') === (v[i] > 0) ? 'max' : 'min';
+    const op = { tipo: 'espelhar', eixo: i, pos, unir: true }, btn = q('[data-a=esp]');
+    if (btn.disabled) return;              // já está calculando (duplo clique)
+    btn.disabled = true;
+    res.innerHTML = '<div class="e3d-nota">Calculando…</div>';
+    const ficha = est.ficha(o);
+    let r;
+    try { r = await est.rodar('modificar', { parte: est.parteParaMotor(p), op }, 'Espelhar'); }
+    catch (e) { res.innerHTML = e && e.codigo === 'cancelado' ? '' : '<div class="e3d-nota erro">' + esc(e.message || e) + '</div>'; return; }
+    finally { btn.disabled = false; }
+    if (!est.resolver(ficha)) { res.innerHTML = ''; est.avisarMudou('Espelhar'); return; }
+    res.innerHTML = '';
+    est.mostrarPrevia({
+      titulo: 'Espelhar e juntar', legenda: [], explodir: 0, textoConfirmar: 'Aplicar', ficha,
+      objetos: [{ transform: o.transform, partes: o.partes.map(x => x.id === p.id ? { malha: r.parte.malha, cor: r.parte.cor || p.cor, paleta: r.parte.paleta, papel: 'normal' } : { malha: x.malha, cor: x.cor, paleta: x.paleta, papel: 'normal' }) }],
+      confirmar: oa => {
+        const forma = !!oa.forma;
+        est.cena.aplicar('Espelhar ' + oa.nome, () => {
+          const pa = oa.partes.find(x => x.id === p.id);
+          pa.malha = r.parte.malha;
+          if (r.parte.paleta !== undefined) pa.paleta = r.parte.paleta;
+          // peça do Estúdio: guarda a operação pra refazer ao mudar a medida
+          if (oa.forma && oa.partes.length === 1) oa.operacoes = [...(oa.operacoes || []), op];
+        });
+        res.innerHTML = '<div class="e3d-nota ok">Espelhado e junto: uma peça só.' + (forma ? ' Dá pra tirar depois em <b>Formas</b> → Operações.' : '') + '</div>';
+      }
+    });
   };
   q('[data-a=placa]').addEventListener('click', ev => {
     const b = ev.target.closest('button'), o = est.objetoAtual();
@@ -165,7 +209,6 @@ export function montarTransformar(est) {
     est.cena.aplicar('Levar pra placa ' + (k + 1), () => { est.cena.moverParaPlaca(o, k); est.cena.placaAtiva = k; });
     est.visor.enquadrarPlaca(k);
   });
-  q('[data-a=papel]').addEventListener('click', ev => { const b = ev.target.closest('button'); const o = est.objetoAtual(); if (b && o) est.definirPapel(o, b.dataset.v); });
   q('[data-a=serie]').onclick = () => {
     const o = est.objetoAtual(); if (!o) { avisar('Escolha a peça.', 'warn'); return; }
     const n = Math.round(lerNumero(q('[data-a=serieN]').value, 4)), dist = lerNumero(q('[data-a=serieD]').value, 10), e = +q('[data-a=serieE]').value;

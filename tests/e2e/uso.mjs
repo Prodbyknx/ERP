@@ -10,7 +10,12 @@ export async function secaoUso({ b, teste, tmp, novaPagina, passo, abrirEstudio 
   const pg = await novaPagina(b);
   await abrirEstudio(pg, 'file://' + teste + '/index.html');
   const sec = s => '#ferr_estudio [data-sec=' + s + '] ';
-  const ferr = s => pg.click('#ferr_estudio .e3d-rail [data-ferr=' + s + ']');
+  // como o usuário: botão do trilho (e a aba, no "Cortar e separar")
+  const ferr = async s => {
+    const aba = { corte: 'corte', sel: 'sep', sep: 'sep', cor: 'cor' }[s];
+    await pg.click('#ferr_estudio .e3d-rail [data-ferr=' + (aba ? 'cs' : s) + ']');
+    if (aba) await pg.click('[data-sec=cs] [data-a=aba] button[data-v=' + aba + ']');
+  };
   const motor = () => pg.waitForFunction(() => { const s = document.querySelector('#ferr_estudio .e3d-motor span'); return s && /pronto/.test(s.textContent); }, null, { timeout: 120000 });
   const forma = async n => { await ferr('formas'); await pg.locator(sec('formas') + 'button', { hasText: new RegExp('^' + n + '$') }).click(); await pg.waitForTimeout(250); await motor(); };
   const caixa = (i = 0) => pg.evaluate(k => { const e = window.Estudio3D.estudio; return e.cena.caixaExata(e.cena.objetos[k]); }, i);

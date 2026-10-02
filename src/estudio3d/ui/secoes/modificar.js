@@ -1,7 +1,8 @@
 // Painel "Modificar": arredondar / chanfrar bordas, puxar / empurrar face,
-// deixar oca (casca) e espelhar. Geometria real no motor, sempre com prévia
-// antes de aplicar e Desfazer. Em peça criada no Estúdio a operação entra na
-// lista de operações da forma (dá pra mudar o valor depois).
+// deixar oca (casca) e deformar a peça inteira (torcer, afunilar, dobrar,
+// engordar). Geometria real no motor, sempre com prévia antes de aplicar e
+// Desfazer. Em peça criada no Estúdio a operação entra na lista de operações
+// da forma (dá pra mudar o valor depois). Espelhar fica no Ajustar.
 import { el, esc, fmt, lerNumero, avisar } from '../util.js';
 import { detectarArestas, arestaPerto } from '../../core/arestas.js';
 import { limites } from '../../core/arredondar.js';
@@ -15,10 +16,12 @@ export const FERR_MOD = [
   ['chanfrar', 'Chanfrar', 'Clique nas bordas. O tamanho é medido em cada face (chanfro a 45° em quina reta).'],
   ['puxar', 'Puxar / empurrar', 'Clique numa face plana. Valor + puxa pra fora; − empurra (rebaixo).'],
   ['casca', 'Deixar oca', 'Parede em mm. Clique nas faces que devem ficar abertas (pote, caixa, capacete) — ou nenhuma, pra fechada.'],
-  ['espelhar', 'Espelhar', 'Espelha a peça. Com "unir": modele metade e ganhe a peça inteira, costura exata no meio.'],
+  ['deformar', 'Torcer / dobrar', 'Deforma a peça inteira ao longo de um eixo: torcer, afunilar (fica fina no topo), dobrar ou engordar.'],
   ['medir', 'Medir', 'Clique em dois pontos pra ver a distância; clique numa borda pra ver o comprimento ou o diâmetro.']
 ];
 export const NOME_OP = { arredondar: 'Arredondar', chanfrar: 'Chanfrar', puxar: 'Puxar/empurrar', casca: 'Oca', espelhar: 'Espelhar', esticar: 'Tamanho (escala)' };
+// deformar a peça inteira: [tipo, nome, unidade do valor, valor inicial]
+const DEF = [['torcer', 'Torcer', 'graus', 45], ['afunilar', 'Afunilar', 'escala no topo · 1 = igual', 0.6], ['dobrar', 'Dobrar', 'graus', 45], ['inflar', 'Engordar', 'mm pra fora', 1]];
 
 function faceMaisPerto(m, q) {
   const P = m.pos, I = m.idx;
@@ -47,10 +50,10 @@ export function montarModificar(est) {
       <div class="field"><label>Parede <span class="u">mm</span></label><input type="text" data-a="parede" value="2"></div>
       <div class="e3d-botoes"><button type="button" class="btn" data-a="limparA">Fechar todas</button></div>
     </div>
-    <div data-a="optEsp" style="display:none">
-      <div class="field"><label>Eixo</label><div class="seg" data-a="eixo"><button type="button" data-v="0" class="active">X</button><button type="button" data-v="1">Y</button><button type="button" data-v="2">Z</button></div></div>
-      <div class="field"><label>Onde fica o espelho</label><div class="seg" data-a="pos"><button type="button" data-v="min">Lado −</button><button type="button" data-v="centro">Centro</button><button type="button" data-v="max" class="active">Lado +</button></div></div>
-      <label class="fer-check"><input type="checkbox" data-a="unir" checked> Unir com a original <span class="u">uma peça só</span></label>
+    <div data-a="optDef" style="display:none">
+      <div class="seg" data-a="def">${DEF.map((x, i) => '<button type="button" data-v="' + x[0] + '"' + (i ? '' : ' class="active"') + '>' + x[1] + '</button>').join('')}</div>
+      <div class="e3d-l2"><div><label>Quanto <span class="u" data-a="rotDef">graus</span></label><input type="text" data-a="valDef" value="45"></div>
+        <div><label>Ao longo de</label><div class="seg" data-a="eixoDef"><button type="button" data-v="0">X</button><button type="button" data-v="1">Y</button><button type="button" data-v="2" class="active">Z</button></div></div></div>
     </div>
     <div data-a="optSim"><label class="fer-check" title="Escolheu uma borda ou face de um lado? A do outro lado (espelhada no meio da peça) vem junto"><input type="checkbox" data-a="simX"> Simetria X</label> <label class="fer-check"><input type="checkbox" data-a="simY"> Simetria Y</label></div>
     <div class="e3d-nota" data-a="info">Escolha uma peça.</div>
@@ -61,7 +64,6 @@ export function montarModificar(est) {
   let ferr = 'arredondar';
   let alvo = null;            // { objId, parteId }
   let bordas = new Set(), face = -1, abrir = new Set();
-  let eixo = 0, pos = 'max';
   let medida = [];            // pontos clicados (mundo) no Medir
   const cacheAr = new WeakMap();
   const arestasDe = m => { let a = cacheAr.get(m); if (!a) { a = detectarArestas(m); cacheAr.set(m, a); } return a; };
@@ -85,7 +87,7 @@ export function montarModificar(est) {
     q('optBorda').style.display = f === 'arredondar' || f === 'chanfrar' ? '' : 'none';
     q('optPuxar').style.display = f === 'puxar' ? '' : 'none';
     q('optCasca').style.display = f === 'casca' ? '' : 'none';
-    q('optEsp').style.display = f === 'espelhar' ? '' : 'none';
+    q('optDef').style.display = f === 'deformar' ? '' : 'none';
     q('optSim').style.display = ['arredondar', 'chanfrar', 'puxar', 'casca'].includes(f) ? '' : 'none';
     q('botoes').style.display = f === 'medir' ? 'none' : '';
     medida = [];
@@ -94,8 +96,16 @@ export function montarModificar(est) {
     limparSel();
   }
   q('ferr').addEventListener('click', ev => { const b = ev.target.closest('button'); if (b) ativar(b.dataset.v); });
-  q('eixo').addEventListener('click', ev => { const b = ev.target.closest('button'); if (!b) return; eixo = +b.dataset.v; q('eixo').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b)); });
-  q('pos').addEventListener('click', ev => { const b = ev.target.closest('button'); if (!b) return; pos = b.dataset.v; q('pos').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b)); });
+  const segVal = k => q(k).querySelector('button.active').dataset.v;
+  q('def').addEventListener('click', ev => {
+    const b = ev.target.closest('button'); if (!b) return;
+    q('def').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+    const x = DEF.find(y => y[0] === b.dataset.v);
+    q('rotDef').textContent = x[2]; q('valDef').value = String(x[3]).replace('.', ',');
+  });
+  q('eixoDef').addEventListener('click', ev => { const b = ev.target.closest('button'); if (b) q('eixoDef').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b)); });
+  // eixo do MUNDO (o que o usuário vê) -> eixo da peça, mesmo se ela foi girada
+  const dirLocal = (o, k) => { const v = M4.aplicarDirecao(M4.inverter(o.transform), k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0); const a = v.map(Math.abs), i = a.indexOf(Math.max(...a)); return { i, sentido: Math.sign(v[i]) || 1 }; };
   q('limparB').onclick = limparSel;
   q('limparA').onclick = limparSel;
   q('valor').addEventListener('input', atualizar);
@@ -136,9 +146,9 @@ export function montarModificar(est) {
       box.innerHTML = face < 0 ? 'Clique numa <b>face plana</b> da peça.' : 'Face escolhida: <b>' + fmt(facePlana(a.p.malha, face).area, 1) + ' mm²</b>.';
     } else if (ferr === 'casca') {
       box.innerHTML = abrir.size ? '<b>' + abrir.size + '</b> face(s) vão ficar abertas.' : 'Peça fechada por fora (oca por dentro). Clique numa face pra deixá-la aberta.';
-    } else if (ferr === 'espelhar') {
+    } else if (ferr === 'deformar') {
       const c = caixa(a.p.malha);
-      box.innerHTML = 'Peça: ' + c.tam.map(x => fmt(x, 1)).join(' × ') + ' mm.';
+      box.innerHTML = 'Peça: ' + c.tam.map(x => fmt(x, 1)).join(' × ') + ' mm. Escolha e clique em <b>Aplicar</b>: a prévia mostra antes.';
     } else if (!medida.length) box.innerHTML = 'Clique numa borda ou em dois pontos da peça.';
   }
   function resumo(sel) {
@@ -232,32 +242,39 @@ export function montarModificar(est) {
       op = { tipo: 'puxar', valor: lerNumero(q('dist').value, 0), face: descritorFace(p.malha, face) };
     } else if (ferr === 'casca') {
       op = { tipo: 'casca', valor: lerNumero(q('parede').value, 0), abrir: [...abrir].map(f => descritorFace(p.malha, f)) };
-    } else op = { tipo: 'espelhar', eixo, pos, unir: q('unir').checked };
+    } else {
+      const x = dirLocal(o, +segVal('eixoDef'));
+      op = { tipo: segVal('def'), valor: lerNumero(q('valDef').value, 0), eixo: x.i, sentido: x.sentido };
+    }
+    const deforma = ferr === 'deformar', titulo = deforma ? DEF.find(x => x[0] === op.tipo)[1] : NOME_OP[ferr];
     if (q('ir').disabled) return;          // já está calculando (duplo clique)
     q('ir').disabled = true;
     q('res').innerHTML = '<div class="e3d-nota">Calculando…</div>';
     const ficha = est.ficha(o);
     let r;
-    try { r = await est.rodar('modificar', { parte: est.parteParaMotor(p), op }, NOME_OP[ferr]); }
-    catch (e) { q('res').innerHTML = '<div class="e3d-nota erro">' + esc(e.message || e) + '</div>'; return; }
+    try { r = await (deforma ? est.rodar('deformar', { parte: est.parteParaMotor(p), opc: op }, titulo) : est.rodar('modificar', { parte: est.parteParaMotor(p), op }, titulo)); }
+    catch (e) { q('res').innerHTML = e && e.codigo === 'cancelado' ? '' : '<div class="e3d-nota erro">' + esc(e.message || e) + '</div>'; return; }
     finally { q('ir').disabled = false; }
-    if (!est.resolver(ficha)) { q('res').innerHTML = ''; est.avisarMudou(NOME_OP[ferr]); return; }
+    if (!est.resolver(ficha)) { q('res').innerHTML = ''; est.avisarMudou(titulo); return; }
     q('res').innerHTML = '';
     est.visor.limparAjudas('bordas');
     est.mostrarPrevia({
-      titulo: NOME_OP[ferr], legenda: [], explodir: 0, textoConfirmar: 'Aplicar', ficha,
+      titulo, legenda: [], explodir: 0, textoConfirmar: 'Aplicar', ficha,
       objetos: [{ transform: o.transform, partes: o.partes.map(x => x.id === p.id ? { malha: r.parte.malha, cor: r.parte.cor || p.cor, paleta: r.parte.paleta, papel: 'normal' } : { malha: x.malha, cor: x.cor, paleta: x.paleta, papel: 'normal' }) }],
       confirmar: oa => {
         // oa = o objeto ATUAL (Desfazer no meio troca por cópia com o mesmo id)
-        est.cena.aplicar(NOME_OP[ferr] + ' ' + oa.nome, () => {
+        const forma = !!oa.forma;
+        est.cena.aplicar(titulo + ' ' + oa.nome, () => {
           const pa = oa.partes.find(x => x.id === p.id);
           pa.malha = r.parte.malha;
           if (r.parte.paleta !== undefined) pa.paleta = r.parte.paleta;
-          // peça do Estúdio: guarda a operação pra poder mudar depois
-          if (oa.forma && oa.partes.length === 1) oa.operacoes = [...(oa.operacoes || []), op];
+          // peça do Estúdio: guarda a operação pra poder mudar depois; deformada,
+          // a forma deixa de ser paramétrica (mudar a medida desfaria a torção)
+          if (deforma) { if (oa.forma) { oa.forma = undefined; oa.operacoes = undefined; } }
+          else if (oa.forma && oa.partes.length === 1) oa.operacoes = [...(oa.operacoes || []), op];
         });
         limparSel();
-        q('res').innerHTML = '<div class="e3d-nota ok">' + NOME_OP[ferr] + ' aplicado.' + (oa.forma ? ' Dá pra mudar o valor depois em <b>Formas</b> → Operações.' : '') + '</div>';
+        q('res').innerHTML = '<div class="e3d-nota ok">' + titulo + ' aplicado.' + (forma && !deforma ? ' Dá pra mudar o valor depois em <b>Formas</b> → Operações.' : '') + '</div>';
       },
       cancelar: () => { atualizar(); }
     });

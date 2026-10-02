@@ -33,7 +33,7 @@ export function montarSelecionar(est) {
     <div class="e3d-botoes">
       <button class="btn" data-a="exp" title="Cresce 1 anel de faces">Expandir</button>
       <button class="btn" data-a="red">Reduzir</button>
-      <button class="btn" data-a="suave" title="Limpa o contorno serrilhado">Suavizar borda</button>
+      <button class="btn" data-a="suave" title="Tira o serrilhado da borda da seleção (não mexe na peça)">Limpar contorno</button>
       <button class="btn" data-a="sim" title="Faces com a mesma direção/cor">Similar</button>
       <button class="btn" data-a="conect" title="Tudo ligado à seleção">Conectado</button>
       <button class="btn" data-a="inv">Inverter</button>

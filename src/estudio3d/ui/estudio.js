@@ -10,9 +10,7 @@ import { PALETA_PECAS } from '../core/cores.js';
 import { injetarCSS } from './estilo.js';
 import { montarDiagnostico } from './secoes/diagnostico.js';
 import { montarTransformar } from './secoes/transformar.js';
-import { montarSelecionar } from './secoes/selecionar.js';
-import { montarSeparar } from './secoes/separar.js';
-import { montarCortar } from './secoes/cortar.js';
+import { montarCortarSeparar, ABA_DA_SECAO } from './secoes/cortarSeparar.js';
 import { montarRelevo } from './secoes/relevo.js';
 import { montarExportar } from './secoes/exportar.js';
 import { montarFormas } from './secoes/formas.js';
@@ -32,14 +30,12 @@ const ICONES = { olho: icone('olho', 15), olhoFechado: icone('olhoFechado', 15) 
 const FERRAMENTAS = [
   { sec: 'inicio', ico: 'casa', rot: 'Início', titulo: 'O que você quer fazer?', desc: 'Escolha uma tarefa — o Estúdio guia o resto. As sugestões abaixo são do modelo aberto.' },
   { sec: 'formas', ico: 'formas', rot: 'Formas', titulo: 'Adicionar formas', desc: 'Caixa, cilindro, círculo, estrela, texto, furo de parafuso… Clique e a forma aparece na mesa. Medidas em mm, e dá pra juntar ou furar uma peça com a outra.' },
-  { sec: 'mod', ico: 'modificar', rot: 'Modificar', titulo: 'Modificar a peça', desc: 'Arredondar e chanfrar bordas, puxar ou empurrar uma face, deixar oca com parede em mm e espelhar. Geometria de verdade, com prévia.' },
-  { sec: 'esc', ico: 'esculpir', rot: 'Esculpir', titulo: 'Esculpir e deformar', desc: 'Pincel pra puxar, empurrar, inflar, achatar e suavizar — com simetria ao vivo. Torcer, afunilar e dobrar a peça inteira.' },
+  { sec: 'mod', ico: 'modificar', rot: 'Modificar', titulo: 'Modificar a peça', desc: 'Arredondar e chanfrar bordas, puxar ou empurrar uma face, deixar oca com parede em mm, torcer, afunilar e dobrar. Geometria de verdade, com prévia.' },
+  { sec: 'esc', ico: 'esculpir', rot: 'Esculpir', titulo: 'Esculpir com pincel', desc: 'Pincel pra puxar, empurrar, inflar, achatar, alisar e vincar — com simetria ao vivo. E o Suavizar, que tira grão e caroço da peça inteira (ou da seleção).' },
   { sec: 'des', ico: 'desenhar', rot: 'Desenhar', titulo: 'Desenhar a peça', desc: 'Clique no 3D pra pôr pontos (em cima de uma foto, se quiser). Feche no 1º ponto e escolha: placa, vaso ou tubo. Com o espelho, você faz um lado e o outro aparece.' },
   { sec: 'diag', ico: 'escudo', rot: 'Consertar', titulo: 'Conferir e consertar', desc: 'Vê se o arquivo imprime e conserta buracos, faces viradas, cruzamentos e partes sobrepostas, sem perder detalhe.' },
-  { sec: 'transf', ico: 'ajustar', rot: 'Ajustar', titulo: 'Posição, tamanho e cor', desc: 'Medidas em mm, girar, deitar pra imprimir sem suporte e a cor de cada peça.' },
-  { sec: 'sel', ico: 'selecionar', rot: 'Selecionar', titulo: 'Selecionar uma parte', desc: 'Clique numa orelha, olho ou detalhe: a seleção para sozinha na dobra.' },
-  { sec: 'sep', ico: 'separar', rot: 'Separar', titulo: 'Separar para imprimir', desc: 'O detalhe selecionado vira peça própria, com encaixe. Ou separe por cor, pra imprimir sem AMS.' },
-  { sec: 'corte', ico: 'tesoura', rot: 'Cortar', titulo: 'Cortar em partes', desc: 'Corte num plano: as duas partes saem fechadas e com pino de encaixe.' },
+  { sec: 'transf', ico: 'ajustar', rot: 'Ajustar', titulo: 'Posição, tamanho e cor', desc: 'Medidas em mm, girar, espelhar (ou juntar com a original), deitar pra imprimir sem suporte e a cor de cada peça.' },
+  { sec: 'cs', ico: 'tesoura', rot: 'Cortar e separar', titulo: 'Cortar e separar', desc: 'Cortar a peça em partes (com pino de encaixe), soltar um detalhe (olho, orelha, logo) ou separar por cor pra imprimir sem AMS.' },
   { sec: 'relevo', ico: 'texto', rot: 'Texto', titulo: 'Texto, logo e relevo', desc: 'Nome, telefone ou logo em relevo, gravado ou vazado — na frente e no verso.' },
   { sec: 'exp', ico: 'baixar', rot: 'Exportar', titulo: 'Mandar pro fatiador', desc: '3MF com as cores certas pro Bambu Studio / Orca, ou STL.' }
 ];
@@ -190,25 +186,27 @@ export class Estudio {
     this.secoes.desenhar = montarDesenhar(this);          // a foto de referência mora dentro dele (secoes.referencia)
     this.secoes.diagnostico = montarDiagnostico(this);
     this.secoes.transformar = montarTransformar(this);
-    this.secoes.selecionar = montarSelecionar(this);
-    this.secoes.separar = montarSeparar(this);
-    this.secoes.cortar = montarCortar(this);
+    this.secoes.cs = montarCortarSeparar(this);           // Cortar + Selecionar + Separar + Por cor, em abas
+    this.secoes.cortar = this.secoes.cs.cortar;
+    this.secoes.selecionar = this.secoes.cs.selecionar;
+    this.secoes.separar = this.secoes.cs.separar;
     this.secoes.relevo = montarRelevo(this);
     this.secoes.exportar = montarExportar(this);
-    // só os painéis (a foto de referência é um bloco DENTRO do Desenhar, fica lá)
-    for (const k in this.secoes) if (this.secoes[k].el.tagName === 'DETAILS') this.painelCorpo.appendChild(this.secoes[k].el);
+    // só os painéis de cima (a foto mora DENTRO do Desenhar; Cortar, Selecionar
+    // e Separar, dentro do Cortar e separar)
+    for (const k in this.secoes) if (!this.secoes[k].el.parentElement) this.painelCorpo.appendChild(this.secoes[k].el);
     // um quadro aberto por vez; o trilho acompanha
     this.painel.addEventListener('toggle', ev => {
       const d = ev.target;
-      if (d.tagName !== 'DETAILS') return;
+      if (d.tagName !== 'DETAILS' || d.parentElement !== this.painelCorpo) return;     // aba de dentro de um painel: é dele
       if (d.open) {
-        this.painel.querySelectorAll('details[open]').forEach(x => { if (x !== d) x.open = false; });
+        this.painelCorpo.querySelectorAll(':scope > details[open]').forEach(x => { if (x !== d) x.open = false; });
         this.mostrarCabecalho(d.dataset.sec);
         this.garantirFurosSeFerramenta();
         this.emitir('secao', d.dataset.sec);
       } else {
         this.emitir('secao-fechou', d.dataset.sec);
-        if (!this.painel.querySelector('details[open]')) this.mostrarCabecalho('inicio');
+        if (!this.painelCorpo.querySelector(':scope > details[open]')) this.mostrarCabecalho('inicio');
       }
     }, true);
 
@@ -268,11 +266,13 @@ export class Estudio {
   /* ------------------------------------------------------------ trilho / painel */
   abrirFerramenta(sec) {
     if (sec === 'inicio') {
-      this.painel.querySelectorAll('details[open]').forEach(x => { x.open = false; });
+      this.painelCorpo.querySelectorAll(':scope > details[open]').forEach(x => { x.open = false; });
       this.mostrarCabecalho('inicio');
       return;
     }
-    const d = this.painel.querySelector('details[data-sec="' + sec + '"]');
+    // Cortar / Selecionar / Separar / Por cor: abas do "Cortar e separar"
+    if (ABA_DA_SECAO[sec]) { this.secoes.cs.irPara(sec); sec = 'cs'; }
+    const d = this.painelCorpo.querySelector(':scope > details[data-sec="' + sec + '"]');
     if (!d) return;
     if (!d.open) { d.open = true; d.dispatchEvent(new Event('toggle')); }
     this.mostrarCabecalho(sec);
@@ -325,14 +325,14 @@ export class Estudio {
       case 'deitar': this.abrirFerramenta('transf'); this.secoes.transformar.el.querySelector('[data-a=deitar]').click(); break;
       case 'naMesa': if (o) { this.cena.aplicar('Colocar na mesa', () => this.cena.colocarNaMesa(o)); } break;
       case 'porCor': {
-        this.abrirFerramenta('sep');
-        const b = this.secoes.separar.el.querySelector('[data-a="porCor"]');
+        this.abrirFerramenta('cor');
+        const b = this.secoes.separar.elCor.querySelector('[data-a="porCor"]');
         if (b) setTimeout(() => b.scrollIntoView({ block: 'center' }), 60);
         break;
       }
       case 'cascas': {
-        this.abrirFerramenta('sep');
-        const b = this.secoes.separar.el.querySelector('[data-a="cascas"]');
+        this.abrirFerramenta('cor');
+        const b = this.secoes.separar.elCor.querySelector('[data-a="cascas"]');
         if (b) setTimeout(() => b.scrollIntoView({ block: 'center' }), 60);
         break;
       }
@@ -1220,8 +1220,8 @@ export class Estudio {
   }
   // ferramentas que usam as faces da peça trabalham na peça já furada
   garantirFurosSeFerramenta() {
-    const d = this.painel.querySelector('details[open]');
-    if (!d || !['sel', 'sep', 'corte', 'relevo', 'diag'].includes(d.dataset.sec)) return;
+    const d = this.painelCorpo.querySelector(':scope > details[open]');
+    if (!d || !['cs', 'relevo', 'diag'].includes(d.dataset.sec)) return;
     const o = this.cena.objetoSel();
     if (!o || o.papel === 'furo') return;
     const f = this.furados.get(o.id);

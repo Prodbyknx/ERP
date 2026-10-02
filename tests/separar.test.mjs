@@ -157,3 +157,28 @@ test('camada mais funda que a parede: recusa com mensagem clara (não gera peça
   for (let t = 0; t < nt; t++) { const r = Math.hypot(C[t * 3], C[t * 3 + 1], C[t * 3 + 2]); if (r > 9.7 && Math.abs(C[t * 3 + 2]) < 3) mask[t] = 1; }
   assert.throws(() => separarDetalhe(casca, mask, { profundidade: 2, limparSelecao: false }), /parede|cruzaria|pegaria/);
 });
+
+test('botão numa tampa plana (borda da seleção NA superfície): sai com a medida certa, sem aba fina e sem se cruzar; com pino também', async () => {
+  const { autoInterseccoes } = await import('../src/estudio3d/core/validador.js');
+  const modelo = comContexto(ctx => {
+    const { Manifold } = manifold();
+    const t = ctx.guardar(Manifold.cube([30, 30, 6]));
+    const b = ctx.guardar(ctx.guardar(Manifold.cylinder(6, 5, 5, 64)).translate([15, 15, 6]));
+    return ctx.parte(ctx.guardar(t.add(b)), 'tampa', '#888888');
+  });
+  const m = modelo.malha, C = centroidesFace(m), nt = m.idx.length / 3, mask = new Uint8Array(nt);
+  for (let f = 0; f < nt; f++) if (C[f * 3 + 2] > 6 + 1e-6) mask[f] = 1;
+  for (const conector of [null, { tipo: 'cilindrico', diametro: 3, profundidade: 3, folga: 0.2, quantidade: 1, parede: 0.8 }]) {
+    const r = separarDetalhe({ nome: 'tampa', malha: m, cor: '#888888' }, mask, { modo: 'auto', conector });
+    const cd = caixa(r.detalhe.malha), cr = caixa(r.principal.malha);
+    // antes: 10,76 × 10,78 (a margem do corte grudava como aba de espessura 0)
+    assert.ok(Math.abs(cd.tam[0] - 10) < 0.01 && Math.abs(cd.tam[1] - 10) < 0.01, 'botão ' + cd.tam.map(v => v.toFixed(3)).join('×'));
+    assert.ok((conector || Math.abs(cd.min[2] - 6) < 0.01) && Math.abs(cd.max[2] - 12) < 0.01 && Math.abs(cr.tam[2] - 6) < 1e-3, 'altura ' + cd.min[2] + '..' + cd.max[2]);
+    for (const [n, x] of [['botão', r.detalhe.malha], ['tampa', r.principal.malha]]) {
+      assert.ok(solida(x), n + ' fechada');
+      assert.equal(validar(x).componentes, 1, n + ' uma peça');
+      assert.equal(autoInterseccoes(x).pares, 0, n + ' sem se cruzar');
+    }
+    if (conector) assert.ok(r.detalhe.malha.idx.length > 400 && cd.min[2] < 6 - 1, 'pino no botão (desce na tampa)');
+  }
+});

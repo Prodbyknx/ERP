@@ -79,7 +79,8 @@ async function passo(pg, nome, fn) {
   }
 }
 
-const abrirSecao = (pg, s) => pg.evaluate(sec => { const d = document.querySelector('[data-sec=' + sec + ']'); if (!d.open) { d.open = true; d.dispatchEvent(new Event('toggle')); } }, s);
+// pelo próprio Estúdio (Cortar, Selecionar, Separar e Por cor são abas do "Cortar e separar")
+const abrirSecao = (pg, s) => pg.evaluate(sec => { const e = window.Estudio3D && window.Estudio3D.estudio; if (e && e.abrirFerramenta) e.abrirFerramenta(sec); const d = document.querySelector('[data-sec=' + sec + ']'); if (d && d.tagName === 'DETAILS' && !d.open) { d.open = true; d.dispatchEvent(new Event('toggle')); } }, s);
 const nObjetos = pg => pg.evaluate(() => window.Estudio3D.estudio.cena.objetos.length);
 const confirmarPrevia = async pg => { await pg.waitForSelector('.e3d-previa', { state: 'visible', timeout: 120000 }); await pg.click('.e3d-previa button.primary'); };
 const simular = arq => JSON.parse(execFileSync('python3', [path.join(raiz, 'tests/bambu/simular_importador.py'), arq]).toString());
@@ -251,8 +252,8 @@ async function main() {
   await passo(pg, 'separar por cor (3MF pintado)', async () => {
     await pg.setInputFiles('.e3d input[type=file][multiple]', modelos + '/personagem-cor.3mf');
     await pg.waitForFunction(() => window.Estudio3D.estudio.cena.objetos.length === 5, null, { timeout: 30000 });
-    await abrirSecao(pg, 'sep');
-    await pg.click('[data-sec=sep] [data-a="porCor"]'); await confirmarPrevia(pg);
+    await abrirSecao(pg, 'cor');
+    await pg.click('[data-sec=cor] [data-a="porCor"]'); await confirmarPrevia(pg);
     const cores = await pg.evaluate(() => window.Estudio3D.estudio.cena.objetos.slice(4).map(o => o.partes.map(p => p.cor + (p.paleta ? '*' : '')).join()));
     if (JSON.stringify(cores) !== JSON.stringify(['#1B1B1B', '#FFFFFF'])) throw new Error('cores: ' + cores);
   });
@@ -498,6 +499,8 @@ async function main() {
   await secaoDiagnostico({ b, teste, tmp, novaPagina, passo, abrirEstudio, abrirSecao });
   const { secaoDesenhar } = await import('./desenhar.mjs');
   await secaoDesenhar({ b, teste, tmp, novaPagina, passo, abrirEstudio, abrirSecao });
+  const { secaoReorganizar } = await import('./reorganizar.mjs');
+  await secaoReorganizar({ b, teste, tmp, novaPagina, passo, abrirEstudio, abrirSecao, confirmarPrevia });
   const { secaoSupabaseKit } = await import('./supabase-kit.mjs');
   await secaoSupabaseKit({ b, novaPagina, passo, pagina: path.join(teste, 'seguranca', 'verificar-supabase.html'), empacotada: true });
   const { secaoNuvem } = await import('./nuvem.mjs');

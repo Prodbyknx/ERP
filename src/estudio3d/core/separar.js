@@ -150,7 +150,15 @@ function extrairPorPlano(ctx, atual, R, adj, opc, avisos) {
   if (pl.linear) return { falhou: 'A borda da seleção é uma linha; não dá pra achar um plano.' };
   const n = opc.normal ? normalizar(opc.normal) : pl.n;
   const prof = Math.max(0, opc.profundidade || 0);
-  const desloc = opc.deslocamento || 0;
+  // borda da seleção num plano só (botão numa tampa, logo numa placa): o plano
+  // do corte seria a PRÓPRIA superfície em volta, e o prisma deitado nela
+  // virava uma aba de espessura zero grudada no detalhe (0,8 mm a mais na
+  // medida e a peça "se cruzando" no Consertar). O corte sobe um fio (~1 µm:
+  // fica um disco desse tanto na peça, que não aparece na impressão; bem
+  // acima da precisão do arquivo, senão o disco vira triângulo torto).
+  const naSuperficie = !opc.normal && !prof && pl.desvio < Math.max(1e-6, pl.raio * 1e-6);
+  const escala = pl.raio + Math.max(...pl.centro.map(Math.abs));
+  const desloc = (opc.deslocamento || 0) + (naSuperficie ? Math.max(1e-3, escala * 2e-5) : 0);
   const origem = [pl.centro[0] + n[0] * (desloc - prof), pl.centro[1] + n[1] * (desloc - prof), pl.centro[2] + n[2] * (desloc - prof)];
   const F = M4.doPlano(origem, n);
   const Fi = M4.inverter(F);

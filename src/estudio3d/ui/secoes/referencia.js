@@ -104,7 +104,7 @@ export function montarReferencia(est) {
         <button type="button" class="btn" data-a="base" title="A parte de baixo da foto encosta na mesa">Encostar na mesa</button>
         <button type="button" class="btn" data-a="napeca" title="Centraliza a foto na peça escolhida">No meio da peça</button>
       </div>
-      <div class="e3d-l2" style="margin-top:6px"><div><label>Girar (graus)</label><input type="text" data-a="giro"></div><div style="display:flex;align-items:end;gap:6px"><button type="button" class="btn" data-a="g90" title="Girar 90°">↻ 90°</button><button type="button" class="btn" data-a="esp" title="Espelhar a foto">Espelhar</button></div></div>
+      <div class="e3d-l2" style="margin-top:6px"><div><label>Girar (graus)</label><input type="text" data-a="giro"></div><div style="display:flex;align-items:end;gap:6px"><button type="button" class="btn" data-a="g90" title="Girar 90°">↻ 90°</button><button type="button" class="btn" data-a="esp" title="Vira a foto ao contrário (esquerda ↔ direita)">Virar ↔</button></div></div>
       <label class="fer-check" style="margin-top:10px"><input type="checkbox" data-a="porCima"> Mostrar a foto por cima das peças</label>
     </div>`;
   const q = s => d.querySelector('[data-a="' + s + '"]');

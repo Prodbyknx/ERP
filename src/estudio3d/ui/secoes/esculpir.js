@@ -1,15 +1,14 @@
-// Painel "Esculpir": pincel de deformação (puxar, empurrar, inflar, achatar,
-// suavizar) com raio, força e SIMETRIA ao vivo; deformar a peça inteira
-// (torcer, afunilar, dobrar, inflar) e suavizar de verdade. O pincel roda
-// aqui na tela e só mexe no que está debaixo dele; ao soltar, o traço vira
-// uma etapa do Desfazer (e é desfeito sozinho se a peça se cruzar).
-import { el, esc, fmt, lerNumero, avisar } from '../util.js';
+// Painel "Esculpir": pincel (puxar, empurrar, inflar, achatar, alisar,
+// vincar) com raio, força e SIMETRIA ao vivo, e o Suavizar da peça inteira (ou
+// da seleção). O pincel roda aqui na tela e só mexe no que está debaixo dele;
+// ao soltar, o traço vira uma etapa do Desfazer (e é desfeito sozinho se a
+// peça se cruzar). Torcer/afunilar/dobrar ficam no Modificar.
+import { el, esc, fmt, avisar } from '../util.js';
 import { criarSessao, tocar, concluir, arestaMedia } from '../../core/esculpir.js';
 import { analisarSuavizar, raioDaIntensidade } from '../../core/suavizar.js';
 import * as M4 from '../../core/mat4.js';
 
-const PINCEL = [['puxar', 'Puxar'], ['empurrar', 'Empurrar'], ['inflar', 'Inflar'], ['achatar', 'Achatar'], ['suavizar', 'Suavizar'], ['vincar', 'Vincar']];
-const DEF = [['torcer', 'Torcer', 'graus', 45], ['afunilar', 'Afunilar', 'escala no topo (1 = igual)', 0.6], ['dobrar', 'Dobrar', 'graus', 45], ['inflar', 'Inflar', 'mm', 1]];
+const PINCEL = [['puxar', 'Puxar'], ['empurrar', 'Empurrar'], ['inflar', 'Inflar'], ['achatar', 'Achatar'], ['suavizar', 'Alisar'], ['vincar', 'Vincar']];
 
 export function montarEsculpir(est) {
   const d = el('details', { 'data-sec': 'esc' });
@@ -22,13 +21,8 @@ export function montarEsculpir(est) {
     <label class="fer-check" title="Divide os triângulos debaixo do pincel durante o traço: dá pra esculpir detalhe até numa caixa simples"><input type="checkbox" data-a="detalhe" checked> Detalhe automático debaixo do pincel</label>
     <div class="e3d-nota" data-a="info">Arraste sobre a peça pra esculpir. Começando fora dela, arrastar gira a vista.</div>
     <div class="e3d-botoes"><button type="button" class="btn" data-a="refinar" title="Divide os triângulos pra o pincel ter onde mexer">Mais detalhe na malha</button></div>
-    <div class="e3d-titulo" style="margin-top:16px">Deformar a peça inteira</div>
-    <div class="seg" data-a="def">${DEF.map((x, i) => '<button type="button" data-v="' + x[0] + '"' + (i ? '' : ' class="active"') + '>' + x[1] + '</button>').join('')}</div>
-    <div class="e3d-l2"><div><label data-a="rotDef">Valor (graus)</label><input type="text" data-a="valDef" value="45"></div>
-      <div><label>Ao longo de</label><div class="seg" data-a="eixo"><button type="button" data-v="0">X</button><button type="button" data-v="1">Y</button><button type="button" data-v="2" class="active">Z</button></div></div></div>
-    <div class="e3d-botoes"><button class="btn primary" data-a="aplDef">Deformar (com prévia)</button></div>
-    <div class="e3d-titulo" style="margin-top:16px">Suavizar</div>
-    <p class="u" style="margin:0 0 6px">Tira grão e caroço da superfície de verdade (vai pro arquivo) sem encolher a peça. Com faces selecionadas, só a seleção, com transição suave. (O <b>Facetado</b> lá embaixo muda só o sombreado da tela.)</p>
+    <div class="e3d-titulo" style="margin-top:16px">Suavizar a peça</div>
+    <p class="u" style="margin:0 0 6px">Tira grão e caroço da peça inteira de uma vez (o <b>Alisar</b> do pincel faz o mesmo só onde você passa), sem encolher a peça. Com faces selecionadas, só a seleção, com transição suave. (O <b>Facetado</b> lá embaixo muda só o sombreado da tela.)</p>
     <div class="seg" data-a="nivel"><button type="button" data-v="25">Leve</button><button type="button" data-v="60" class="active">Média</button><button type="button" data-v="90">Forte</button></div>
     <div class="field"><label>Intensidade <span class="u" data-a="alcance"></span></label><div class="e3d-slider"><input type="range" min="5" max="100" step="5" value="60" data-a="inten"><b data-a="intenv">60%</b></div></div>
     <label class="fer-check" title="Quina viva, olho, vinco e encaixe ficam como estão"><input type="checkbox" data-a="preservar" checked> Preservar quinas e detalhes</label>
@@ -38,7 +32,7 @@ export function montarEsculpir(est) {
   </div>`;
   const q = s => d.querySelector('[data-a="' + s + '"]');
   const segVal = (k, v) => { if (v !== undefined) q(k).querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === v)); return q(k).querySelector('button.active').dataset.v; };
-  ['tipo', 'sim', 'def', 'eixo'].forEach(k => q(k).addEventListener('click', ev => { const b = ev.target.closest('button'); if (b) segVal(k, b.dataset.v); if (k === 'def' && b) { const x = DEF.find(y => y[0] === b.dataset.v); q('rotDef').textContent = 'Valor (' + x[2] + ')'; q('valDef').value = String(x[3]).replace('.', ','); } }));
+  ['tipo', 'sim'].forEach(k => q(k).addEventListener('click', ev => { const b = ev.target.closest('button'); if (b) segVal(k, b.dataset.v); }));
   q('raio').addEventListener('input', () => { q('raiov').textContent = fmt(+q('raio').value, 1); });
   q('forca').addEventListener('input', () => { q('forcav').textContent = fmt(+q('forca').value, 2); });
   // SUAVIZAR: nível -> intensidade; mostra até quantos mm o caroço some
@@ -181,7 +175,6 @@ export function montarEsculpir(est) {
       confirmar: oa => est.cena.aplicar(titulo + ' ' + oa.nome, () => trocar(oa, oa.partes.find(x => x.id === p.id), r.parte.malha))
     });
   }
-  q('aplDef').onclick = () => { const o = est.objetoAtual(); comPrevia('deformar', { opc: { tipo: segVal('def'), valor: lerNumero(q('valDef').value, 0), ...(o ? (x => ({ eixo: x.i, sentido: x.sentido }))(dirLocal(o, +segVal('eixo'))) : { eixo: +segVal('eixo') }) } }, DEF.find(x => x[0] === segVal('def'))[1]); };
   q('aplSuave').onclick = () => {
     const p = est.parteAtual(), mask = p && est.visor.selecao(p.id);
     const facetas = !mask && q('blocoFacetas').style.display !== 'none' && q('facetas').checked;

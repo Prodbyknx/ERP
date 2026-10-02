@@ -29,6 +29,26 @@ Detalhes em FERRAMENTAS.txt.
 - Antes, no Desenhar, o clique de frente pra foto caía longe (na mesa) e no
   Modelar só funcionava depois de apertar "Pontos". Agora o clique funciona
   direto, testado clicando como iniciante.
+- O TRILHO FICOU COM 10 BOTÕES, um por tarefa: Início, Formas, Modificar,
+  Esculpir, Desenhar, Consertar, Ajustar, Cortar e separar, Texto, Exportar.
+  Nada repetido:
+  * ESPELHAR: um só, no Ajustar (X/Y/Z). "Juntar com a original": modele
+    metade e ganhe a peça inteira, soldada no meio (antes havia dois
+    Espelhar diferentes, no Ajustar e no Modificar).
+  * TORCER / AFUNILAR / DOBRAR / ENGORDAR: saíram do Esculpir e foram pro
+    Modificar ("Torcer / dobrar"). O "Inflar" repetido virou "Engordar".
+  * SUAVIZAR: um só, no Esculpir ("Suavizar a peça"). No pincel o nome é
+    "Alisar"; no Selecionar o "Suavizar borda" virou "Limpar contorno" (só
+    limpa a borda da seleção, não mexe na peça).
+  * CORTAR E SEPARAR: o Selecionar, o Separar e o Cortar viraram um painel
+    com três abas — Cortar · Soltar um detalhe (1. escolher, 2. separar,
+    um embaixo do outro) · Por cor.
+  * SÓLIDO / FURO: só em Formas (saiu do Ajustar).
+- CORRIGIDO NO SEPARAR: detalhe em cima de superfície plana (botão numa
+  tampa, logo numa placa) saía 0,8 mm maior, com uma aba fina grudada que
+  o Consertar acusava como "se cruzando". Agora sai com a medida exata.
+- CORRIGIDO: adicionar uma forma deixava as anteriores escolhidas junto
+  ("5 peças · Unir" sem ter usado Shift). Agora só a nova fica escolhida.
 ARQUIVOS PRA SUBIR: o estudio3d.js mudou (e o cloud.js, na versão 14):
 suba o pacote inteiro.
 

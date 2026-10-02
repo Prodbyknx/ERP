@@ -57,16 +57,18 @@ export async function secaoOrganico({ b, teste, novaPagina, passo, abrirEstudio,
     const m = await malha(0);
     if (m.pos.length !== antes.pos.length || m.pos.some((x, i) => x !== antes.pos[i])) throw new Error('não voltou');
   });
-  await passo(pg, 'deformar: caixa 20×20×40, torcer 45° com prévia (topo gira, altura mantida, sólido válido)', async () => {
+  await passo(pg, 'deformar (no Modificar): caixa 20×20×40, torcer 45° com prévia (topo gira, altura mantida, sólido válido)', async () => {
     await abrirSecao(pg, 'formas');
     await pg.click('[data-forma=caixa]');
     await pg.waitForFunction(() => window.Estudio3D.estudio.cena.objetos.length === 2, null, { timeout: 30000 });
     for (const [k, v] of [['largura', '20'], ['profundidade', '20'], ['altura', '40']]) { await pg.fill('[data-sec=formas] [data-p=' + k + ']', v); await pg.press('[data-sec=formas] [data-p=' + k + ']', 'Enter'); await pg.waitForTimeout(400); }
     await pg.waitForFunction(() => { const e = window.Estudio3D.estudio, c = e.cena.caixaExata(e.cena.objetos[1]); return Math.abs(c.max[2] - c.min[2] - 40) < 1e-6 && Math.abs(c.max[0] - c.min[0] - 20) < 1e-6; }, null, { timeout: 30000 });
-    await abrirSecao(pg, 'esc');
-    await pg.click('[data-sec=esc] [data-a=def] button[data-v=torcer]');
-    await pg.fill('[data-sec=esc] [data-a=valDef]', '45');
-    await pg.click('[data-sec=esc] [data-a=aplDef]'); await confirmarPrevia(pg);
+    // como iniciante: Modificar → "Torcer / dobrar" → Torcer 45 → Aplicar
+    await abrirSecao(pg, 'mod');
+    await pg.click('[data-sec=mod] [data-a=ferr] button[data-v=deformar]');
+    await pg.click('[data-sec=mod] [data-a=def] button[data-v=torcer]');
+    await pg.fill('[data-sec=mod] [data-a=valDef]', '45');
+    await pg.click('[data-sec=mod] [data-a=ir]'); await confirmarPrevia(pg);
     await pg.waitForFunction(() => { const e = window.Estudio3D.estudio, c = e.cena.caixaExata(e.cena.objetos[1]); return c.max[0] - c.min[0] > 26; }, null, { timeout: 60000 });
     const { cx } = valida(await malha(1), 'torcida');
     if (Math.abs(cx.tam[2] - 40) > 1e-3 || cx.tam[0] > 28.4) throw new Error('medida ' + cx.tam.map(x => x.toFixed(2)).join('x'));

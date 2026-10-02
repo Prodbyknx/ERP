@@ -1,5 +1,6 @@
-// Painel 4 — separar para impressão: região selecionada vira peça
-// independente, as DUAS fechadas; separar por cor/material e por casca.
+// Separar para impressão (aba "Soltar um detalhe" do Cortar e separar):
+// região selecionada vira peça independente, as DUAS fechadas. O bloco "Por
+// cor" (cada cor vira peça; cascas soltas) é a outra aba: elCor.
 import { el, esc, fmt, lerNumero, avisar } from '../util.js';
 import { novaParte, novoObjeto } from '../cena.js';
 import { nomeDaCor } from '../../core/cores.js';
@@ -35,15 +36,18 @@ export function montarSeparar(est) {
     <p class="u" data-a="conInfo"></p>
     <div class="e3d-botoes"><button class="btn primary largo" data-a="ir">Pré-visualizar separação</button></div>
     <div data-a="res"></div>
-    <div style="margin-top:14px;border-top:1px solid var(--line-soft);padding-top:10px">
-      <div class="e3d-titulo">Separar por cor ou material</div>
-      <p class="u">Cada cor vira uma peça física (corpo preto, olhos brancos, detalhe vermelho…) pra imprimir sem AMS e montar depois. Região só pintada ganha a espessura abaixo.</p>
-      <div class="e3d-l2"><div class="field"><label>Espessura da peça colorida</label><input type="text" data-a="espCor" value="0,8"></div>
-        <div class="field"><label>Folga do bolso</label><input type="text" data-a="folgaCor" value="0,1"></div></div>
-      <div class="e3d-botoes"><button class="btn" data-a="porCor">Separar por cor</button><button class="btn" data-a="cascas" title="Cada ilha solta da malha vira um objeto">Separar cascas soltas</button></div>
-    </div>
   </div>`;
-  const q = s => d.querySelector('[data-a="' + s + '"]');
+  const dc = el('div', { 'data-sec': 'cor', class: 'e3d-sec' });
+  dc.innerHTML = `<p class="u">Cada cor vira uma peça física (corpo preto, olhos brancos, detalhe vermelho…) pra imprimir sem AMS e montar depois. Região só pintada ganha a espessura abaixo.</p>
+      <div class="e3d-l2"><div class="field"><label>Espessura da peça colorida <span class="u">mm</span></label><input type="text" data-a="espCor" value="0,8"></div>
+        <div class="field"><label>Folga do bolso <span class="u">mm</span></label><input type="text" data-a="folgaCor" value="0,1"></div></div>
+      <div class="e3d-botoes"><button class="btn primary" data-a="porCor">Separar por cor</button></div>
+      <div style="margin-top:14px;border-top:1px solid var(--line-soft);padding-top:10px">
+        <div class="e3d-titulo">Pedaços soltos</div>
+        <p class="u">A malha tem ilhas que não se encostam (ex.: modelo com várias peças num arquivo só)? Cada uma vira um objeto.</p>
+        <div class="e3d-botoes"><button class="btn" data-a="cascas" title="Cada ilha solta da malha vira um objeto">Separar cascas soltas</button></div>
+      </div>`;
+  const q = s => d.querySelector('[data-a="' + s + '"]') || dc.querySelector('[data-a="' + s + '"]');
   let modo = 'auto';
   q('modo').addEventListener('click', ev => { const b = ev.target.closest('button'); if (!b) return; modo = b.dataset.v; q('modo').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b)); });
   const atualizarCon = () => {
@@ -182,5 +186,5 @@ export function montarSeparar(est) {
   q('cascas').onclick = () => est.umaVez(q('cascas'), cascas);
   d.addEventListener('toggle', () => { if (d.open && est.ferramenta === 'navegar') est.definirFerramenta('auto'); });
   // atalho da barra de seleção: "Separar" / "Separar com pino"
-  return { el: d, separar: (opc = {}) => { q('con').value = opc.conector || 'nenhum'; atualizarCon(); return separar(); } };
+  return { el: d, elCor: dc, separar: (opc = {}) => { q('con').value = opc.conector || 'nenhum'; atualizarCon(); return separar(); } };
 }

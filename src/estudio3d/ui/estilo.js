@@ -218,6 +218,8 @@ html[data-tema=escuro] .e3d{ --e3d-fundo-a:#20242b; --e3d-fundo-b:#121418;
 .e3d-sec .seg button:hover{ color:var(--ink) }
 .e3d-sec .seg button.active{ background:var(--panel); color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.14) }
 .e3d-titulo{ font:700 11px/1.2 var(--sans); letter-spacing:.07em; text-transform:uppercase; color:var(--ink-dim); margin:6px 0 10px }
+.e3d-titulo.e3d-passo{ color:var(--brand); margin-top:2px }
+.e3d-painel details.e3d-sub[data-sec=sep]{ margin-top:16px; border-top:1px solid var(--line-soft); padding-top:12px }
 .e3d-diag{ display:grid; grid-template-columns:1fr auto; gap:5px 10px; font-size:12.5px; margin:6px 0; padding:12px 14px; border-radius:12px; background:var(--panel-2); border:1px solid var(--line-soft) }
 .e3d-diag span{ color:var(--ink-soft) }
 .e3d-diag b{ font-family:var(--mono); font-variant-numeric:tabular-nums; text-align:right }

@@ -257,7 +257,10 @@ export class Cena {
   restaurarSel(s) { this.sel = { objeto: s.objeto, parte: s.parte }; this.multi = (s.multi || []).slice(); }
   conferirSelecao() {
     this.multi = this.multi.filter(id => this.objeto(id));
-    if (this.sel.objeto && !this.multi.includes(this.sel.objeto)) this.multi = this.multi.length ? [...this.multi, this.sel.objeto] : [this.sel.objeto];
+    // peça escolhida por fora da lista (forma nova, peça separada, corte): ela
+    // passa a ser a única escolhida — antes somava às anteriores e aparecia
+    // "5 peças · Unir" sem a pessoa ter usado Shift
+    if (this.sel.objeto && !this.multi.includes(this.sel.objeto)) this.multi = [this.sel.objeto];
     if (!this.sel.objeto) this.multi = [];
     const o = this.objeto(this.sel.objeto);
     if (!o) { this.sel = { objeto: this.objetos.length ? null : null, parte: null }; return; }
