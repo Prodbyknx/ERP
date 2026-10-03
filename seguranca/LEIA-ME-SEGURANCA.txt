@@ -70,6 +70,26 @@ COMO APLICAR (NESTA ORDEM)
      c) Supabase > Authentication > Attack Protection > Enable Captcha >
         Turnstile > cole a chave SECRETA. (Nessa ordem: se ligar no Supabase
         antes do site ter a chave, ninguém consegue entrar.)
+     SE O ANTI-ROBÔ DER ERRO NO LOGIN: a tela mostra o CÓDIGO da Cloudflare,
+     o motivo e o que fazer:
+       110200 ...... o endereço que você abre não está no widget: Cloudflare >
+                     Turnstile > o widget > Hostname Management > adicione o
+                     endereço exato (ex.: erp.144labstore.com.br; se também
+                     abre pelo endereço .pages.dev, adicione ele também).
+       110100, 110110, 400020, 400070 ... chave do SITE errada ou widget
+                     desativado: confira a chave em config.js.
+       200500 ...... bloqueador de anúncio, VPN ou rede bloqueando
+                     challenges.cloudflare.com.
+       200100/110600 relógio do computador errado.
+       300xxx/600xxx a Cloudflare não confirmou o navegador: tente sem
+                     bloqueador/VPN, aba anônima ou outro navegador (ela tenta
+                     de novo sozinha).
+     O botão Entrar NÃO fica trancado com erro: quem decide é o Supabase.
+     Se o CAPTCHA estiver ligado lá, ele recusa e a tela avisa. Pra entrar
+     enquanto corrige o widget: desligue o CAPTCHA no Supabase (Attack
+     Protection) — não precisa subir nada de novo — e ligue de volta depois.
+     "O Supabase recusou o anti-robô" com o widget OK = a chave SECRETA no
+     Supabase não é do mesmo widget da chave do SITE.
   6. Função de usuários: se o verificar-supabase.html apontar FALHA em
      "erp-users", publique a da pasta supabase/functions/erp-users
      (Edge Functions > erp-users > colar index.ts e logica.js > Deploy, com

@@ -49,7 +49,15 @@ Detalhes em FERRAMENTAS.txt.
   o Consertar acusava como "se cruzando". Agora sai com a medida exata.
 - CORRIGIDO: adicionar uma forma deixava as anteriores escolhidas junto
   ("5 peças · Unir" sem ter usado Shift). Agora só a nova fica escolhida.
-ARQUIVOS PRA SUBIR: o estudio3d.js mudou (e o cloud.js, na versão 14):
+- LOGIN COM ANTI-ROBÔ (Turnstile): "A verificação anti-robô falhou.
+  Recarregue a página" não dizia o porquê, e recarregar não resolve erro de
+  configuração. Agora a tela mostra o código da Cloudflare, o motivo e o que
+  fazer (ex.: 110200 = o endereço do site não está liberado no widget:
+  Cloudflare > Turnstile > o widget > Hostname Management). Erro passageiro
+  ela tenta de novo sozinha; o Entrar não fica trancado sem saída (quem
+  decide é o Supabase); com a sessão já aberta o anti-robô nem carrega.
+  Passo a passo em seguranca/LEIA-ME-SEGURANCA.txt (passo 5).
+ARQUIVOS PRA SUBIR: o estudio3d.js e o cloud.js mudaram:
 suba o pacote inteiro.
 
 

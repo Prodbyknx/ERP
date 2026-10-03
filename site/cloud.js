@@ -384,7 +384,7 @@
       });
       notice('Nuvem conectada');
     }catch(e){notice(e.message||String(e));el('login_pass').value='';}
-    finally{startup=false;el('btn_login').disabled=!!captcha&&!captcha.token;}
+    finally{startup=false;el('btn_login').disabled=!!captcha&&!loginLiberado();}
   }
   window.addEventListener('beforeunload',e=>{if(pending||dirty.size){e.preventDefault();e.returnValue='';}});
   window.addEventListener('offline',()=>notice('Sem internet — gravações exigem conexão'));
@@ -400,29 +400,64 @@
   // chave do SITE (pública) em "turnstile". O Supabase confere o token com a
   // chave secreta, que fica no painel dele (Authentication > Attack Protection).
   let captcha=null;
-  if(typeof config.turnstile==='string'&&/^[0-9A-Za-z_-]{10,}$/.test(config.turnstile)){
-    captcha={token:null,id:null};
+  // O que cada código de erro do Turnstile quer dizer e o que fazer (lista da
+  // Cloudflare: Turnstile > Troubleshooting > Error codes). fixo = não adianta
+  // tentar de novo, é configuração do widget.
+  function motivoCaptcha(c){
+    const n=String(c||''),h=location.hostname||'este endereço';
+    if(n==='110200'||n==='400021')return{fixo:true,txt:'Este endereço ('+h+') não está liberado no widget do anti-robô (código '+n+'). Corrija em Cloudflare > Turnstile > o widget > Hostname Management: adicione '+h+'.'};
+    if(/^(110100|110110|400020|400070)$/.test(n))return{fixo:true,txt:'A chave do SITE do anti-robô em config.js não vale ou o widget está desativado (código '+n+'). Confira em Cloudflare > Turnstile.'};
+    if(n==='200100'||n==='110600')return{fixo:false,txt:'O relógio deste computador parece errado (código '+n+'). Acerte a data e a hora e tente de novo.'};
+    if(n==='200500')return{fixo:false,txt:'O quadro da Cloudflare não abriu (código 200500): bloqueador de anúncio, VPN ou a rede bloqueando challenges.cloudflare.com.'};
+    if(n==='110620')return{fixo:false,txt:'A verificação esperou demais (código 110620).'};
+    return{fixo:false,txt:'A Cloudflare não confirmou este navegador (código '+(n||'?')+'). Tente sem bloqueador de anúncio ou VPN, numa aba anônima ou em outro navegador.'};
+  }
+  function prepararCaptcha(){
+    if(!captcha||captcha.pronto)return;
+    captcha.pronto=true;
     const caixa=document.createElement('div');caixa.id='login_captcha';caixa.style.cssText='margin:10px 0;min-height:65px;display:flex;justify-content:center';
-    el('btn_login').before(caixa);el('btn_login').disabled=true;
+    const msg=document.createElement('div');msg.id='login_captcha_msg';msg.style.cssText='display:none;margin:0 0 10px;font:13px/1.45 system-ui;color:#9a3412';
+    const txt=document.createElement('p');txt.style.margin='0 0 6px';
+    const de_novo=document.createElement('button');de_novo.type='button';de_novo.className='btn';de_novo.textContent='Tentar de novo';
+    de_novo.onclick=()=>{captcha.erro=null;mostrarErro(null);try{window.turnstile.reset(captcha.id);}catch{}};
+    msg.append(txt,de_novo);el('btn_login').before(caixa,msg);el('btn_login').disabled=true;
+    function mostrarErro(m){msg.style.display=m?'block':'none';txt.textContent=m||'';}
     window.aoCarregarTurnstile=()=>{
       captcha.id=window.turnstile.render(caixa,{sitekey:config.turnstile,action:'login',language:'pt-br',
-        callback:t=>{captcha.token=t;el('btn_login').disabled=false;},
-        'expired-callback':()=>{captcha.token=null;el('btn_login').disabled=true;},
-        'error-callback':()=>{captcha.token=null;el('btn_login').disabled=true;notice('A verificação anti-robô falhou. Recarregue a página.');}});
+        callback:t=>{captcha.token=t;captcha.erro=null;mostrarErro(null);el('btn_login').disabled=false;},
+        'expired-callback':()=>{captcha.token=null;el('btn_login').disabled=!loginLiberado();},
+        'timeout-callback':()=>{captcha.token=null;try{window.turnstile.reset(captcha.id);}catch{}},
+        // A Cloudflare manda o código do erro: mostra o motivo e o que fazer
+        // (antes era só "falhou, recarregue", que não resolve erro de configuração).
+        // Erro passageiro o próprio Turnstile tenta de novo sozinho. Com erro, o
+        // Entrar fica liberado: quem decide é o Supabase (se o CAPTCHA estiver
+        // ligado lá, ele recusa sem token — a segurança é a mesma).
+        'error-callback':codigo=>{
+          captcha.token=null;const m=motivoCaptcha(codigo);captcha.erro=m;
+          mostrarErro(m.txt+(m.fixo?'':' (tentando de novo sozinho…)'));
+          notice('Anti-robô: '+(m.fixo?'configuração do widget':'verificação não passou')+' (código '+(codigo||'?')+')');
+          el('btn_login').disabled=!loginLiberado();
+          return true;
+        }});
     };
     const sc=document.createElement('script');sc.async=true;
     sc.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=aoCarregarTurnstile';
-    sc.onerror=()=>notice('Não carregou a verificação anti-robô (internet ou bloqueador?). Recarregue a página.');
+    sc.onerror=()=>{captcha.erro={fixo:false};mostrarErro('Não carregou o anti-robô da Cloudflare (internet, bloqueador de anúncio ou VPN). Recarregue a página.');notice('Anti-robô não carregou');el('btn_login').disabled=!loginLiberado();};
     document.head.appendChild(sc);
   }
-  const loginLiberado=()=>!captcha||!!captcha.token;
+  if(typeof config.turnstile==='string'&&/^[0-9A-Za-z_-]{10,}$/.test(config.turnstile)){captcha={token:null,id:null,erro:null,pronto:false};el('btn_login').disabled=true;}
+  const loginLiberado=()=>!captcha||!!captcha.token||!!captcha.erro;
   el('btn_login').onclick=async()=>{
     if(!loginLiberado()){notice('Confirme a verificação anti-robô');return;}
     el('btn_login').disabled=true;notice('Entrando…');
     try{
-      const {error}=await client.auth.signInWithPassword({email:el('login_user').value.trim(),password:el('login_pass').value,...(captcha?{options:{captchaToken:captcha.token}}:{})});
+      const {error}=await client.auth.signInWithPassword({email:el('login_user').value.trim(),password:el('login_pass').value,...(captcha&&captcha.token?{options:{captchaToken:captcha.token}}:{})});
       if(error)throw error;await start();
-    }catch(e){notice(e.message||String(e));}
+    }catch(e){
+      // o Supabase recusou por causa do CAPTCHA: diz onde está o problema
+      if(captcha&&(e.code==='captcha_failed'||/captcha/i.test(e.message||'')))notice(captcha.erro?'O Supabase exige o anti-robô e ele não passou. Corrija o widget (mensagem acima) ou desligue o CAPTCHA em Supabase > Authentication > Attack Protection pra entrar enquanto isso.':'O Supabase recusou o anti-robô: a chave SECRETA colada no Supabase tem que ser do mesmo widget da chave do SITE em config.js.');
+      else notice(e.message||String(e));
+    }
     finally{
       // o token do CAPTCHA vale uma vez: depois de cada tentativa, pede outro
       if(captcha&&captcha.token){captcha.token=null;try{window.turnstile.reset(captcha.id);}catch{}}
@@ -430,5 +465,7 @@
     }
   };
   el('login_pass').addEventListener('keydown',e=>{if(e.key==='Enter')el('btn_login').click();});
-  client.auth.getSession().then(({data:{session}})=>{if(session)start();else notice('Entre para acessar a nuvem');});
+  // o anti-robô só carrega quando precisa entrar (sessão aberta não mostra o
+  // widget escondido nem avisa erro dele por cima do ERP)
+  client.auth.getSession().then(async({data:{session}})=>{if(session){await start();if(!started)prepararCaptcha();}else{prepararCaptcha();notice('Entre para acessar a nuvem');}});
 })();

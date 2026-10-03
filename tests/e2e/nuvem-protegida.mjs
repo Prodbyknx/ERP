@@ -10,6 +10,9 @@
 //    errada recusada, senha certa importa
 //  - CAPTCHA (Turnstile) ligado no config.js: login só com o token, que vai
 //    para o Supabase; desligado, nem carrega o script
+//  - CAPTCHA com erro: mostra o código, o motivo e o que fazer; não tranca o
+//    Entrar (o Supabase decide); erro passageiro passa sozinho; com a sessão
+//    aberta o script nem carrega
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -27,6 +30,10 @@ const q = s => "'" + String(s).replace(/'/g, "''") + "'";
 const TURNSTILE_FALSO = `window.turnstile={render(el,o){const b=document.createElement('button');b.type='button';b.id='captcha-falso';b.textContent='Sou humano';
   b.onclick=()=>o.callback('tok-humano-'+(++window.__captchas));el.appendChild(b);window.__opcCaptcha=o;return 'w1';},reset(){window.__resets=(window.__resets||0)+1;}};
   window.__captchas=0;setTimeout(()=>window.aoCarregarTurnstile&&window.aoCarregarTurnstile(),0);`;
+// Turnstile que dá erro (código da Cloudflare); "depois": passa sozinho na nova tentativa
+const turnstileComErro = (codigo, depois) => `window.turnstile={render(el,o){window.__opcCaptcha=o;setTimeout(()=>{window.__retornoErro=o['error-callback'](${codigo});
+  ${depois ? `setTimeout(()=>o.callback('${depois}'),400);` : ''}},50);return 'w1';},reset(){window.__resets=(window.__resets||0)+1;}};
+  setTimeout(()=>window.aoCarregarTurnstile&&window.aoCarregarTurnstile(),0);`;
 
 export async function secaoNuvemProtegida({ chromium, passo, pastaSite = path.join(raiz, 'site') }) {
   console.log('NUVEM PROTEGIDA) site de produção x funções de verdade do servidor (PostgreSQL local)');
@@ -184,6 +191,46 @@ export async function secaoNuvemProtegida({ chromium, passo, pastaSite = path.jo
       await sincronizado();
       const bloqueados = consoleMsgs.filter(m => /Content Security Policy|Refused/.test(m));
       if (bloqueados.length) throw new Error('CSP bloqueou: ' + bloqueados.join(' | '));
+    });
+    await passo(p, 'NUVEM PROTEGIDA: anti-robô com ERRO mostra código, motivo e o que fazer; não tranca o Entrar (o Supabase decide); erro passageiro passa sozinho; sessão aberta nem carrega o script', async () => {
+      // sessão aberta: recarregar não carrega o Turnstile (nem avisa erro dele por cima do ERP)
+      const antes = pedidosCaptcha.length;
+      await p.reload(); await p.waitForFunction(() => document.getElementById('app-wrapper').style.display === 'block', null, { timeout: 30000 }); await sincronizado();
+      if (pedidosCaptcha.length !== antes) throw new Error('carregou o Turnstile com a sessão aberta');
+      // 110200: este endereço não está liberado no widget (o caso do "falhou, recarregue")
+      await Promise.all([p.waitForEvent('load'), p.evaluate(() => window.Cloud.logout())]);
+      await p.unroute('https://challenges.cloudflare.com/**');
+      await p.route('https://challenges.cloudflare.com/**', r => r.fulfill({ status: 200, contentType: 'text/javascript', body: turnstileComErro(110200) }));
+      await p.goto(s2.url + '/index.html');
+      await p.waitForSelector('#login_captcha_msg', { state: 'visible', timeout: 10000 });
+      const msg = await p.textContent('#login_captcha_msg');
+      if (!/127\.0\.0\.1/.test(msg) || !/Hostname/.test(msg) || !/110200/.test(msg) || /tentando de novo/.test(msg)) throw new Error('mensagem: ' + msg);
+      if (!/código 110200/.test(await p.textContent('#cloud-status'))) throw new Error('status: ' + await p.textContent('#cloud-status'));
+      if (await p.evaluate(() => window.__retornoErro) !== true) throw new Error('error-callback não tratou o erro');
+      if (await p.isDisabled('#btn_login')) throw new Error('Entrar trancado sem saída');
+      // CAPTCHA ligado no Supabase: ele recusa e a tela diz onde mexer
+      sb.estado.exigirCaptcha = true;
+      await p.fill('#login_user', 'dono@teste.com'); await p.fill('#login_pass', 'senha-do-dono'); await p.click('#btn_login');
+      await p.waitForFunction(() => /exige o anti-robô/.test(document.getElementById('cloud-status').textContent), null, { timeout: 15000 });
+      if (sb.estado.ultimoLogin.gotrue_meta_security && sb.estado.ultimoLogin.gotrue_meta_security.captcha_token) throw new Error('mandou token que não existe');
+      if (await p.evaluate(() => document.getElementById('app-wrapper').style.display === 'block')) throw new Error('entrou sem o CAPTCHA que o servidor exige');
+      // desligado no Supabase (a saída de emergência): entra
+      sb.estado.exigirCaptcha = false;
+      await p.fill('#login_pass', 'senha-do-dono'); await p.click('#btn_login');
+      await p.waitForFunction(() => document.getElementById('app-wrapper').style.display === 'block', null, { timeout: 30000 }); await sincronizado();
+      // 600010 (passageiro): avisa que está tentando de novo e, quando passa, some o aviso e o token vai
+      await Promise.all([p.waitForEvent('load'), p.evaluate(() => window.Cloud.logout())]);
+      await p.unroute('https://challenges.cloudflare.com/**');
+      await p.route('https://challenges.cloudflare.com/**', r => r.fulfill({ status: 200, contentType: 'text/javascript', body: turnstileComErro(600010, 'tok-depois') }));
+      await p.goto(s2.url + '/index.html');
+      await p.waitForFunction(() => /600010/.test(document.getElementById('login_captcha_msg')?.textContent || '') && /tentando de novo/.test(document.getElementById('login_captcha_msg').textContent), null, { timeout: 10000 });
+      await p.waitForSelector('#login_captcha_msg', { state: 'hidden', timeout: 10000 });
+      sb.estado.exigirCaptcha = true;
+      await p.fill('#login_user', 'dono@teste.com'); await p.fill('#login_pass', 'senha-do-dono'); await p.click('#btn_login');
+      await p.waitForFunction(() => document.getElementById('app-wrapper').style.display === 'block', null, { timeout: 30000 });
+      sb.estado.exigirCaptcha = false;
+      if (sb.estado.ultimoLogin.gotrue_meta_security.captcha_token !== 'tok-depois') throw new Error('token: ' + JSON.stringify(sb.estado.ultimoLogin));
+      await sincronizado();
     });
   } finally {
     await b.close(); s1.srv.close(); s2.srv.close(); await sb.fechar(); pg.parar();

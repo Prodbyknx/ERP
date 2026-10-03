@@ -37,6 +37,7 @@ export async function supabaseFalso({ host = 'teste144.supabase.co', ttl = 3600,
     ttl, foraDoAr: false, revision: 0, ordem: 0,
     desvio: 0,                    // ms somados ao relógio do servidor (simula o tempo passando)
     recusarWS: false,             // Realtime fora do ar: recusa conexões novas
+    exigirCaptcha: false,         // CAPTCHA ligado no Auth: login sem token é recusado
     tentativasWS: [],             // horário de cada tentativa de conexão WS
     usuarios: usuarios || [{ id: '00000000-0000-4000-8000-000000000001', email: 'dono@teste.com', senha: 'senha-certa', nome: 'Dono', login: 'dono@teste.com', perfil: 'ADMIN' }],
     refresh: new Map(),           // refresh_token -> { uid, usado, revogado }
@@ -144,6 +145,7 @@ export async function supabaseFalso({ host = 'teste144.supabase.co', ttl = 3600,
       // Auth
       if (p === '/auth/v1/token' && u.searchParams.get('grant_type') === 'password') {
         st.ultimoLogin = json;
+        if (st.exigirCaptcha && !(json.gotrue_meta_security && json.gotrue_meta_security.captcha_token)) return r(400, { code: 'captcha_failed', error_code: 'captcha_failed', msg: 'captcha verification process failed' });
         const us = st.usuarios.find(x => x.email === json.email && x.senha === json.password);
         return us ? r(200, sessao(us)) : r(400, { code: 'invalid_credentials', error_code: 'invalid_credentials', msg: 'Invalid login credentials' });
       }
